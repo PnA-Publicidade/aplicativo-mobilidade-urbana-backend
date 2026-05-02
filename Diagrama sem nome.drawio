@@ -64,7 +64,7 @@
           <mxGeometry height="220" width="310" x="-120" y="35" as="geometry" />
         </mxCell>
         <mxCell id="x8Rsj7MDd_1IPNzSZV3k-0" parent="dOqNJdpvYfaZV8o4_898-1" style="verticalAlign=top;align=left;overflow=fill;fontSize=12;fontFamily=Helvetica;html=1;strokeColor=#6c8ebf;shadow=1;fillColor=#dae8fc;" value="&lt;p style=&quot;margin: 0px ; margin-top: 4px ; text-align: center ; text-decoration: underline&quot;&gt;&lt;b&gt;corrida_desconto&lt;/b&gt;&lt;/p&gt;&lt;hr&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;corrida_id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;tipo (cupom, promocao, ajuste_manual)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;codigo (opcional, ex: &quot;BEMVINDO10&quot;)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;valor_desconto&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;percentual_desconto (opcional)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;descricao&lt;/p&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="140" width="290" x="-555" y="350" as="geometry" />
+          <mxGeometry height="140" width="290" x="-495" y="330" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
