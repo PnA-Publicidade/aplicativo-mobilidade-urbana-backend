@@ -41,7 +41,7 @@
     </mxGraphModel>
   </diagram>
   <diagram name="corridas" id="RLkPUS0X735yFkt6I1EX">
-    <mxGraphModel dx="3366" dy="2088" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="2832" dy="1788" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="dOqNJdpvYfaZV8o4_898-0" />
         <mxCell id="dOqNJdpvYfaZV8o4_898-1" parent="dOqNJdpvYfaZV8o4_898-0" />
@@ -66,7 +66,8 @@
         <mxCell id="x8Rsj7MDd_1IPNzSZV3k-2" edge="1" parent="dOqNJdpvYfaZV8o4_898-1" source="dOqNJdpvYfaZV8o4_898-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.995;entryY=0.413;entryDx=0;entryDy=0;entryPerimeter=0;" target="URnLIyamRaXWot1hOTrh-0">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="-575" y="-30" />
+              <mxPoint x="-350" y="-150" />
+              <mxPoint x="-575" y="-150" />
               <mxPoint x="-575" y="-66" />
             </Array>
           </mxGeometry>
