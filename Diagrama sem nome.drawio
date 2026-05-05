@@ -41,7 +41,7 @@
     </mxGraphModel>
   </diagram>
   <diagram name="corridas" id="RLkPUS0X735yFkt6I1EX">
-    <mxGraphModel dx="3068" dy="1912" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="2911" dy="1791" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="dOqNJdpvYfaZV8o4_898-0" />
         <mxCell id="dOqNJdpvYfaZV8o4_898-1" parent="dOqNJdpvYfaZV8o4_898-0" />
@@ -61,7 +61,7 @@
           <mxGeometry height="220" width="310" x="-160" y="-70" as="geometry" />
         </mxCell>
         <mxCell id="x8Rsj7MDd_1IPNzSZV3k-0" parent="dOqNJdpvYfaZV8o4_898-1" style="verticalAlign=top;align=left;overflow=fill;fontSize=12;fontFamily=Helvetica;html=1;strokeColor=#6c8ebf;shadow=1;fillColor=#dae8fc;" value="&lt;p style=&quot;margin: 0px ; margin-top: 4px ; text-align: center ; text-decoration: underline&quot;&gt;&lt;b&gt;corrida_descontos&lt;/b&gt;&lt;/p&gt;&lt;hr&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;corrida_id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;tipo (cupom, promocao, ajuste_manual)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;codigo (opcional, ex: &quot;BEMVINDO10&quot;)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;valor_desconto&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;percentual_desconto (opcional)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;descricao&lt;/p&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="140" width="290" x="-495" y="270" as="geometry" />
+          <mxGeometry height="140" width="290" x="-360" y="270" as="geometry" />
         </mxCell>
         <mxCell id="x8Rsj7MDd_1IPNzSZV3k-2" edge="1" parent="dOqNJdpvYfaZV8o4_898-1" source="dOqNJdpvYfaZV8o4_898-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.995;entryY=0.413;entryDx=0;entryDy=0;entryPerimeter=0;" target="URnLIyamRaXWot1hOTrh-0">
           <mxGeometry relative="1" as="geometry">
@@ -91,6 +91,12 @@
         </mxCell>
         <mxCell id="V5ZxtaFzPDEDFxkUVF8K-3" parent="dOqNJdpvYfaZV8o4_898-1" style="verticalAlign=top;align=left;overflow=fill;fontSize=12;fontFamily=Helvetica;html=1;strokeColor=#6c8ebf;shadow=1;fillColor=#dae8fc;" value="&lt;p style=&quot;margin: 0px ; margin-top: 4px ; text-align: center ; text-decoration: underline&quot;&gt;&lt;b&gt;sobre as tarifas&lt;/b&gt;&lt;/p&gt;&lt;hr&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;negociada:&lt;br&gt;Não possui tarifa base&lt;br&gt;Não acontece de a plataforma completar o valor&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;inclui preço dinâmico quando houver&lt;/p&gt;" vertex="1">
           <mxGeometry height="300" width="290" x="-1570" y="-240" as="geometry" />
+        </mxCell>
+        <mxCell id="ktKCeHXfOTdSc60gCGAo-0" parent="dOqNJdpvYfaZV8o4_898-1" style="verticalAlign=top;align=left;overflow=fill;fontSize=12;fontFamily=Helvetica;html=1;strokeColor=#6c8ebf;shadow=1;fillColor=#dae8fc;" value="&lt;p style=&quot;margin: 0px ; margin-top: 4px ; text-align: center ; text-decoration: underline&quot;&gt;&lt;b&gt;corrida_negociacoes&lt;/b&gt;&lt;/p&gt;&lt;hr&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;corrida_id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;&lt;br&gt;&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;usuario_id&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;tipo (motorista, passageiro)&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;&lt;br&gt;&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;valor_proposto&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;&lt;br&gt;&lt;/p&gt;&lt;p style=&quot;margin: 0px ; margin-left: 8px&quot;&gt;status (pendente, aceito, recusado)&lt;/p&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="180" width="290" x="-630" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="ktKCeHXfOTdSc60gCGAo-1" edge="1" parent="dOqNJdpvYfaZV8o4_898-1" source="ktKCeHXfOTdSc60gCGAo-0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.399;entryY=0.999;entryDx=0;entryDy=0;entryPerimeter=0;" target="dOqNJdpvYfaZV8o4_898-4">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
