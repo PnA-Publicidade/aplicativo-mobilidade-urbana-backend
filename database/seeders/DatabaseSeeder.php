@@ -27,34 +27,34 @@ class DatabaseSeeder extends Seeder
     {
 
 
-        $ProdutosCorrida = ProdutosCorrida::factory()->create([
-            'nome' => 'Negocia',
-            'codigo' => 'negocia',
-            'estrategia_precificacao' => 'negociada',
-        ]);
+        // $ProdutosCorrida = ProdutosCorrida::factory()->create([
+        //     'nome' => 'Negocia',
+        //     'codigo' => 'negocia',
+        //     'estrategia_precificacao' => 'negociada',
+        // ]);
 
-        ProdutoCategoria::create([
-            'produto_id' => $ProdutosCorrida->id,
-            'prioridade' => 2,
-            'categoria' => 'carro',
-        ]);
+        // ProdutoCategoria::create([
+        //     'produto_id' => $ProdutosCorrida->id,
+        //     'prioridade' => 2,
+        //     'categoria' => 'carro',
+        // ]);
 
-        $userPassageiro = User::factory()->create([
-            'name' => 'Passageiro Sobrenome',
-            'data_nascimento' => '2022-04-12',
-            'telefone' => '69981400662',
-            'email' => 'passageiro@example.com',
-            'cpf' => "01149897296",
-            'foto' => "",
-            'foto_thumbnail' => "",
-            'status' => "ativo",
-        ]);
+        // $userPassageiro = User::factory()->create([
+        //     'name' => 'Passageiro Sobrenome',
+        //     'data_nascimento' => '2022-04-12',
+        //     'telefone' => '69981400662',
+        //     'email' => 'passageiro@example.com',
+        //     'cpf' => "01149897296",
+        //     'foto' => "",
+        //     'foto_thumbnail' => "",
+        //     'status' => "ativo",
+        // ]);
 
-        $passageiro = Passageiro::factory()->create([
-            'user_id' => $userPassageiro->id,
-            'media_avaliacao' => 4,
-        ]);
-
+        // $passageiro = Passageiro::factory()->create([
+        //     'user_id' => $userPassageiro->id,
+        //     'media_avaliacao' => 4,
+        // ]);
+        ProdutosCorrida::factory()->count(9)->create();
         $userMotorista = User::factory()->create([
             'name' => 'Diogo Guimarães',
             'data_nascimento' => '2022-04-11',
@@ -66,50 +66,50 @@ class DatabaseSeeder extends Seeder
             'status' => "ativo"
         ]);
 
-        $motorista = Motorista::factory()->create([
-            'user_id' => $userMotorista->id,
-            'cnh_numero' => '2022-04-11',
-            'cnh_categoria' => 'ABC',
-            'cnh_expiracao' => '04-12-2029',
-            'ear' => true,
-        ]);
+        // $motorista = Motorista::factory()->create([
+        //     'user_id' => $userMotorista->id,
+        //     'cnh_numero' => '2022-04-11',
+        //     'cnh_categoria' => 'ABC',
+        //     'cnh_expiracao' => '04-12-2029',
+        //     'ear' => true,
+        // ]);
 
-        Veiculo::factory()->create([
-            'marca' => 'hyundai',
-            'modelo' => 'hb20 sedan',
-            'ano_fabricacao' => 2016,
-            'ano_modelo' => 2016,
-            'cor' => 'preto',
-            'placa' => 'NCH9110',
-            'renavam' => '12345678910',
-            'categoria' => 'pop',
-            'status' => 'pendente',
-            'uf' => 'RO',
-        ]);
+        // Veiculo::factory()->create([
+        //     'marca' => 'hyundai',
+        //     'modelo' => 'hb20 sedan',
+        //     'ano_fabricacao' => 2016,
+        //     'ano_modelo' => 2016,
+        //     'cor' => 'preto',
+        //     'placa' => 'NCH9110',
+        //     'renavam' => '12345678910',
+        //     'categoria' => 'pop',
+        //     'status' => 'pendente',
+        //     'uf' => 'RO',
+        // ]);
 
 
-        // Tarrifa negociada
-        Tarifa::factory()->create([
-            'cidade_id' => 18,
-            'produto_id' => 1, // Negocia
-            'horario_inicio' => '00:00:00',
-            'dias_semana' => json_encode([1, 2, 3, 4, 5, 6, 7]),
-            'horario_fim' => '23:59:59',
-            'vira_dia' => false,
-            // Regras mínimas
-            'valor_minimo_corrida' => 8.00,
-            // Formação de preço
-            // tarifa_base pq é praticamente km + tempo + negociação
-            'tarifa_base' => 0,
-            'valor_por_km' => 1.55,
-            'valor_por_minuto' => 0.28,
-            'valor_por_minuto_espera' => 0.30,
-            // Plataforma
-            'taxa_plataforma_percentual' => 6.00,
-            // Busca
-            'raio_busca_motorista_km' => 5,
-            'ativo' => true,
-        ]);
+        // // Tarrifa negociada
+        // Tarifa::factory()->create([
+        //     'cidade_id' => 18,
+        //     'produto_id' => 1, // Negocia
+        //     'horario_inicio' => '00:00:00',
+        //     'dias_semana' => json_encode([1, 2, 3, 4, 5, 6, 7]),
+        //     'horario_fim' => '23:59:59',
+        //     'vira_dia' => false,
+        //     // Regras mínimas
+        //     'valor_minimo_corrida' => 8.00,
+        //     // Formação de preço
+        //     // tarifa_base pq é praticamente km + tempo + negociação
+        //     'tarifa_base' => 0,
+        //     'valor_por_km' => 1.55,
+        //     'valor_por_minuto' => 0.28,
+        //     'valor_por_minuto_espera' => 0.30,
+        //     // Plataforma
+        //     'taxa_plataforma_percentual' => 6.00,
+        //     // Busca
+        //     'raio_busca_motorista_km' => 5,
+        //     'ativo' => true,
+        // ]);
 
         // // 2. Simular dados de uma corrida para o cálculo
         // $distanciaKm = 10.5; // Ex: 10.5 km
