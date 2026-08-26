@@ -2,17 +2,21 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 
 class EstimarRotaService
 {
-
     /*
     |--------------------------------------------------------------------------
     | ORIGEM -> PARADAS -> DESTINO
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * @param  array<int, array<string, mixed>>  $enderecos
+     * @return array<string, mixed>
+     */
     public function executar(
         array $enderecos
     ): array {
@@ -33,7 +37,7 @@ class EstimarRotaService
         |--------------------------------------------------------------------------
         */
 
-        $origem = array_first($enderecos);
+        $origem = Arr::first($enderecos);
 
         /*
         |--------------------------------------------------------------------------
@@ -41,7 +45,7 @@ class EstimarRotaService
         |--------------------------------------------------------------------------
         */
 
-        $destino = array_last($enderecos);
+        $destino = Arr::last($enderecos);
 
         /*
         |--------------------------------------------------------------------------
@@ -72,7 +76,6 @@ class EstimarRotaService
             paradas: $paradas
         );
 
-
         $retorno = [
 
             'origem' => [
@@ -91,7 +94,7 @@ class EstimarRotaService
         |
         */
 
-        if (!empty($paradas)) {
+        if (! empty($paradas)) {
 
             $retorno['paradas'] = collect($paradas)->map(function ($parada) {
 
@@ -123,6 +126,7 @@ class EstimarRotaService
 
         $retorno['distancia_km'] = $rota['distancia_km'];
         $retorno['tempo_minutos'] = $rota['tempo_minutos'];
+
         return $retorno;
     }
 
@@ -132,6 +136,12 @@ class EstimarRotaService
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * @param  array<string, mixed>  $origem
+     * @param  array<string, mixed>  $destino
+     * @param  array<int, array<string, mixed>>  $paradas
+     * @return array<string, mixed>
+     */
     private function calcularRota(
         array $origem,
         array $destino,
@@ -146,13 +156,13 @@ class EstimarRotaService
 
         $waypoints = null;
 
-        if (!empty($paradas)) {
+        if (! empty($paradas)) {
 
             $waypoints = collect($paradas)
                 ->map(function ($parada) {
 
-                    return $parada['latitude'] .
-                        ',' .
+                    return $parada['latitude'].
+                        ','.
                         $parada['longitude'];
                 })
                 ->implode('|');
@@ -167,11 +177,9 @@ class EstimarRotaService
         $response = Http::get(
             'https://maps.googleapis.com/maps/api/directions/json',
             [
-                'origin' =>
-                $origem['latitude'] . ',' . $origem['longitude'],
+                'origin' => $origem['latitude'].','.$origem['longitude'],
 
-                'destination' =>
-                $destino['latitude'] . ',' . $destino['longitude'],
+                'destination' => $destino['latitude'].','.$destino['longitude'],
 
                 'waypoints' => $waypoints,
 
@@ -179,7 +187,7 @@ class EstimarRotaService
 
                 'language' => 'pt-BR',
 
-                'key' => env('GOOGLE_MAPS_API_KEY'),
+                'key' => config('services.google_maps.key'),
             ]
         );
 
@@ -193,7 +201,7 @@ class EstimarRotaService
 
         if (
             empty($data['routes']) ||
-            !isset($data['routes'][0]['legs'])
+            ! isset($data['routes'][0]['legs'])
         ) {
             return [
                 'distancia_km' => 0,

@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Corrida;
 
+use App\Http\Controllers\Controller;
 use App\Models\StatusBusca;
 use Illuminate\Http\Request;
 
@@ -10,7 +11,7 @@ class StatusBuscaController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(): void
     {
         //
     }
@@ -18,7 +19,7 @@ class StatusBuscaController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request): void
     {
         //
     }
@@ -26,7 +27,7 @@ class StatusBuscaController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(StatusBusca $statusBusca)
+    public function show(StatusBusca $statusBusca): void
     {
         //
     }
@@ -34,7 +35,7 @@ class StatusBuscaController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, StatusBusca $statusBusca)
+    public function update(Request $request, StatusBusca $statusBusca): void
     {
         //
     }
@@ -42,7 +43,7 @@ class StatusBuscaController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(StatusBusca $statusBusca)
+    public function destroy(StatusBusca $statusBusca): void
     {
         //
     }

@@ -32,7 +32,6 @@ return new class extends Migration
 
             $table->decimal('valor_pago_passageiro', 10, 2)->nullable();
 
-
             $table->decimal('taxa_plataforma_valor', 5, 2)->nullable();
             $table->decimal('taxa_plataforma_percentual', 5, 2)->nullable();
 
@@ -51,9 +50,8 @@ return new class extends Migration
                 'cartao',
                 'pix',
                 'carteira',
-                'saldo_app'
+                'saldo_app',
             ])->nullable();
-
 
             $table->timestamps();
         });

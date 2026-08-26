@@ -13,7 +13,7 @@ class ProdutosCorridaFactory extends Factory
     /**
      * O modelo correspondente à factory.
      *
-     * @var string
+     * @var class-string<ProdutosCorrida>
      */
     protected $model = ProdutosCorrida::class;
 

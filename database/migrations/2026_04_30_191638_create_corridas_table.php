@@ -26,7 +26,6 @@ return new class extends Migration
             //     'pop express',
             // ])->nullable();
 
-
             $table->integer('motorista_id');
             $table->integer('passageiro_id');
             $table->integer('veiculo_id');
@@ -66,22 +65,21 @@ return new class extends Migration
                 'em_negociacao',
                 'aceita',
                 'recusada',
-                'expirada'
+                'expirada',
             ])->nullable();
-
 
             // Método de pagamento
             $table->enum('metodo_pagamento', [
                 'dinheiro',
                 'cartao',
-                'pix'
+                'pix',
             ])->nullable();
 
             $table->enum('status_pagamento', [
                 'pendente',
                 'pago',
                 'estornado',
-                'falhou'
+                'falhou',
             ])->nullable();
 
             $table->decimal('valor_estimado_inicial', 10, 2)->nullable();

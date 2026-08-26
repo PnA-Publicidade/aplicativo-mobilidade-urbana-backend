@@ -1,16 +1,20 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Tarifa;
 
+use App\Http\Controllers\Controller;
 use App\Models\Tarifa;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 
 class TarifaController extends Controller
 {
     /**
      * Display a listing of the resource.
+     *
+     * @return LengthAwarePaginator<int, Tarifa>
      */
-    public function index()
+    public function index(): LengthAwarePaginator
     {
         return Tarifa::with('produto')->paginate();
     }
@@ -18,9 +22,8 @@ class TarifaController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request): void
     {
-
         // Tarifa::create([
         //     'cidade_id' => 18,
         //     'produto_id' => 1
@@ -31,7 +34,7 @@ class TarifaController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Tarifa $Tarifa)
+    public function show(Tarifa $tarifa): void
     {
         //
     }
@@ -39,7 +42,7 @@ class TarifaController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Tarifa $Tarifa)
+    public function update(Request $request, Tarifa $tarifa): void
     {
         //
     }
@@ -47,7 +50,7 @@ class TarifaController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Tarifa $Tarifa)
+    public function destroy(Tarifa $tarifa): void
     {
         //
     }

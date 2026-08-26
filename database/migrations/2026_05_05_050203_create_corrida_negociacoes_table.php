@@ -24,7 +24,7 @@ return new class extends Migration
             $table->enum('status', [
                 'pendente',
                 'aceito',
-                'recusado'
+                'recusado',
             ]);
             $table->timestamps();
         });

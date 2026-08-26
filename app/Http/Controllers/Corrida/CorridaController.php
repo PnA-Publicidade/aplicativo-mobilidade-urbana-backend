@@ -1,24 +1,30 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Corrida;
 
+use App\Http\Controllers\Controller;
 use App\Models\Corrida;
-use App\Models\Passageiro;
 use App\Models\ProdutosCorrida;
+use App\Services\EstimarRotaService;
+use App\Services\SimularCorridaNegociadaService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use App\Services\EstimarRotaService;
 
 class CorridaController extends Controller
 {
     public function __construct(
-        protected EstimarRotaService $estimarRotaService
+        protected EstimarRotaService $estimarRotaService,
+        protected SimularCorridaNegociadaService $simularCorridaNegociadaService
     ) {}
 
     /**
      * Display a listing of the resource.
+     *
+     * @return LengthAwarePaginator<int, Corrida>
      */
-    public function index()
+    public function index(): LengthAwarePaginator
     {
         return Corrida::with(
             [
@@ -34,25 +40,21 @@ class CorridaController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request): void
     {
-        $passageiroId = 1;
-        $motoristaId = 1;
-        $veiculoId = 1;
-        $cidadeId = 18;
         $intinerarioPassageiro = [
             [
-                "endereco_formatado" => "R. Coimbra, 5205 - Conj. 4 de Janeiro, Porto Velho - RO, 76820-556, Brazil",
-                "latitude" => -8.7478987,
-                "longitude" => -63.864684,
-                "ordem" => 0,
+                'endereco_formatado' => 'R. Coimbra, 5205 - Conj. 4 de Janeiro, Porto Velho - RO, 76820-556, Brazil',
+                'latitude' => -8.7478987,
+                'longitude' => -63.864684,
+                'ordem' => 0,
             ],
             [
-                "endereco_formatado" => "Av. Nações Unidas, 555 - Km 1, Porto Velho - RO, 76804-175, Brazil",
-                "latitude" => -8.765801,
-                "longitude" => -63.8926692,
-                "ordem" => 1,
-            ]
+                'endereco_formatado' => 'Av. Nações Unidas, 555 - Km 1, Porto Velho - RO, 76804-175, Brazil',
+                'latitude' => -8.765801,
+                'longitude' => -63.8926692,
+                'ordem' => 1,
+            ],
         ];
 
         $estimativaIntinerarioPassageiro = $this->estimarRotaService->executar(enderecos: $intinerarioPassageiro);
@@ -62,35 +64,32 @@ class CorridaController extends Controller
         $prudutoEscolhido = 'negocia';
         $produto = ProdutosCorrida::where('codigo', $prudutoEscolhido)->first();
 
-        $formaPagamento = 'dinheiro';
         $intinerarioMotoristaAteOrigem = [
             [
-                "endereco_formatado" => "R. Coimbra, 4994 - Flodoaldo Pontes Pinto, Porto Velho - RO, 76820-556, Brazil",
-                "latitude" => -8.7491451,
-                "longitude" => -63.8662573,
-                "ordem" => 0,
+                'endereco_formatado' => 'R. Coimbra, 4994 - Flodoaldo Pontes Pinto, Porto Velho - RO, 76820-556, Brazil',
+                'latitude' => -8.7491451,
+                'longitude' => -63.8662573,
+                'ordem' => 0,
             ],
             [
-                "endereco_formatado" => "R. Coimbra, 5205 - Conj. 4 de Janeiro, Porto Velho - RO, 76820-556, Brazil",
-                "latitude" => -8.7478987,
-                "longitude" => -63.864684,
-                "ordem" => 1,
+                'endereco_formatado' => 'R. Coimbra, 5205 - Conj. 4 de Janeiro, Porto Velho - RO, 76820-556, Brazil',
+                'latitude' => -8.7478987,
+                'longitude' => -63.864684,
+                'ordem' => 1,
             ],
         ];
         $estimativaIntinerarioMotoristaAteOrigem = $this->estimarRotaService->executar(enderecos: $intinerarioMotoristaAteOrigem);
         $tempoIntinerarioMotoristaAteOrigem = $estimativaIntinerarioMotoristaAteOrigem['tempo_minutos'];
-        $distanciaIntinerarioMotoristaAteOrigem = $estimativaIntinerarioMotoristaAteOrigem['tempodistancia_kmminutos'];
+        $distanciaIntinerarioMotoristaAteOrigem = $estimativaIntinerarioMotoristaAteOrigem['distancia_km'];
         $tempoTotalIntinarantes = $tempoIntinerarioMotoristaAteOrigem + $tempoIntinerarioPassageiro;
         $distanciaTotalIntinerarios = $distanciaIntinerarioMotoristaAteOrigem + $distanciaIntinerarioPassageiro;
-        $contraPropostaMotorista = 0;
-        $diferencaNegociada = 0;
-        // aqui manda o service  SimularCorridaNegociadaService e manda as informacoes de intinerarios (distancia e tempo).
+        // aqui manda o service SimularCorridaNegociadaService e manda as informacoes de intinerarios (distancia e tempo).
     }
 
     /**
      * Display the specified resource.
      */
-    public function show(Corrida $corrida)
+    public function show(Corrida $corrida): void
     {
         //
     }
@@ -98,7 +97,7 @@ class CorridaController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Corrida $corrida)
+    public function update(Request $request, Corrida $corrida): void
     {
         //
     }
@@ -106,15 +105,14 @@ class CorridaController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Corrida $corrida)
+    public function destroy(Corrida $corrida): void
     {
         //
     }
 
-
-    public function buscarEndereco(Request $request)
+    public function buscarEndereco(Request $request): JsonResponse
     {
-        $endereco = $request->endereco ?? '';
+        $endereco = $request->string('endereco')->toString();
 
         if (empty($endereco)) {
             return response()->json(null);
@@ -124,8 +122,8 @@ class CorridaController extends Controller
             'https://maps.googleapis.com/maps/api/place/textsearch/json',
             [
                 'query' => $endereco,
-                'key' => env('GOOGLE_MAPS_API_KEY'),
-                'language' => 'pt-BR'
+                'key' => config('services.google_maps.key'),
+                'language' => 'pt-BR',
             ]
         );
 
@@ -141,11 +139,11 @@ class CorridaController extends Controller
         $formattedAddress = $resultado['formatted_address'] ?? '';
 
         // Remove o texto do "name" do início do formattedAddress
-        if (!empty($name) && str_contains($formattedAddress, $name)) {
+        if (! empty($name) && str_contains($formattedAddress, $name)) {
 
             // Remove o name + vírgula/espaço após ele
             $formattedAddress = preg_replace(
-                '/^' . preg_quote($name, '/') . '\s*,?\s*-?\s*/u',
+                '/^'.preg_quote($name, '/').'\s*,?\s*-?\s*/u',
                 '',
                 $formattedAddress
             );
@@ -160,5 +158,26 @@ class CorridaController extends Controller
             'latitude' => $resultado['geometry']['location']['lat'],
             'longitude' => $resultado['geometry']['location']['lng'],
         ]);
+    }
+
+    public function calculoEntreEnderecos(Request $request): JsonResponse
+    {
+        $enderecos = $request->input('enderecos', []);
+
+        return response()->json($this->estimarRotaService->executar(enderecos: $enderecos));
+    }
+
+    public function simularCorridaNegociada(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'distancia_km' => 'required|numeric',
+            'tempo_min' => 'required|numeric',
+            'diferenca_negociada' => 'nullable|numeric',
+            'valor_por_km' => 'nullable|numeric',
+            'valor_por_minuto' => 'nullable|numeric',
+            'taxa_percentual' => 'nullable|numeric',
+        ]);
+
+        return response()->json($this->simularCorridaNegociadaService->executar($dados));
     }
 }

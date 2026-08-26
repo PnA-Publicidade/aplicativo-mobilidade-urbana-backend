@@ -1,7 +1,5 @@
 <?php
 
-use SebastianBergmann\FileIterator\Facade;
-
 return [
 
     /*

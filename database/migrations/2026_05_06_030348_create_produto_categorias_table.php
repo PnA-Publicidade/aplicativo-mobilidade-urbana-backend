@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('produto_categorias', function (Blueprint $table) {
             $table->id();
-            $table->boolean('produto_id')->nullable(0);
-            $table->integer('prioridade')->nullable(0);
+            $table->foreignId('produto_id')->constrained('produtos_corridas');
+            $table->integer('prioridade');
             $table->enum('categoria', [
                 'carro',
                 'motor',

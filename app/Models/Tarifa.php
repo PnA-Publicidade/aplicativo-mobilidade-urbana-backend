@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Database\Factories\TarifaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Tarifa extends Model
 {
+    /** @use HasFactory<TarifaFactory> */
     use HasFactory;
 
     protected $fillable = [
@@ -27,7 +30,10 @@ class Tarifa extends Model
         'ativo',
     ];
 
-    public function produto()
+    /**
+     * @return BelongsTo<ProdutosCorrida, $this>
+     */
+    public function produto(): BelongsTo
     {
         return $this->belongsTo(ProdutosCorrida::class, 'produto_id');
     }

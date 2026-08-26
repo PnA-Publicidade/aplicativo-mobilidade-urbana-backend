@@ -2,11 +2,16 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Database\Factories\CorridaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Corrida extends Model
 {
+    /** @use HasFactory<CorridaFactory> */
     use HasFactory;
 
     protected $fillable = [
@@ -24,7 +29,6 @@ class Corrida extends Model
         'status_negociacao',
         'cancelado_por',
         'tempo_solicitacao',
-        'tempo_solicitacao',
         'tempo_aceite',
         'tempo_embarque',
         'tempo_inicio',
@@ -38,27 +42,42 @@ class Corrida extends Model
         'status_pagamento',
     ];
 
-    public function corrida_financeiro()
+    /**
+     * @return HasOne<CorridaFinanceiro, $this>
+     */
+    public function corrida_financeiro(): HasOne
     {
         return $this->hasOne(CorridaFinanceiro::class, 'corrida_id', 'id');
     }
 
-    public function corrida_destinos()
+    /**
+     * @return HasMany<CorridaDestino, $this>
+     */
+    public function corrida_destinos(): HasMany
     {
         return $this->hasMany(CorridaDestino::class);
     }
 
-    public function motorista()
+    /**
+     * @return BelongsTo<Motorista, $this>
+     */
+    public function motorista(): BelongsTo
     {
         return $this->belongsTo(Motorista::class);
     }
 
-    public function passageiro()
+    /**
+     * @return BelongsTo<Passageiro, $this>
+     */
+    public function passageiro(): BelongsTo
     {
         return $this->belongsTo(Passageiro::class);
     }
 
-    public function veiculo()
+    /**
+     * @return BelongsTo<Veiculo, $this>
+     */
+    public function veiculo(): BelongsTo
     {
         return $this->belongsTo(Veiculo::class);
     }
