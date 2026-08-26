@@ -15,6 +15,6 @@ class MotoristaDocumento extends Model
         'size',
         'path',
         'status',
-        'observacao'
+        'observacao',
     ];
 }

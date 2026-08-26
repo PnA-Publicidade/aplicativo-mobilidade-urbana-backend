@@ -1,5 +1,7 @@
 <?php
 
+use Intervention\Image\Drivers\Gd\Driver;
+
 return [
 
     /*
@@ -16,7 +18,7 @@ return [
     |   - \Intervention\Image\Drivers\Vips\Driver::class
     */
 
-    'driver' => env('IMAGE_DRIVER', \Intervention\Image\Drivers\Gd\Driver::class),
+    'driver' => env('IMAGE_DRIVER', Driver::class),
 
     /*
     |--------------------------------------------------------------------------
@@ -42,5 +44,5 @@ return [
         'decodeAnimation' => true,
         'backgroundColor' => 'ffffff',
         'strip' => false,
-    ]
+    ],
 ];

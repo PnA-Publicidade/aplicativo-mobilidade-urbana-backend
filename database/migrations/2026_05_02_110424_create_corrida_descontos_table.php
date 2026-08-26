@@ -24,7 +24,7 @@ return new class extends Migration
             $table->enum('tipo', [
                 'cupom',
                 'promocao',
-                'ajuste_manual'
+                'ajuste_manual',
             ]);
 
             // Código do cupom (ex: "PVH10") - Opcional pois ajuste_manual pode não ter código

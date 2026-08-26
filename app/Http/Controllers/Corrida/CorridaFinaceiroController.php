@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Corrida;
 
+use App\Http\Controllers\Controller;
 use App\Models\CorridaFinanceiro;
 use Illuminate\Http\Request;
 
@@ -10,7 +11,7 @@ class CorridaFinaceiroController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(): void
     {
         //
     }
@@ -18,7 +19,7 @@ class CorridaFinaceiroController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request): void
     {
         //
     }
@@ -26,7 +27,7 @@ class CorridaFinaceiroController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(CorridaFinaceiro $corridaFinaceiro)
+    public function show(CorridaFinanceiro $corridaFinanceiro): void
     {
         //
     }
@@ -34,7 +35,7 @@ class CorridaFinaceiroController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, CorridaFinaceiro $corridaFinaceiro)
+    public function update(Request $request, CorridaFinanceiro $corridaFinanceiro): void
     {
         //
     }
@@ -42,7 +43,7 @@ class CorridaFinaceiroController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(CorridaFinaceiro $corridaFinaceiro)
+    public function destroy(CorridaFinanceiro $corridaFinanceiro): void
     {
         //
     }

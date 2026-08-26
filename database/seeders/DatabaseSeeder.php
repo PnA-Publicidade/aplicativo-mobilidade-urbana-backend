@@ -2,17 +2,17 @@
 
 namespace Database\Seeders;
 
-use App\Models\Tarifa;
 use App\Models\Corrida;
 use App\Models\CorridaDesconto;
 use App\Models\CorridaDestino;
 use App\Models\CorridaFinanceiro;
 use App\Models\Motorista;
-use App\Models\User;
-use App\Models\Veiculo;
 use App\Models\Passageiro;
 use App\Models\ProdutoCategoria;
 use App\Models\ProdutosCorrida;
+use App\Models\Tarifa;
+use App\Models\User;
+use App\Models\Veiculo;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -25,7 +25,6 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-
 
         // $ProdutosCorrida = ProdutosCorrida::factory()->create([
         //     'nome' => 'Negocia',
@@ -60,10 +59,10 @@ class DatabaseSeeder extends Seeder
             'data_nascimento' => '2022-04-11',
             'telefone' => '69981400661',
             'email' => 'test@example.com',
-            'cpf' => "01149897295",
-            'foto' => "",
-            'foto_thumbnail' => "",
-            'status' => "ativo"
+            'cpf' => '01149897295',
+            'foto' => '',
+            'foto_thumbnail' => '',
+            'status' => 'ativo',
         ]);
 
         // $motorista = Motorista::factory()->create([
@@ -86,7 +85,6 @@ class DatabaseSeeder extends Seeder
         //     'status' => 'pendente',
         //     'uf' => 'RO',
         // ]);
-
 
         // // Tarrifa negociada
         // Tarifa::factory()->create([
@@ -150,7 +148,6 @@ class DatabaseSeeder extends Seeder
         //     },
 
         //     'distancia_total' => fake()->randomFloat(2, 1, 50), // Até 50km
-
 
         // ]);
 

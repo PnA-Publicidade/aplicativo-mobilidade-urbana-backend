@@ -9,7 +9,8 @@ class CodigoVerificacao extends Model
     protected $fillable = [
         'telefone',
         'codigo',
-        'expira_em'
+        'expira_em',
     ];
+
     protected $table = 'codigo_verificacoes';
 }

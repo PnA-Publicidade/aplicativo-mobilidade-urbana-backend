@@ -5,6 +5,7 @@
 .env.production
 .phpactor.json
 .phpunit.result.cache
+/.claude/settings.local.json
 /.cursor/
 /.idea
 /.nova
@@ -17,6 +18,7 @@
 /public/hot
 /public/storage
 /storage/*.key
+/storage/framework/phpstan
 /storage/pail
 /vendor
 _ide_helper.php
@@ -24,4 +26,5 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /public/images
+/docs/docs-claude
 

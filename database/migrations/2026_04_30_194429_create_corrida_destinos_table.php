@@ -23,7 +23,7 @@ return new class extends Migration
             $table->enum('tipo', [
                 'origem',
                 'parada',
-                'destino'
+                'destino',
             ]);
 
             // Ordem no trajeto

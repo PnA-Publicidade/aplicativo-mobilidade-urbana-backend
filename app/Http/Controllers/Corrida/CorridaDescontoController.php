@@ -1,16 +1,17 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Corrida;
 
-use App\Models\CorridaNegociacoes;
+use App\Http\Controllers\Controller;
+use App\Models\CorridaDesconto;
 use Illuminate\Http\Request;
 
-class CorridaNegociacoesController extends Controller
+class CorridaDescontoController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(): void
     {
         //
     }
@@ -18,7 +19,7 @@ class CorridaNegociacoesController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request): void
     {
         //
     }
@@ -26,7 +27,7 @@ class CorridaNegociacoesController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(CorridaNegociacoes $corridaNegociacoe)
+    public function show(CorridaDesconto $corridaDesconto): void
     {
         //
     }
@@ -34,7 +35,7 @@ class CorridaNegociacoesController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, CorridaNegociacoes $corridaNegociacoe)
+    public function update(Request $request, CorridaDesconto $corridaDesconto): void
     {
         //
     }
@@ -42,7 +43,7 @@ class CorridaNegociacoesController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(CorridaNegociacoes $corridaNegociacoe)
+    public function destroy(CorridaDesconto $corridaDesconto): void
     {
         //
     }

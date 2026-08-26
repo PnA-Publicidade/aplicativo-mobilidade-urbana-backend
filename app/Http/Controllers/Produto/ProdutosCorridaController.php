@@ -1,16 +1,20 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Produto;
 
+use App\Http\Controllers\Controller;
 use App\Models\ProdutosCorrida;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 
 class ProdutosCorridaController extends Controller
 {
     /**
      * Display a listing of the resource.
+     *
+     * @return LengthAwarePaginator<int, ProdutosCorrida>
      */
-    public function index()
+    public function index(): LengthAwarePaginator
     {
         return ProdutosCorrida::paginate();
     }
@@ -18,7 +22,7 @@ class ProdutosCorridaController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request): void
     {
         //
     }
@@ -26,7 +30,7 @@ class ProdutosCorridaController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(ProdutosCorrida $ProdutosCorrida)
+    public function show(ProdutosCorrida $produtosCorrida): void
     {
         //
     }
@@ -34,7 +38,7 @@ class ProdutosCorridaController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, ProdutosCorrida $ProdutosCorrida)
+    public function update(Request $request, ProdutosCorrida $produtosCorrida): void
     {
         //
     }
@@ -42,7 +46,7 @@ class ProdutosCorridaController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(ProdutosCorrida $ProdutosCorrida)
+    public function destroy(ProdutosCorrida $produtosCorrida): void
     {
         //
     }

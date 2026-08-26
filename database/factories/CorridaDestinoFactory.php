@@ -2,11 +2,11 @@
 
 namespace Database\Factories;
 
-use App\Models\CorrridaDestino;
+use App\Models\CorridaDestino;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<CorrridaDestino>
+ * @extends Factory<CorridaDestino>
  */
 class CorridaDestinoFactory extends Factory
 {

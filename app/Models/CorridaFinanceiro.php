@@ -2,12 +2,16 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Database\Factories\CorridaFinanceiroFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CorridaFinanceiro extends Model
 {
+    /** @use HasFactory<CorridaFinanceiroFactory> */
     use HasFactory;
+
     protected $fillable = [
         'corrida_id',
         'valor_bruto',
@@ -26,10 +30,13 @@ class CorridaFinanceiro extends Model
         'valor_ajuste_negociado',
         'valor_motorista',
         'valor_liquido_motorista',
-        'metodo_pagamento'
+        'metodo_pagamento',
     ];
 
-    public function corrida_desconto()
+    /**
+     * @return HasOne<CorridaDesconto, $this>
+     */
+    public function corrida_desconto(): HasOne
     {
         return $this->hasOne(CorridaDesconto::class, 'corrida_id', 'id');
     }

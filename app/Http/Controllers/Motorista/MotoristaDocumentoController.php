@@ -1,17 +1,22 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Motorista;
 
+use App\Http\Controllers\Controller;
 use App\Models\MotoristaDocumento;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class MotoristaDocumentoController extends Controller
 {
     /**
      * Display a listing of the resource.
+     *
+     * @return LengthAwarePaginator<int, MotoristaDocumento>
      */
-    public function index()
+    public function index(): LengthAwarePaginator
     {
         return MotoristaDocumento::paginate();
     }
@@ -19,10 +24,7 @@ class MotoristaDocumentoController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-
-
-
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
         $request->validate([
             'motorista_id' => 'required|integer',
@@ -33,7 +35,7 @@ class MotoristaDocumentoController extends Controller
         $file = $request->file('arquivo');
 
         // Nome único
-        $fileName = time() . '_' . $file->getClientOriginalName();
+        $fileName = time().'_'.$file->getClientOriginalName();
 
         // Salvar arquivo
         $path = $file->storeAs('motorista_documentos', $fileName);
@@ -52,14 +54,16 @@ class MotoristaDocumentoController extends Controller
 
         return response()->json([
             'message' => 'Arquivo enviado com sucesso',
-            'data' => $motoristaDocumento
+            'data' => $motoristaDocumento,
         ], 201);
     }
 
     /**
      * Display the specified resource.
+     *
+     * @return LengthAwarePaginator<int, MotoristaDocumento>
      */
-    public function show($motoristaDocumentoId)
+    public function show(int $motoristaDocumentoId): LengthAwarePaginator
     {
         return MotoristaDocumento::where('motorista_id', $motoristaDocumentoId)->paginate();
     }
@@ -67,7 +71,7 @@ class MotoristaDocumentoController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, MotoristaDocumento $motoristaDocumento)
+    public function update(Request $request, MotoristaDocumento $motoristaDocumento): void
     {
         //
     }
@@ -75,13 +79,13 @@ class MotoristaDocumentoController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $motoristaDocumentoId)
+    public function destroy(string $motoristaDocumentoId): JsonResponse
     {
         $motoristaDocumento = MotoristaDocumento::find($motoristaDocumentoId);
 
-        if (!$motoristaDocumento) {
+        if (! $motoristaDocumento) {
             return response()->json([
-                'message' => 'Documento não encontrado'
+                'message' => 'Documento não encontrado',
             ], 404);
         }
 
@@ -94,17 +98,18 @@ class MotoristaDocumentoController extends Controller
         $motoristaDocumento->delete();
 
         return response()->json([
-            'message' => 'Documento removido com sucesso'
+            'message' => 'Documento removido com sucesso',
         ]);
     }
 
-    public function mudarStatusDocumento(Request $request, int $motoristaDocumentoId)
+    public function mudarStatusDocumento(Request $request, int $motoristaDocumentoId): JsonResponse
     {
-        $motoristaDocumento = MotoristaDocumento::find($motoristaDocumentoId);
+        $motoristaDocumento = MotoristaDocumento::findOrFail($motoristaDocumentoId);
         $motoristaDocumento->status = $request->status;
         $motoristaDocumento->saveOrFail();
+
         return response()->json([
-            'message' => 'Status do documento alterado com sucesso'
+            'message' => 'Status do documento alterado com sucesso',
         ]);
     }
 }
