@@ -38,15 +38,20 @@ class UsuarioController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $dados = $request->validate([
+            ...$this->regrasCadastro(),
+            'foto' => 'nullable|string',
+        ]);
+
         $user = User::create([
-            'name' => $request->name,
-            'data_nascimento' => $request->data_nascimento,
-            'telefone' => $request->telefone,
-            'cpf' => $request->cpf,
-            'email' => $request->email,
-            'foto' => $request->foto,
+            'name' => $dados['name'],
+            'data_nascimento' => $dados['data_nascimento'],
+            'telefone' => $dados['telefone'] ?? null,
+            'cpf' => $dados['cpf'],
+            'email' => $dados['email'],
+            'foto' => $dados['foto'] ?? null,
             'status' => 'ativo',
-            'password' => bcrypt($request->password),
+            'password' => bcrypt($dados['password']),
         ]);
 
         $this->criarImagemPerfil($request, $user);
@@ -68,14 +73,16 @@ class UsuarioController extends Controller
 
     public function register(Request $request): JsonResponse
     {
+        $dados = $request->validate($this->regrasCadastro());
+
         $user = User::create([
-            'name' => $request->name,
-            'data_nascimento' => $request->data_nascimento,
-            'telefone' => $request->telefone,
-            'cpf' => $request->cpf,
-            'email' => $request->email,
+            'name' => $dados['name'],
+            'data_nascimento' => $dados['data_nascimento'],
+            'telefone' => $dados['telefone'] ?? null,
+            'cpf' => $dados['cpf'],
+            'email' => $dados['email'],
             'status' => 'ativo',
-            'password' => bcrypt($request->password),
+            'password' => bcrypt($dados['password']),
         ]);
 
         $this->criarImagemPerfil($request, $user);
@@ -120,6 +127,21 @@ class UsuarioController extends Controller
     public function destroy(string $id): void
     {
         //
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function regrasCadastro(): array
+    {
+        return [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:6',
+            'telefone' => 'nullable|string|unique:users,telefone',
+            'cpf' => 'required|string|size:11|unique:users,cpf',
+            'data_nascimento' => 'required|date',
+        ];
     }
 
     private function criarImagemPerfil(Request $request, User $user): JsonResponse

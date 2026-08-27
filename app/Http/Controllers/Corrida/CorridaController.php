@@ -115,28 +115,28 @@ class CorridaController extends Controller
         $endereco = $request->string('endereco')->toString();
 
         if (empty($endereco)) {
-            return response()->json(null);
+            return response()->json(null, 404);
         }
 
-        $response = Http::get(
-            'https://maps.googleapis.com/maps/api/place/textsearch/json',
-            [
-                'query' => $endereco,
-                'key' => config('services.google_maps.key'),
-                'language' => 'pt-BR',
-            ]
-        );
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'X-Goog-Api-Key' => config('services.google_maps.key'),
+            'X-Goog-FieldMask' => 'places.displayName,places.formattedAddress,places.location',
+        ])->post('https://places.googleapis.com/v1/places:searchText', [
+            'textQuery' => $endereco,
+            'languageCode' => 'pt-BR',
+        ]);
 
         $data = $response->json();
 
-        if (empty($data['results'])) {
-            return response()->json(null);
+        if (empty($data['places'])) {
+            return response()->json(null, 404);
         }
 
-        $resultado = $data['results'][0];
+        $resultado = $data['places'][0];
 
-        $name = $resultado['name'] ?? '';
-        $formattedAddress = $resultado['formatted_address'] ?? '';
+        $name = $resultado['displayName']['text'] ?? '';
+        $formattedAddress = $resultado['formattedAddress'] ?? '';
 
         // Remove o texto do "name" do início do formattedAddress
         if (! empty($name) && str_contains($formattedAddress, $name)) {
@@ -155,8 +155,8 @@ class CorridaController extends Controller
         return response()->json([
             'name' => $name,
             'formattedAddress' => $formattedAddress,
-            'latitude' => $resultado['geometry']['location']['lat'],
-            'longitude' => $resultado['geometry']['location']['lng'],
+            'latitude' => $resultado['location']['latitude'] ?? null,
+            'longitude' => $resultado['location']['longitude'] ?? null,
         ]);
     }
 
