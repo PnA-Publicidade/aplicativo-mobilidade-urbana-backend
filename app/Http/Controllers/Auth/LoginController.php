@@ -80,9 +80,11 @@ class LoginController extends Controller
 
         $telefone = preg_replace('/\D/', '', $request->string('telefone')->toString());
 
+        $codigo = preg_replace('/\D/', '', $request->string('codigo')->toString());
+
         $registro = Cache::get("codigo_verificacao:$telefone");
 
-        if (! $registro) {
+        if (! $registro || (string) $registro !== $codigo) {
             return response()->json([
                 'message' => 'Código inválido',
             ], Response::HTTP_UNAUTHORIZED);
