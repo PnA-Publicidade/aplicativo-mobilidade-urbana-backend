@@ -10,6 +10,7 @@ use App\Services\SimularCorridaNegociadaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class CorridaController extends Controller
@@ -114,50 +115,65 @@ class CorridaController extends Controller
     {
         $endereco = $request->string('endereco')->toString();
 
-        if (empty($endereco)) {
+        // menos de 3 caracteres quase nunca traz resultado útil — evita
+        // gastar requisição da Places API à toa
+        if (mb_strlen(trim($endereco)) < 3) {
             return response()->json(null, 404);
         }
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'X-Goog-Api-Key' => config('services.google_maps.key'),
-            'X-Goog-FieldMask' => 'places.displayName,places.formattedAddress,places.location',
-        ])->post('https://places.googleapis.com/v1/places:searchText', [
-            'textQuery' => $endereco,
-            'languageCode' => 'pt-BR',
-        ]);
+        // cacheia por texto de busca normalizado — endereços populares
+        // buscados por usuários diferentes reaproveitam a mesma resposta,
+        // sem gastar requisição nova da Places API
+        $chaveCache = 'busca-endereco:'.md5(mb_strtolower(trim($endereco)));
 
-        $data = $response->json();
+        $resultado = Cache::remember($chaveCache, now()->addHours(6), function () use ($endereco) {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'X-Goog-Api-Key' => config('services.google_maps.key'),
+                'X-Goog-FieldMask' => 'places.displayName,places.formattedAddress,places.location',
+            ])->post('https://places.googleapis.com/v1/places:searchText', [
+                'textQuery' => $endereco,
+                'languageCode' => 'pt-BR',
+            ]);
 
-        if (empty($data['places'])) {
+            $data = $response->json();
+
+            if (empty($data['places'])) {
+                return null;
+            }
+
+            $place = $data['places'][0];
+
+            $name = $place['displayName']['text'] ?? '';
+            $formattedAddress = $place['formattedAddress'] ?? '';
+
+            // Remove o texto do "name" do início do formattedAddress
+            if (! empty($name) && str_contains($formattedAddress, $name)) {
+
+                // Remove o name + vírgula/espaço após ele
+                $formattedAddress = preg_replace(
+                    '/^'.preg_quote($name, '/').'\s*,?\s*-?\s*/u',
+                    '',
+                    $formattedAddress
+                );
+
+                // Remove possíveis vírgulas/espaços sobrando no início
+                $formattedAddress = ltrim($formattedAddress, ', -');
+            }
+
+            return [
+                'name' => $name,
+                'formattedAddress' => $formattedAddress,
+                'latitude' => $place['location']['latitude'] ?? null,
+                'longitude' => $place['location']['longitude'] ?? null,
+            ];
+        });
+
+        if (empty($resultado)) {
             return response()->json(null, 404);
         }
 
-        $resultado = $data['places'][0];
-
-        $name = $resultado['displayName']['text'] ?? '';
-        $formattedAddress = $resultado['formattedAddress'] ?? '';
-
-        // Remove o texto do "name" do início do formattedAddress
-        if (! empty($name) && str_contains($formattedAddress, $name)) {
-
-            // Remove o name + vírgula/espaço após ele
-            $formattedAddress = preg_replace(
-                '/^'.preg_quote($name, '/').'\s*,?\s*-?\s*/u',
-                '',
-                $formattedAddress
-            );
-
-            // Remove possíveis vírgulas/espaços sobrando no início
-            $formattedAddress = ltrim($formattedAddress, ', -');
-        }
-
-        return response()->json([
-            'name' => $name,
-            'formattedAddress' => $formattedAddress,
-            'latitude' => $resultado['location']['latitude'] ?? null,
-            'longitude' => $resultado['location']['longitude'] ?? null,
-        ]);
+        return response()->json($resultado);
     }
 
     public function calculoEntreEnderecos(Request $request): JsonResponse
