@@ -13,9 +13,6 @@ return new class extends Migration
     {
         Schema::create('corridas', function (Blueprint $table) {
             $table->id();
-            // Relacionamentos
-            // $table->foreignId('motorista_id')->constrained('users')->cascadeOnDelete();
-            // $table->foreignId('passageiro_id')->constrained('users')->cascadeOnDelete();
             $table->string('codigo_corrida');
 
             $table->integer('produto_id')->nullable();
@@ -87,9 +84,6 @@ return new class extends Migration
             $table->string('motivo_cancelamento')->nullable();
             $table->decimal('distancia_ate_motorista', 10, 2)->nullable();
             $table->timestamps();
-            // INDEX motorista_id
-            // INDEX passageiro_id
-            // INDEX status
         });
     }
 
