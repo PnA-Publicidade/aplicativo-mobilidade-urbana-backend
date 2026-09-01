@@ -140,7 +140,7 @@ class UsuarioController extends Controller
         return [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8|regex:/^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/',
+            'password' => 'required|string|min:8',
             'telefone' => 'nullable|string|unique:users,telefone',
             'cpf' => 'required|string|size:11|unique:users,cpf',
             'data_nascimento' => 'required|date|before_or_equal:'.now()->subYears(18)->toDateString(),
@@ -154,7 +154,6 @@ class UsuarioController extends Controller
     {
         return [
             'password.min' => 'A senha deve ter no mínimo 8 caracteres.',
-            'password.regex' => 'A senha deve ter ao menos 1 letra maiúscula, 1 número e 1 símbolo.',
             'data_nascimento.before_or_equal' => 'Você precisa ter pelo menos 18 anos para se cadastrar.',
         ];
     }
