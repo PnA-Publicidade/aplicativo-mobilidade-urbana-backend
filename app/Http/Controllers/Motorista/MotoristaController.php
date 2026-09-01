@@ -26,7 +26,15 @@ class MotoristaController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $motorista = Motorista::create($request->input());
+        $dados = $request->validate([
+            'user_id' => 'required|integer|exists:users,id|unique:motoristas,user_id',
+            'cnh_numero' => 'required|string',
+            'cnh_categoria' => 'required|string',
+            'cnh_expiracao' => 'required|date',
+            'ear' => 'required|boolean',
+        ]);
+
+        $motorista = Motorista::create($dados);
 
         return response()->json([
             'success' => true,
@@ -49,7 +57,15 @@ class MotoristaController extends Controller
     public function update(Request $request, int $motoristaid): JsonResponse
     {
         $motorista = Motorista::findOrFail($motoristaid);
-        $motorista->update($request->input());
+
+        $dados = $request->validate([
+            'cnh_numero' => 'sometimes|required|string',
+            'cnh_categoria' => 'sometimes|required|string',
+            'cnh_expiracao' => 'sometimes|required|date',
+            'ear' => 'sometimes|required|boolean',
+        ]);
+
+        $motorista->update($dados);
 
         return response()->json([
             'success' => true,
@@ -68,7 +84,12 @@ class MotoristaController extends Controller
 
     public function adicionarVeiculoAoMotorista(Request $request): JsonResponse
     {
-        $motoristaVeiculo = MotoristaVeiculo::create($request->input());
+        $dados = $request->validate([
+            'motorista_id' => 'required|integer|exists:motoristas,id',
+            'veiculo_id' => 'required|integer|exists:veiculos,id',
+        ]);
+
+        $motoristaVeiculo = MotoristaVeiculo::create($dados);
 
         return response()->json([
             'success' => true,

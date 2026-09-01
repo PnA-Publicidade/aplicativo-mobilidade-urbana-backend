@@ -8,6 +8,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class VeiculosController extends Controller
 {
@@ -26,7 +27,24 @@ class VeiculosController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $veiculo = Veiculo::create($request->input());
+        $dados = $request->validate([
+            'marca' => 'required|string',
+            'modelo' => 'required|string',
+            'ano_fabricacao' => 'required|integer|digits:4',
+            'ano_modelo' => 'required|integer|digits:4',
+            'cor' => 'required|string',
+            'placa' => [
+                'required',
+                'string',
+                Rule::unique('veiculos')->where('renavam', $request->input('renavam')),
+            ],
+            'renavam' => 'required|string|max:11',
+            'categoria' => 'required|string',
+            'status' => 'required|string',
+            'uf' => 'required|string|size:2',
+        ]);
+
+        $veiculo = Veiculo::create($dados);
 
         return response()->json([
             'success' => true,
@@ -49,7 +67,28 @@ class VeiculosController extends Controller
     public function update(Request $request, int $veiculoId): JsonResponse
     {
         $veiculo = Veiculo::findOrFail($veiculoId);
-        $veiculo->update($request->input());
+
+        $dados = $request->validate([
+            'marca' => 'sometimes|required|string',
+            'modelo' => 'sometimes|required|string',
+            'ano_fabricacao' => 'sometimes|required|integer|digits:4',
+            'ano_modelo' => 'sometimes|required|integer|digits:4',
+            'cor' => 'sometimes|required|string',
+            'placa' => [
+                'sometimes',
+                'required',
+                'string',
+                Rule::unique('veiculos')
+                    ->where('renavam', $request->input('renavam', $veiculo->renavam))
+                    ->ignore($veiculo->id),
+            ],
+            'renavam' => 'sometimes|required|string|max:11',
+            'categoria' => 'sometimes|required|string',
+            'status' => 'sometimes|required|string',
+            'uf' => 'sometimes|required|string|size:2',
+        ]);
+
+        $veiculo->update($dados);
 
         return response()->json([
             'success' => true,
@@ -61,7 +100,7 @@ class VeiculosController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Veiculo $veiculos): void
+    public function destroy(Veiculo $veiculo): void
     {
         //
     }
