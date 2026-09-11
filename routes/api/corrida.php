@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Route;
 // já dentro do grupo auth:jwt (ver routes/api.php)
 Route::get('buscar-endereco', [CorridaController::class, 'buscarEndereco']);
 Route::get('calculos-entre-endereco', [CorridaController::class, 'calculoEntreEnderecos']);
+Route::post('tracado-rota', [CorridaController::class, 'tracadoRota']);
 
 Route::apiResource('corridas', CorridaController::class);
 Route::get('corridas-negociada', [CorridaController::class, 'simularCorridaNegociada']);

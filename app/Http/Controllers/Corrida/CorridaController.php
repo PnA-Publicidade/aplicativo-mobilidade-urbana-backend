@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Corrida;
 use App\Models\ProdutosCorrida;
 use App\Services\EstimarRotaService;
+use App\Services\ObterTracadoRotaService;
 use App\Services\SimularCorridaNegociadaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -19,8 +20,30 @@ class CorridaController extends Controller
 
     public function __construct(
         protected EstimarRotaService $estimarRotaService,
-        protected SimularCorridaNegociadaService $simularCorridaNegociadaService
+        protected SimularCorridaNegociadaService $simularCorridaNegociadaService,
+        protected ObterTracadoRotaService $obterTracadoRotaService
     ) {}
+
+    public function tracadoRota(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'pontos' => 'required|array|min:2',
+            'pontos.*.latitude' => 'required|numeric|between:-90,90',
+            'pontos.*.longitude' => 'required|numeric|between:-180,180',
+        ]);
+
+        $pontos = array_values(array_map(
+            fn (array $ponto) => [
+                'latitude' => (float) $ponto['latitude'],
+                'longitude' => (float) $ponto['longitude'],
+            ],
+            $dados['pontos']
+        ));
+
+        return response()->json([
+            'coordinates' => $this->obterTracadoRotaService->executar($pontos),
+        ]);
+    }
 
     /**
      * Display a listing of the resource.
