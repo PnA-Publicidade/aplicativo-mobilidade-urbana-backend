@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
-use Intervention\Image\Laravel\Facades\Image;
+use Illuminate\Support\Facades\Image;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
 class UsuarioController extends Controller
@@ -174,9 +174,27 @@ class UsuarioController extends Controller
             $thumbnail = $image->getClientOriginalName();
             $thumbnail = time().'_thumbnail'.$thumbnail;
 
-            Image::decode($image)
-                ->resize(100, 100)
-                ->save(public_path('images/').$thumbnail);
+            // Image aqui é a facade nativa do Laravel (Illuminate\Support\Facades\Image).
+            // Antes era a do intervention/image-laravel, e as duas registram o
+            // MESMO binding no container ('image') — o provider do framework
+            // ganha, então a facade do Intervention resolvia para o
+            // Illuminate\Image\ImageManager e o decode() estourava
+            // "Call to undefined method ...GdDriver::decode()".
+            //
+            // A API nativa grava em disco do Storage, não num caminho solto,
+            // então o thumbnail é escrito com os bytes direto no mesmo lugar
+            // de antes.
+            //
+            // O ensureDirectoryExists é necessário porque quem criava
+            // public/images era o move() do arquivo original, que só roda
+            // DEPOIS daqui — numa instalação limpa a primeira gravação do
+            // thumbnail falhava por falta da pasta.
+            File::ensureDirectoryExists(public_path('images'));
+
+            File::put(
+                public_path('images/').$thumbnail,
+                Image::fromUpload($image)->resize(100, 100)->toBytes(),
+            );
 
             $image->move(public_path('images'), $imageName);
             $user->foto = "{$host}/images/{$imageName}";
