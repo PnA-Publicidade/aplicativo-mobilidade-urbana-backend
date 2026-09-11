@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Http;
 
 class CorridaController extends Controller
 {
+    private const METROS_POR_GRAU_LATITUDE = 111320;
+
     public function __construct(
         protected EstimarRotaService $estimarRotaService,
         protected SimularCorridaNegociadaService $simularCorridaNegociadaService
@@ -118,62 +120,153 @@ class CorridaController extends Controller
         // menos de 3 caracteres quase nunca traz resultado útil — evita
         // gastar requisição da Places API à toa
         if (mb_strlen(trim($endereco)) < 3) {
-            return response()->json(null, 404);
+            return response()->json([], 404);
         }
 
-        // cacheia por texto de busca normalizado — endereços populares
-        // buscados por usuários diferentes reaproveitam a mesma resposta,
-        // sem gastar requisição nova da Places API
-        $chaveCache = 'busca-endereco:'.md5(mb_strtolower(trim($endereco)));
+        [$biasLatitude, $biasLongitude] = $this->centroDoViesDeBusca($request);
 
-        $resultado = Cache::remember($chaveCache, now()->addHours(6), function () use ($endereco) {
-            $response = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'X-Goog-Api-Key' => config('services.google_maps.key'),
-                'X-Goog-FieldMask' => 'places.displayName,places.formattedAddress,places.location',
-            ])->post('https://places.googleapis.com/v1/places:searchText', [
-                'textQuery' => $endereco,
-                'languageCode' => 'pt-BR',
-            ]);
+        // o viés entra na chave: a mesma busca feita de cidades diferentes
+        // não pode reaproveitar o resultado uma da outra. Arredondado a ~1km
+        // pra não fragmentar o cache a cada metro que o usuário anda.
+        $chaveCache = sprintf(
+            'busca-endereco:%s:%.2f,%.2f',
+            md5(mb_strtolower(trim($endereco))),
+            $biasLatitude,
+            $biasLongitude
+        );
 
-            $data = $response->json();
+        $resultados = Cache::remember(
+            $chaveCache,
+            now()->addHours(6),
+            fn () => $this->consultarPlaces($endereco, $biasLatitude, $biasLongitude)
+        );
 
-            if (empty($data['places'])) {
-                return null;
-            }
-
-            $place = $data['places'][0];
-
-            $name = $place['displayName']['text'] ?? '';
-            $formattedAddress = $place['formattedAddress'] ?? '';
-
-            // Remove o texto do "name" do início do formattedAddress
-            if (! empty($name) && str_contains($formattedAddress, $name)) {
-
-                // Remove o name + vírgula/espaço após ele
-                $formattedAddress = preg_replace(
-                    '/^'.preg_quote($name, '/').'\s*,?\s*-?\s*/u',
-                    '',
-                    $formattedAddress
-                );
-
-                // Remove possíveis vírgulas/espaços sobrando no início
-                $formattedAddress = ltrim($formattedAddress, ', -');
-            }
-
-            return [
-                'name' => $name,
-                'formattedAddress' => $formattedAddress,
-                'latitude' => $place['location']['latitude'] ?? null,
-                'longitude' => $place['location']['longitude'] ?? null,
-            ];
-        });
-
-        if (empty($resultado)) {
-            return response()->json(null, 404);
+        if (empty($resultados)) {
+            return response()->json([], 404);
         }
 
-        return response()->json($resultado);
+        return response()->json($resultados);
+    }
+
+    /**
+     * Centro do viés de busca: a posição do usuário quando ela vem na
+     * requisição, senão o padrão configurado.
+     *
+     * Sem viés, o searchText do Places casa "Avenida Sete" com qualquer
+     * cidade do país — era o que fazia busca ambígua trazer endereço a
+     * centenas de quilômetros.
+     *
+     * @return array{0: float, 1: float}
+     */
+    private function centroDoViesDeBusca(Request $request): array
+    {
+        $latitude = $request->float('latitude');
+        $longitude = $request->float('longitude');
+
+        $informouPosicao = $latitude !== 0.0
+            && $longitude !== 0.0
+            && abs($latitude) <= 90
+            && abs($longitude) <= 180;
+
+        if ($informouPosicao) {
+            return [$latitude, $longitude];
+        }
+
+        return [
+            (float) config('services.google_maps.bias_latitude'),
+            (float) config('services.google_maps.bias_longitude'),
+        ];
+    }
+
+    /**
+     * @return list<array{name: string, formattedAddress: string, latitude: float|null, longitude: float|null}>
+     */
+    private function consultarPlaces(string $endereco, float $biasLatitude, float $biasLongitude): array
+    {
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'X-Goog-Api-Key' => config('services.google_maps.key'),
+            'X-Goog-FieldMask' => 'places.displayName,places.formattedAddress,places.location',
+        ])->post('https://places.googleapis.com/v1/places:searchText', [
+            'textQuery' => $endereco,
+            'languageCode' => 'pt-BR',
+            'maxResultCount' => (int) config('services.google_maps.max_resultados_busca'),
+            'locationRestriction' => [
+                'rectangle' => $this->caixaAoRedor($biasLatitude, $biasLongitude),
+            ],
+        ]);
+
+        $places = $response->json('places') ?? [];
+
+        return array_values(array_map(
+            fn (array $place) => $this->formatarPlace($place),
+            $places
+        ));
+    }
+
+    /**
+     * Caixa (sudoeste/nordeste) ao redor do centro, a partir do raio configurado.
+     *
+     * O searchText só aceita "rectangle" em locationRestriction — "circle" é
+     * recusado com INVALID_ARGUMENT —, então o raio vira uma caixa.
+     *
+     * Restrição em vez de viés de propósito: o locationBias é uma preferência
+     * suave e o Google ainda devolvia "Avenida Sete de Setembro" em Salvador
+     * para quem busca em Porto Velho. Não existe corrida entre as duas.
+     *
+     * @return array{low: array{latitude: float, longitude: float}, high: array{latitude: float, longitude: float}}
+     */
+    private function caixaAoRedor(float $latitude, float $longitude): array
+    {
+        $raioMetros = (float) config('services.google_maps.bias_raio_metros');
+
+        $grausLatitude = $raioMetros / self::METROS_POR_GRAU_LATITUDE;
+
+        // um grau de longitude encurta conforme se afasta do equador
+        $metrosPorGrauLongitude = self::METROS_POR_GRAU_LATITUDE
+            * max(cos(deg2rad($latitude)), 0.01);
+
+        $grausLongitude = $raioMetros / $metrosPorGrauLongitude;
+
+        return [
+            'low' => [
+                'latitude' => max($latitude - $grausLatitude, -90),
+                'longitude' => max($longitude - $grausLongitude, -180),
+            ],
+            'high' => [
+                'latitude' => min($latitude + $grausLatitude, 90),
+                'longitude' => min($longitude + $grausLongitude, 180),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $place
+     * @return array{name: string, formattedAddress: string, latitude: float|null, longitude: float|null}
+     */
+    private function formatarPlace(array $place): array
+    {
+        $name = $place['displayName']['text'] ?? '';
+        $formattedAddress = $place['formattedAddress'] ?? '';
+
+        // o formattedAddress costuma repetir o name no começo ("Shopping X,
+        // Av. Y, 100") — sem tirar, a lista mostra o mesmo texto duas vezes
+        if (! empty($name) && str_contains($formattedAddress, $name)) {
+            $formattedAddress = preg_replace(
+                '/^'.preg_quote($name, '/').'\s*,?\s*-?\s*/u',
+                '',
+                $formattedAddress
+            ) ?? $formattedAddress;
+
+            $formattedAddress = ltrim($formattedAddress, ', -');
+        }
+
+        return [
+            'name' => $name,
+            'formattedAddress' => $formattedAddress,
+            'latitude' => $place['location']['latitude'] ?? null,
+            'longitude' => $place['location']['longitude'] ?? null,
+        ];
     }
 
     public function calculoEntreEnderecos(Request $request): JsonResponse

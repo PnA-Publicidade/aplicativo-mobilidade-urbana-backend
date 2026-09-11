@@ -37,6 +37,11 @@ return [
 
     'google_maps' => [
         'key' => env('GOOGLE_MAPS_API_KEY'),
+
+        'bias_latitude' => (float) env('GOOGLE_MAPS_BIAS_LATITUDE', -8.76116),
+        'bias_longitude' => (float) env('GOOGLE_MAPS_BIAS_LONGITUDE', -63.90039),
+        'bias_raio_metros' => (int) env('GOOGLE_MAPS_BIAS_RAIO_METROS', 50000),
+        'max_resultados_busca' => (int) env('GOOGLE_MAPS_MAX_RESULTADOS', 5),
     ],
 
     // Terreno preparado para login social (Laravel Socialite) — sem
