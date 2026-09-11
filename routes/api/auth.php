@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\Auth\RefreshController;
 use App\Http\Controllers\Usuario\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
@@ -13,6 +14,11 @@ Route::middleware('throttle:10,1')->group(function () {
     Route::post('/auth/verificar-codigo', [LoginController::class, 'verificarCodigo']);
     Route::post('auth/enviar-codigo', [LoginController::class, 'enviarCodigo']);
     Route::get('auth/verifica-se-conta-existe', [LoginController::class, 'verificaSeContaExiste']);
+
+    // fora do auth:jwt de propósito: o token que chega aqui já está expirado e
+    // o guard rejeitaria antes de dar chance de renovar. Quem valida se ainda
+    // dá pra renovar é o refresh_ttl.
+    Route::post('auth/refresh', RefreshController::class)->name('auth.refresh');
 });
 
 Route::middleware('auth:jwt')->group(function () {
