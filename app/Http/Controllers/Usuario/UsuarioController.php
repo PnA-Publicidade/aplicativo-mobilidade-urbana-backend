@@ -119,18 +119,12 @@ class UsuarioController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id): void
-    {
-        //
-    }
+    public function update(Request $request, string $id): void {}
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id): void
-    {
-        //
-    }
+    public function destroy(string $id): void {}
 
     /**
      * @return array<string, string>
@@ -174,21 +168,6 @@ class UsuarioController extends Controller
             $thumbnail = $image->getClientOriginalName();
             $thumbnail = time().'_thumbnail'.$thumbnail;
 
-            // Image aqui é a facade nativa do Laravel (Illuminate\Support\Facades\Image).
-            // Antes era a do intervention/image-laravel, e as duas registram o
-            // MESMO binding no container ('image') — o provider do framework
-            // ganha, então a facade do Intervention resolvia para o
-            // Illuminate\Image\ImageManager e o decode() estourava
-            // "Call to undefined method ...GdDriver::decode()".
-            //
-            // A API nativa grava em disco do Storage, não num caminho solto,
-            // então o thumbnail é escrito com os bytes direto no mesmo lugar
-            // de antes.
-            //
-            // O ensureDirectoryExists é necessário porque quem criava
-            // public/images era o move() do arquivo original, que só roda
-            // DEPOIS daqui — numa instalação limpa a primeira gravação do
-            // thumbnail falhava por falta da pasta.
             File::ensureDirectoryExists(public_path('images'));
 
             File::put(
@@ -287,15 +266,9 @@ class UsuarioController extends Controller
         }
     }
 
-    public function usuarioDeletar(Request $request): void
-    {
-        //
-    }
+    public function usuarioDeletar(Request $request): void {}
 
-    public function usuarioRestaurar(Request $request): void
-    {
-        //
-    }
+    public function usuarioRestaurar(Request $request): void {}
 
     /**
      * @return LengthAwarePaginator<int, User>
