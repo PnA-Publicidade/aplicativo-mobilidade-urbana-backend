@@ -60,10 +60,13 @@ class LoginController extends Controller
         ]);
         $telefone = preg_replace('/\D/', '', $request->string('telefone')->toString());
 
-        // código fake
+        // código fake — TTL generoso (30min) porque isso é só mockado pro
+        // ambiente de dev; com 60s (valor original) qualquer teste manual
+        // um pouco mais devagar já expirava o código e dava 401 "de
+        // verdade" na verificação, mesmo o fluxo sendo só visual
         $codigo = random_int(1000, 9999);
 
-        Cache::put("codigo_verificacao:$telefone", $codigo, 60);
+        Cache::put("codigo_verificacao:$telefone", $codigo, now()->addMinutes(30));
 
         return response()->json([
             'message' => 'Código enviado',
