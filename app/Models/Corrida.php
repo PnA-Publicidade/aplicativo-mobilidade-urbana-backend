@@ -43,6 +43,14 @@ class Corrida extends Model
     ];
 
     /**
+     * @return HasMany<AvaliacoesCorrida, $this>
+     */
+    public function avaliacoes(): HasMany
+    {
+        return $this->hasMany(AvaliacoesCorrida::class, 'corrida_id');
+    }
+
+    /**
      * @return HasOne<CorridaFinanceiro, $this>
      */
     public function corrida_financeiro(): HasOne
@@ -72,6 +80,14 @@ class Corrida extends Model
     public function passageiro(): BelongsTo
     {
         return $this->belongsTo(Passageiro::class);
+    }
+
+    /**
+     * @return BelongsTo<ProdutosCorrida, $this>
+     */
+    public function produto(): BelongsTo
+    {
+        return $this->belongsTo(ProdutosCorrida::class, 'produto_id');
     }
 
     /**
