@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
-use Intervention\Image\Laravel\Facades\Image;
+use Illuminate\Support\Facades\Image;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
 class UsuarioController extends Controller
@@ -119,18 +119,12 @@ class UsuarioController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id): void
-    {
-        //
-    }
+    public function update(Request $request, string $id): void {}
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id): void
-    {
-        //
-    }
+    public function destroy(string $id): void {}
 
     /**
      * @return array<string, string>
@@ -174,9 +168,12 @@ class UsuarioController extends Controller
             $thumbnail = $image->getClientOriginalName();
             $thumbnail = time().'_thumbnail'.$thumbnail;
 
-            Image::decode($image)
-                ->resize(100, 100)
-                ->save(public_path('images/').$thumbnail);
+            File::ensureDirectoryExists(public_path('images'));
+
+            File::put(
+                public_path('images/').$thumbnail,
+                Image::fromUpload($image)->resize(100, 100)->toBytes(),
+            );
 
             $image->move(public_path('images'), $imageName);
             $user->foto = "{$host}/images/{$imageName}";
@@ -269,15 +266,9 @@ class UsuarioController extends Controller
         }
     }
 
-    public function usuarioDeletar(Request $request): void
-    {
-        //
-    }
+    public function usuarioDeletar(Request $request): void {}
 
-    public function usuarioRestaurar(Request $request): void
-    {
-        //
-    }
+    public function usuarioRestaurar(Request $request): void {}
 
     /**
      * @return LengthAwarePaginator<int, User>
