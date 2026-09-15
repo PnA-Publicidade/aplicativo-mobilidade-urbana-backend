@@ -54,6 +54,8 @@ class DatabaseSeeder extends Seeder
         //     'media_avaliacao' => 4,
         // ]);
         ProdutosCorrida::factory()->count(9)->create();
+
+        $this->call(PrecificacaoSeeder::class);
         $userMotorista = User::factory()->create([
             'name' => 'Diogo Guimarães',
             'data_nascimento' => '2022-04-11',

@@ -10,13 +10,17 @@ class SimularCorridaNegociadaService
      */
     public function executar(array $dados): array
     {
-        $distanciaKm = $dados['distancia_km'];
-        $tempoMin = $dados['tempo_min'];
-        $diferencaNegociada = $dados['diferenca_negociada'] ?? 0;
+        $distanciaKm = max((float) $dados['distancia_km'], 0.0);
+        $tempoMin = max((float) $dados['tempo_min'], 0.0);
+        $diferencaNegociada = (float) ($dados['diferenca_negociada'] ?? 0);
 
-        $valorPorKm = $dados['valor_por_km'] ?? 1.50;
-        $valorPorMinuto = $dados['valor_por_minuto'] ?? 0.25;
-        $taxaPercentual = $dados['taxa_percentual'] ?? 0.06;
+        $valorPorKm = (float) config('precificacao.valor_por_km');
+        $valorPorMinuto = (float) config('precificacao.valor_por_minuto');
+
+        $taxaPercentual = min(
+            max((float) config('precificacao.taxa_plataforma_percentual'), 0.0),
+            (float) config('precificacao.taxa_plataforma_maxima')
+        );
 
         // Base
         $valorDistancia = $distanciaKm * $valorPorKm;
@@ -24,7 +28,7 @@ class SimularCorridaNegociadaService
         $valorBase = $valorDistancia + $valorTempo;
 
         // Negociação
-        $valorMotorista = $valorBase + $diferencaNegociada;
+        $valorMotorista = max($valorBase + $diferencaNegociada, 0.0);
 
         // Passageiro
         $valorPassageiro = $valorMotorista / (1 - $taxaPercentual);

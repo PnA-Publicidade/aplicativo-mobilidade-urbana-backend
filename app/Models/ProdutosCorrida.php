@@ -15,5 +15,6 @@ class ProdutosCorrida extends Model
         'nome',
         'codigo',
         'estrategia_precificacao',
+        'ordem',
     ];
 }
