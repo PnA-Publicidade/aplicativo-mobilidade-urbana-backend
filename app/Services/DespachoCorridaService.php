@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Events\CorridaAtualizada;
 use App\Events\CorridasDisponiveisAlteradas;
 use App\Events\MotoristaMoveu;
+use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
@@ -42,6 +43,28 @@ class DespachoCorridaService
                 'visto_em' => now(),
             ]
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function situacaoDe(Motorista $motorista): array
+    {
+        $status = StatusBusca::where('motorista_id', $motorista->id)->first();
+
+        $corrida = Corrida::where('motorista_id', $motorista->id)
+            ->whereIn('status_corrida', self::STATUS_ATIVOS_MOTORISTA)
+            ->orderByDesc('id')
+            ->first();
+
+        return [
+            'disponivel' => (bool) ($status->disponivel ?? false),
+            'corrida' => $corrida === null ? null : [
+                'id' => $corrida->id,
+                'codigo_corrida' => $corrida->codigo_corrida,
+                'status_corrida' => $corrida->status_corrida,
+            ],
+        ];
     }
 
     public function atualizarPosicao(
@@ -300,6 +323,32 @@ class DespachoCorridaService
             'destino' => $destino?->endereco,
             'paradas' => $corrida->corrida_destinos->where('tipo', 'parada')->count(),
             'solicitada_em' => $corrida->tempo_solicitacao,
+            ...$this->reputacaoDoPassageiro($corrida->passageiro_id),
+        ];
+    }
+
+    /**
+     * Nota que os motoristas deram a esse passageiro e quantas corridas ele já fez.
+     *
+     * @return array<string, mixed>
+     */
+    private function reputacaoDoPassageiro(?int $passageiroId): array
+    {
+        if ($passageiroId === null) {
+            return ['passageiro_nota' => null, 'passageiro_corridas' => 0];
+        }
+
+        $corridasDoPassageiro = Corrida::where('passageiro_id', $passageiroId);
+
+        $media = AvaliacoesCorrida::where('tipo_usuario', 'motorista')
+            ->whereIn('corrida_id', (clone $corridasDoPassageiro)->select('id'))
+            ->avg('nota');
+
+        return [
+            'passageiro_nota' => $media === null ? null : round((float) $media, 2),
+            'passageiro_corridas' => (clone $corridasDoPassageiro)
+                ->where('status_corrida', 'finalizada')
+                ->count(),
         ];
     }
 

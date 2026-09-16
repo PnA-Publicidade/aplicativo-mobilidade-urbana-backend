@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Corrida;
 
 use App\Http\Controllers\Controller;
+use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
+use App\Models\User;
 use App\Services\CalcularPrecoCorridaService;
 use App\Services\DespachoCorridaService;
 use App\Services\EstimarChegadaService;
@@ -134,7 +136,44 @@ class CorridaController extends Controller
             'corrida' => $corrida,
             'motorista_posicao' => $posicao,
             'chegada' => $this->estimarChegadaService->paraCorrida($corrida),
+            'passageiro' => $this->passageiroParaOMotorista($corrida, $request),
         ]);
+    }
+
+    /**
+     * Só o motorista designado enxerga quem é o passageiro e como ligar pra ele.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function passageiroParaOMotorista(Corrida $corrida, Request $request): ?array
+    {
+        $motoristaId = Motorista::where('user_id', $request->user()->id)->value('id');
+
+        if ($motoristaId === null || $corrida->motorista_id !== $motoristaId) {
+            return null;
+        }
+
+        $passageiro = User::find($corrida->passageiro_id);
+
+        if ($passageiro === null) {
+            return null;
+        }
+
+        $corridasDoPassageiro = Corrida::where('passageiro_id', $passageiro->id);
+
+        $nota = AvaliacoesCorrida::where('tipo_usuario', 'motorista')
+            ->whereIn('corrida_id', (clone $corridasDoPassageiro)->select('id'))
+            ->avg('nota');
+
+        return [
+            'nome' => $passageiro->name,
+            'foto' => $passageiro->foto,
+            'telefone' => $passageiro->telefone,
+            'nota' => $nota === null ? null : round((float) $nota, 2),
+            'corridas' => (clone $corridasDoPassageiro)
+                ->where('status_corrida', 'finalizada')
+                ->count(),
+        ];
     }
 
     /**

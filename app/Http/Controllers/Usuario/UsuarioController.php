@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Usuario;
 
 use App\Http\Controllers\Controller;
+use App\Models\Motorista;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Image;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
@@ -73,20 +75,40 @@ class UsuarioController extends Controller
 
     public function register(Request $request): JsonResponse
     {
+        $ehMotorista = $request->input('perfil') === 'motorista';
+
         $dados = $request->validate(
-            $this->regrasCadastro(),
+            [
+                ...$this->regrasCadastro(),
+                'perfil' => 'nullable|in:passageiro,motorista',
+                ...($ehMotorista ? $this->regrasMotorista() : []),
+            ],
             $this->mensagensCadastro()
         );
 
-        $user = User::create([
-            'name' => $dados['name'],
-            'data_nascimento' => $dados['data_nascimento'],
-            'telefone' => $dados['telefone'] ?? null,
-            'cpf' => $dados['cpf'],
-            'email' => $dados['email'],
-            'status' => 'ativo',
-            'password' => bcrypt($dados['password']),
-        ]);
+        $user = DB::transaction(function () use ($dados, $ehMotorista) {
+            $user = User::create([
+                'name' => $dados['name'],
+                'data_nascimento' => $dados['data_nascimento'],
+                'telefone' => $dados['telefone'] ?? null,
+                'cpf' => $dados['cpf'],
+                'email' => $dados['email'],
+                'status' => 'ativo',
+                'password' => bcrypt($dados['password']),
+            ]);
+
+            if ($ehMotorista) {
+                Motorista::create([
+                    'user_id' => $user->id,
+                    'cnh_numero' => preg_replace('/\D/', '', (string) $dados['cnh_numero']),
+                    'cnh_categoria' => strtoupper((string) $dados['cnh_categoria']),
+                    'cnh_expiracao' => $dados['cnh_expiracao'],
+                    'ear' => (bool) ($dados['ear'] ?? false),
+                ]);
+            }
+
+            return $user;
+        });
 
         $this->criarImagemPerfil($request, $user);
 
@@ -103,6 +125,7 @@ class UsuarioController extends Controller
                 'telefone' => $user->telefone,
                 'cpf' => $user->cpf,
                 'data_nascimento' => $user->data_nascimento,
+                'motorista' => $ehMotorista,
             ],
             'token' => $token,
         ], 201);
@@ -129,6 +152,19 @@ class UsuarioController extends Controller
     /**
      * @return array<string, string>
      */
+    private function regrasMotorista(): array
+    {
+        return [
+            'cnh_numero' => 'required|string|max:20',
+            'cnh_categoria' => 'required|string|in:A,B,AB,C,D,E,a,b,ab,c,d,e',
+            'cnh_expiracao' => 'required|date|after:today',
+            'ear' => 'required|boolean',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
     private function regrasCadastro(): array
     {
         return [
@@ -149,6 +185,9 @@ class UsuarioController extends Controller
         return [
             'password.min' => 'A senha deve ter no mínimo 8 caracteres.',
             'data_nascimento.before_or_equal' => 'Você precisa ter pelo menos 18 anos para se cadastrar.',
+            'cnh_numero.required' => 'Informe o número da sua CNH.',
+            'cnh_categoria.in' => 'Categoria de CNH inválida.',
+            'cnh_expiracao.after' => 'Sua CNH está vencida.',
         ];
     }
 
