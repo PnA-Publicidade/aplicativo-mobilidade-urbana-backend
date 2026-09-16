@@ -79,7 +79,7 @@ class EstimarRotaService
         $retorno = [
 
             'origem' => [
-                'endereco' => $origem['formattedAddress'],
+                'endereco' => $origem['formattedAddress'] ?? '',
                 'latitude' => $origem['latitude'],
                 'longitude' => $origem['longitude'],
             ],
@@ -99,7 +99,7 @@ class EstimarRotaService
             $retorno['paradas'] = collect($paradas)->map(function ($parada) {
 
                 return [
-                    'endereco' => $parada['formattedAddress'],
+                    'endereco' => $parada['formattedAddress'] ?? '',
                     'latitude' => $parada['latitude'],
                     'longitude' => $parada['longitude'],
                 ];
@@ -113,7 +113,7 @@ class EstimarRotaService
         */
 
         $retorno['destino'] = [
-            'endereco' => $destino['formattedAddress'],
+            'endereco' => $destino['formattedAddress'] ?? '',
             'latitude' => $destino['latitude'],
             'longitude' => $destino['longitude'],
         ];

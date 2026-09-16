@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
 // Rotas organizadas por domínio em routes/api/*.php, espelhando as pastas
@@ -12,6 +14,8 @@ use Illuminate\Support\Facades\Route;
 require __DIR__.'/api/auth.php';
 
 Route::middleware('auth:jwt')->group(function () {
+    Route::post('broadcasting/auth', fn (Request $request) => Broadcast::auth($request));
+
     require __DIR__.'/api/usuario.php';
     require __DIR__.'/api/veiculo.php';
     require __DIR__.'/api/motorista.php';
