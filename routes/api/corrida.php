@@ -15,6 +15,7 @@ Route::get('buscar-endereco', [CorridaController::class, 'buscarEndereco']);
 Route::get('calculos-entre-endereco', [CorridaController::class, 'calculoEntreEnderecos']);
 Route::post('tracado-rota', [CorridaController::class, 'tracadoRota']);
 
+Route::get('motorista/situacao', [CorridaMotoristaController::class, 'situacao']);
 Route::post('motorista/disponibilidade', [CorridaMotoristaController::class, 'disponibilidade']);
 Route::post('motorista/posicao', [CorridaMotoristaController::class, 'posicao']);
 Route::get('motorista/corridas-disponiveis', [CorridaMotoristaController::class, 'corridasDisponiveis']);
