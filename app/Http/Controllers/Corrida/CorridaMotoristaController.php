@@ -41,6 +41,22 @@ class CorridaMotoristaController extends Controller
         return response()->json($status);
     }
 
+    /**
+     * Estado atual do motorista, para o app não abrir dessincronizado do servidor.
+     */
+    public function situacao(Request $request): JsonResponse
+    {
+        $motorista = $this->motoristaDoUsuario($request);
+
+        if ($motorista === null) {
+            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+        }
+
+        return response()->json(
+            $this->despachoCorridaService->situacaoDe($motorista)
+        );
+    }
+
     public function posicao(Request $request): JsonResponse
     {
         $dados = $request->validate([

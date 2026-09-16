@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('tarifas', function (Blueprint $table) {
             $table->id();
-            $table->integer('cidade_id')->nullable();
-            $table->integer('produto_id')->nullable();
+            $table->unsignedBigInteger('cidade_id')->nullable();
+            $table->unsignedBigInteger('produto_id')->nullable();
             $table->decimal('tarifa_base', 10, 2)->nullable();
             $table->decimal('valor_por_km', 10, 2)->nullable();
             $table->decimal('valor_por_minuto', 10, 2)->nullable();

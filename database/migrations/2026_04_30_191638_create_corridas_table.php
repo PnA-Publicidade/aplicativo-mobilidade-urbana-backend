@@ -14,20 +14,12 @@ return new class extends Migration
         Schema::create('corridas', function (Blueprint $table) {
             $table->id();
             $table->string('codigo_corrida');
-
-            $table->integer('produto_id')->nullable();
-
-            // $table->enum('tipo_corrida', [
-            //     'pop',
-            //     'negociada',
-            //     'pop express',
-            // ])->nullable();
-
-            $table->integer('motorista_id');
-            $table->integer('passageiro_id');
-            $table->integer('veiculo_id');
-            $table->integer('tarifa_id');
-            $table->integer('cidade_id');
+            $table->unsignedBigInteger('motorista_id');
+            $table->unsignedBigInteger('passageiro_id');
+            $table->unsignedBigInteger('veiculo_id');
+            $table->unsignedBigInteger('tarifa_id');
+            $table->unsignedBigInteger('produto_id')->nullable();
+            $table->unsignedBigInteger('cidade_id');
             $table->decimal('multiplicador_dinamico', 10, 2)->nullable();
             $table->timestamp('tempo_chegada_origem')->nullable();
 
