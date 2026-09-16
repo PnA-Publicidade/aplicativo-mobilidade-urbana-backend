@@ -11,7 +11,7 @@ class BannerPublicidade extends Model
     protected $fillable = [
         'cidade_id',
         'titulo',
-        'foto',
-        'foto_thumbnail',
+        'imagem',
+        'imagem_thumbnail',
     ];
 }

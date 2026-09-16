@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
             $table->integer('cidade_id');
             $table->string('titulo');
-            $table->string('foto')->nullable();
-            $table->string('foto_thumbnail')->nullable();
+            $table->string('imagem')->nullable();
+            $table->string('imagem_thumbnail')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

@@ -1,10 +1,11 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Publicidade;
 
 use App\Http\Requests\StoreBannerPublicidadeRequest;
 use App\Http\Requests\UpdateBannerPublicidadeRequest;
 use App\Models\BannerPublicidade;
+use App\Http\Controllers\Controller;
 
 class BannerPublicidadeController extends Controller
 {
@@ -13,7 +14,7 @@ class BannerPublicidadeController extends Controller
      */
     public function index()
     {
-        //
+        return BannerPublicidade::get();
     }
 
     /**
