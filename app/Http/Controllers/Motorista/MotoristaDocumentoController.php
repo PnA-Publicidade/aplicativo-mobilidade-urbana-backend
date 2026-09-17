@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Motorista;
 
 use App\Http\Controllers\Controller;
+use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -104,8 +105,28 @@ class MotoristaDocumentoController extends Controller
 
     public function mudarStatusDocumento(Request $request, int $motoristaDocumentoId): JsonResponse
     {
+        $dados = $request->validate([
+            'status' => 'required|in:em_analise,aprovado,reprovado',
+            'observacao' => 'nullable|string|max:500',
+        ]);
+
         $motoristaDocumento = MotoristaDocumento::findOrFail($motoristaDocumentoId);
-        $motoristaDocumento->status = $request->status;
+
+        // ninguém aprova o próprio documento
+        $motoristaDoUsuario = Motorista::where('user_id', $request->user()->id)->value('id');
+
+        if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
+            return response()->json([
+                'message' => 'Você não pode alterar o status dos seus próprios documentos.',
+            ], 403);
+        }
+
+        $motoristaDocumento->status = $dados['status'];
+
+        if (array_key_exists('observacao', $dados)) {
+            $motoristaDocumento->observacao = $dados['observacao'];
+        }
+
         $motoristaDocumento->saveOrFail();
 
         return response()->json([
