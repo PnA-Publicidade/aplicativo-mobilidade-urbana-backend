@@ -14,7 +14,7 @@ class BannerPublicidadeController extends Controller
      */
     public function index()
     {
-        return BannerPublicidade::get();
+        return BannerPublicidade::with('cidade')->paginate();
     }
 
     /**

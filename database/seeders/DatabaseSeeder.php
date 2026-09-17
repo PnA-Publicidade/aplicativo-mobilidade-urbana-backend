@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\BannerPublicidade;
+use App\Models\Cidade;
 use App\Models\Corrida;
 use App\Models\CorridaDesconto;
 use App\Models\CorridaDestino;
@@ -65,6 +67,25 @@ class DatabaseSeeder extends Seeder
             'foto' => '',
             'foto_thumbnail' => '',
             'status' => 'ativo',
+        ]);
+
+        Cidade::factory()->create([
+            'id' => 4382,
+            'nome' => 'Porto Velho',
+            'uf' => 21,
+            'ibge' => 1100205,
+        ]);
+
+        Cidade::factory()->create([
+            'id' => 4350,
+            'nome' => 'Ariquemes',
+            'uf' => 21,
+            'ibge' => 1100205,
+        ]);
+
+        BannerPublicidade::factory()->create([
+            'cidade_id' => 4382,
+            'Titulo' => 'Convide um amigo para dirigir',
         ]);
 
         // $motorista = Motorista::factory()->create([
