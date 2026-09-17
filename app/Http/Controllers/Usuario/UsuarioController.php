@@ -81,7 +81,6 @@ class UsuarioController extends Controller
             [
                 ...$this->regrasCadastro(),
                 'perfil' => 'nullable|in:passageiro,motorista',
-                ...($ehMotorista ? $this->regrasMotorista() : []),
             ],
             $this->mensagensCadastro()
         );
@@ -98,12 +97,11 @@ class UsuarioController extends Controller
             ]);
 
             if ($ehMotorista) {
+                // nasce pendente e sem CNH: os documentos vêm no passo
+                // seguinte e a liberação é feita pelo painel de gestão
                 Motorista::create([
                     'user_id' => $user->id,
-                    'cnh_numero' => preg_replace('/\D/', '', (string) $dados['cnh_numero']),
-                    'cnh_categoria' => strtoupper((string) $dados['cnh_categoria']),
-                    'cnh_expiracao' => $dados['cnh_expiracao'],
-                    'ear' => (bool) ($dados['ear'] ?? false),
+                    'status' => 'pendente',
                 ]);
             }
 
@@ -148,19 +146,6 @@ class UsuarioController extends Controller
      * Remove the specified resource from storage.
      */
     public function destroy(string $id): void {}
-
-    /**
-     * @return array<string, string>
-     */
-    private function regrasMotorista(): array
-    {
-        return [
-            'cnh_numero' => 'required|string|max:20',
-            'cnh_categoria' => 'required|string|in:A,B,AB,C,D,E,a,b,ab,c,d,e',
-            'cnh_expiracao' => 'required|date|after:today',
-            'ear' => 'required|boolean',
-        ];
-    }
 
     /**
      * @return array<string, string>
