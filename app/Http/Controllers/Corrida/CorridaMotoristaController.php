@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Corrida;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Motorista\MotoristaCadastroController;
 use App\Models\Motorista;
 use App\Services\DespachoCorridaService;
 use Illuminate\Http\JsonResponse;
@@ -11,6 +12,8 @@ use RuntimeException;
 
 class CorridaMotoristaController extends Controller
 {
+    private string $situacaoDoCadastro = MotoristaCadastroController::SEM_CADASTRO;
+
     public function __construct(
         protected DespachoCorridaService $despachoCorridaService
     ) {}
@@ -27,7 +30,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         $status = $this->despachoCorridaService->atualizarDisponibilidade(
@@ -49,7 +52,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         return response()->json(
@@ -67,7 +70,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         $this->despachoCorridaService->atualizarPosicao(
@@ -84,7 +87,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         try {
@@ -101,7 +104,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         try {
@@ -118,7 +121,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         try {
@@ -137,7 +140,7 @@ class CorridaMotoristaController extends Controller
         $motorista = $this->motoristaDoUsuario($request);
 
         if ($motorista === null) {
-            return response()->json(['message' => 'Usuário não é motorista.'], 403);
+            return $this->negarPorCadastro();
         }
 
         try {
@@ -154,9 +157,33 @@ class CorridaMotoristaController extends Controller
         return response()->json($cancelada);
     }
 
+    /**
+     * Só motorista aprovado opera. Quem ainda está na esteira recebe 403 com
+     * a situação, para o app mandar direto para o envio de documentos em vez
+     * de mostrar um erro genérico.
+     */
     private function motoristaDoUsuario(Request $request): ?Motorista
     {
-        return Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+
+        if ($motorista === null || $motorista->status !== MotoristaCadastroController::APROVADO) {
+            $this->situacaoDoCadastro = $motorista->status
+                ?? MotoristaCadastroController::SEM_CADASTRO;
+
+            return null;
+        }
+
+        return $motorista;
+    }
+
+    private function negarPorCadastro(): JsonResponse
+    {
+        return response()->json([
+            'message' => $this->situacaoDoCadastro === MotoristaCadastroController::SEM_CADASTRO
+                ? 'Envie seus documentos para dirigir pelo aplicativo.'
+                : 'Seu cadastro de motorista ainda não foi aprovado.',
+            'situacao' => $this->situacaoDoCadastro,
+        ], 403);
     }
 
     private function status(RuntimeException $excecao): int
