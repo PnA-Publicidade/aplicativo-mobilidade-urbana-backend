@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Image;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
 class UsuarioController extends Controller
@@ -42,7 +44,6 @@ class UsuarioController extends Controller
     {
         $dados = $request->validate([
             ...$this->regrasCadastro(),
-            'foto' => 'nullable|string',
         ], $this->mensagensCadastro());
 
         $user = User::create([
@@ -51,7 +52,7 @@ class UsuarioController extends Controller
             'telefone' => $dados['telefone'] ?? null,
             'cpf' => $dados['cpf'],
             'email' => $dados['email'],
-            'foto' => $dados['foto'] ?? null,
+            'foto' => null,
             'status' => 'ativo',
             'password' => bcrypt($dados['password']),
         ]);
@@ -140,7 +141,20 @@ class UsuarioController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id): void {}
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $user = User::findOrFail($id);
+        $dados = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'email' => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'telefone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'telefone')->ignore($user->id)],
+            'cpf' => ['sometimes', 'required', 'digits:11', Rule::unique('users', 'cpf')->ignore($user->id)],
+            'data_nascimento' => 'sometimes|required|date|before_or_equal:'.now()->subYears(18)->toDateString(),
+        ]);
+        $user->update($dados);
+
+        return response()->json(['user' => $user->fresh()]);
+    }
 
     /**
      * Remove the specified resource from storage.
@@ -181,16 +195,17 @@ class UsuarioController extends Controller
         $image = $request->file('image', null);
 
         if ($image) {
-            $host = App::environment('local') ? $request->getSchemeAndHttpHost() : 'https://api.producao.app/';
             $request->validate([
-                'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg',
+                'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
             ]);
 
             $image = $request->file('image');
-            $imageName = $image->getClientOriginalName();
-            $imageName = time().'_'.$imageName;
-            $thumbnail = $image->getClientOriginalName();
-            $thumbnail = time().'_thumbnail'.$thumbnail;
+            $host = App::environment('local')
+                ? $request->getSchemeAndHttpHost()
+                : rtrim((string) config('app.url'), '/');
+            $extension = $image->extension();
+            $imageName = Str::uuid().'.'.$extension;
+            $thumbnail = Str::uuid().'_thumbnail.'.$extension;
 
             File::ensureDirectoryExists(public_path('images'));
 
@@ -200,8 +215,8 @@ class UsuarioController extends Controller
             );
 
             $image->move(public_path('images'), $imageName);
-            $user->foto = "{$host}/images/{$imageName}";
-            $user->foto_thumbnail = "{$host}/images/{$thumbnail}";
+            $user->foto = $host.'/images/'.$imageName;
+            $user->foto_thumbnail = $host.'/images/'.$thumbnail;
             $user->saveOrFail();
         }
 
@@ -214,85 +229,100 @@ class UsuarioController extends Controller
 
     public function removerFotoPerfil(string $id): JsonResponse
     {
-        try {
-            $user = User::findOrFail($id);
+        $user = User::findOrFail($id);
+        $foto = $user->foto;
+        $thumbnail = $user->foto_thumbnail;
+        $user->foto = null;
+        $user->foto_thumbnail = null;
+        $user->saveOrFail();
+        $this->excluirImagemPerfil($foto);
+        $this->excluirImagemPerfil($thumbnail);
 
-            if ($user->foto) {
-                $hostImagePath = public_path(str_replace(url('/'), '', $user->foto));
-                if (File::exists($hostImagePath)) {
-                    File::delete($hostImagePath);
-                }
-
-                if ($user->foto_thumbnail) {
-                    $hostThumbPath = public_path(str_replace(url('/'), '', $user->foto_thumbnail));
-                    if (File::exists($hostThumbPath)) {
-                        File::delete($hostThumbPath);
-                    }
-                }
-            }
-
-            $user->foto = null;
-            $user->foto_thumbnail = null;
-            $user->saveOrFail();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Foto removida com sucesso!',
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao remover foto: '.$e->getMessage(),
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Foto removida com sucesso!',
+        ]);
     }
 
     public function alterarFotoPerfil(Request $request, string $id): JsonResponse
     {
-        try {
-            $user = User::findOrFail($id);
-            $this->removerFotoPerfil($id);
-            $this->criarImagemPerfil($request, $user);
+        $request->validate(['image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120']);
+        $user = User::findOrFail($id);
+        $fotoAnterior = $user->foto;
+        $thumbnailAnterior = $user->foto_thumbnail;
+        $this->criarImagemPerfil($request, $user);
+        $this->excluirImagemPerfil($fotoAnterior);
+        $this->excluirImagemPerfil($thumbnailAnterior);
 
-            return response()->json([
-                'user' => [
-                    'foto' => $user->foto,
-                    'foto_thumbnail' => $user->foto_thumbnail,
-                ],
-                'success' => true,
-                'message' => 'Foto alterada com sucesso!',
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao alterar foto: '.$e->getMessage(),
-            ], 500);
+        return response()->json([
+            'user' => [
+                'foto' => $user->foto,
+                'foto_thumbnail' => $user->foto_thumbnail,
+            ],
+            'success' => true,
+            'message' => 'Foto alterada com sucesso!',
+        ]);
+    }
+
+    private function excluirImagemPerfil(?string $url): void
+    {
+        $caminho = $url === null ? null : parse_url($url, PHP_URL_PATH);
+
+        if (! is_string($caminho) || ! preg_match('~^/images/([^/\\\\]+)$~', $caminho, $matches)) {
+            return;
         }
+
+        $nome = rawurldecode($matches[1]);
+
+        if ($nome === '.' || $nome === '..' || str_contains($nome, '/') || str_contains($nome, '\\')) {
+            return;
+        }
+
+        File::delete(public_path('images/'.$nome));
     }
 
     public function usuarioArquivar(Request $request): JsonResponse
     {
-        try {
-            $usuarios = $request->input('usuarios', []);
-            foreach ($usuarios as $usuario) {
+        $dados = $request->validate([
+            'usuarios' => 'required|array|min:1|max:100',
+            'usuarios.*.id' => 'required|integer|distinct|exists:users,id',
+        ]);
+
+        DB::transaction(function () use ($dados): void {
+            foreach ($dados['usuarios'] as $usuario) {
                 User::findOrFail((int) $usuario['id'])->delete();
             }
+        });
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Usuário arquivado com sucesso',
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao arquivar usuário: '.$e->getMessage(),
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Usuário arquivado com sucesso',
+        ]);
     }
 
-    public function usuarioDeletar(Request $request): void {}
+    public function usuarioDeletar(Request $request): JsonResponse
+    {
+        return response()->json(['message' => 'Exclusão permanente indisponível.'], 501);
+    }
 
-    public function usuarioRestaurar(Request $request): void {}
+    public function usuarioRestaurar(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'usuarios' => 'required|array|min:1|max:100',
+            'usuarios.*.id' => 'required|integer|distinct',
+        ]);
+
+        DB::transaction(function () use ($dados): void {
+            foreach ($dados['usuarios'] as $usuario) {
+                User::onlyTrashed()->findOrFail((int) $usuario['id'])->restore();
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Usuário restaurado com sucesso',
+        ]);
+    }
 
     /**
      * @return LengthAwarePaginator<int, User>

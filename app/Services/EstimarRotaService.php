@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class EstimarRotaService
@@ -70,11 +72,16 @@ class EstimarRotaService
         |--------------------------------------------------------------------------
         */
 
-        $rota = $this->calcularRota(
-            origem: $origem,
-            destino: $destino,
-            paradas: $paradas
-        );
+        $chave = 'estimativa-rota:'.md5(collect($enderecos)
+            ->map(fn (array $ponto) => sprintf('%.5f,%.5f', $ponto['latitude'], $ponto['longitude']))
+            ->implode('|'));
+        $rota = Cache::get($chave);
+
+        if (! is_array($rota)) {
+            $rota = $this->calcularRota(origem: $origem, destino: $destino, paradas: $paradas);
+            $ttl = ($rota['distancia_km'] ?? 0) > 0 ? now()->addMinutes(10) : now()->addSeconds(15);
+            Cache::put($chave, $rota, $ttl);
+        }
 
         $retorno = [
 
@@ -174,22 +181,26 @@ class EstimarRotaService
         |--------------------------------------------------------------------------
         */
 
-        $response = Http::get(
-            'https://maps.googleapis.com/maps/api/directions/json',
-            [
-                'origin' => $origem['latitude'].','.$origem['longitude'],
+        try {
+            $response = Http::connectTimeout(3)->timeout(8)->get(
+                'https://maps.googleapis.com/maps/api/directions/json',
+                [
+                    'origin' => $origem['latitude'].','.$origem['longitude'],
 
-                'destination' => $destino['latitude'].','.$destino['longitude'],
+                    'destination' => $destino['latitude'].','.$destino['longitude'],
 
-                'waypoints' => $waypoints,
+                    'waypoints' => $waypoints,
 
-                'mode' => 'driving',
+                    'mode' => 'driving',
 
-                'language' => 'pt-BR',
+                    'language' => 'pt-BR',
 
-                'key' => config('services.google_maps.key'),
-            ]
-        );
+                    'key' => config('services.google_maps.key'),
+                ]
+            );
+        } catch (ConnectionException) {
+            return ['distancia_km' => 0, 'tempo_minutos' => 0, 'trechos' => []];
+        }
 
         $data = $response->json();
 

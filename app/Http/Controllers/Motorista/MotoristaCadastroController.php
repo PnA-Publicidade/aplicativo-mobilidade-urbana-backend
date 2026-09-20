@@ -6,13 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use App\Models\MotoristaVeiculo;
+use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class MotoristaCadastroController extends Controller
 {
     public const APROVADO = 'aprovado';
+
+    public function __construct(
+        protected AtualizarSituacaoMotoristaService $atualizarSituacaoMotoristaService
+    ) {}
 
     public const SEM_CADASTRO = 'sem_cadastro';
 
@@ -32,11 +38,15 @@ class MotoristaCadastroController extends Controller
                 'documentos' => [],
                 'veiculos' => 0,
                 'pendencias' => ['cnh', 'documentos', 'veiculo'],
+                'documentos_faltando' => AtualizarSituacaoMotoristaService::DOCUMENTOS_EXIGIDOS,
             ]);
         }
 
         $documentos = MotoristaDocumento::where('motorista_id', $motorista->id)
-            ->get(['tipo_documento', 'status', 'observacao']);
+            ->orderByDesc('id')
+            ->get(['tipo_documento', 'status', 'observacao'])
+            ->unique('tipo_documento')
+            ->values();
 
         $veiculos = MotoristaVeiculo::where('motorista_id', $motorista->id)->count();
 
@@ -50,7 +60,9 @@ class MotoristaCadastroController extends Controller
             ],
             'documentos' => $documentos,
             'veiculos' => $veiculos,
-            'pendencias' => $this->pendencias($motorista, $documentos->count(), $veiculos),
+            'pendencias' => $this->pendencias($motorista, $veiculos),
+            'documentos_faltando' => $this->atualizarSituacaoMotoristaService
+                ->documentosQueFaltam($motorista),
         ]);
     }
 
@@ -104,8 +116,8 @@ class MotoristaCadastroController extends Controller
     public function enviarDocumento(Request $request): JsonResponse
     {
         $dados = $request->validate([
-            'tipo_documento' => 'required|string|max:60',
-            'arquivo' => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'tipo_documento' => 'required|string|in:'.implode(',', AtualizarSituacaoMotoristaService::DOCUMENTOS_EXIGIDOS),
+            'arquivo' => 'required|file|mimes:jpg,jpeg,png,webp,heic,heif,gif,pdf|max:10240',
         ]);
 
         $motorista = Motorista::firstOrCreate(
@@ -120,10 +132,7 @@ class MotoristaCadastroController extends Controller
         }
 
         $arquivo = $request->file('arquivo');
-        $caminho = $arquivo->storeAs(
-            'motorista_documentos',
-            time().'_'.$arquivo->getClientOriginalName()
-        );
+        $caminho = $arquivo->storeAs('motorista_documentos', Str::uuid().'.'.$arquivo->extension());
 
         $documento = MotoristaDocumento::create([
             'motorista_id' => $motorista->id,
@@ -136,15 +145,12 @@ class MotoristaCadastroController extends Controller
             'status' => 'em_analise',
         ]);
 
-        // documento novo devolve o cadastro para a fila de análise
-        if ($motorista->status !== 'em_analise') {
-            $motorista->update(['status' => 'em_analise']);
-        }
+        $situacao = $this->atualizarSituacaoMotoristaService->executar($motorista);
 
         return response()->json([
             'message' => 'Documento enviado para análise.',
             'documento' => $documento->only(['tipo_documento', 'status']),
-            'situacao' => $motorista->status,
+            'situacao' => $situacao,
         ], 201);
     }
 
@@ -174,13 +180,18 @@ class MotoristaCadastroController extends Controller
 
         $registro->delete();
 
-        return response()->json(['message' => 'Documento removido.']);
+        $situacao = $this->atualizarSituacaoMotoristaService->executar($motorista);
+
+        return response()->json([
+            'message' => 'Documento removido.',
+            'situacao' => $situacao,
+        ]);
     }
 
     /**
      * @return list<string>
      */
-    private function pendencias(Motorista $motorista, int $totalDocumentos, int $veiculos): array
+    private function pendencias(Motorista $motorista, int $veiculos): array
     {
         $pendencias = [];
 
@@ -188,7 +199,7 @@ class MotoristaCadastroController extends Controller
             $pendencias[] = 'cnh';
         }
 
-        if ($totalDocumentos === 0) {
+        if ($this->atualizarSituacaoMotoristaService->documentosQueFaltam($motorista) !== []) {
             $pendencias[] = 'documentos';
         }
 

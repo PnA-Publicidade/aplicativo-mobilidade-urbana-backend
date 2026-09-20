@@ -37,6 +37,7 @@ class Corrida extends Model
         'valor_estimado_inicial',
         'valor_negociado_final',
         'motivo_cancelamento',
+        'tipo_cancelamento',
         'distancia_ate_motorista',
         'metodo_pagamento',
         'status_pagamento',

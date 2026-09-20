@@ -20,7 +20,7 @@ Route::middleware('throttle:10,1')->group(function () {
     Route::get('auth/verifica-se-conta-existe', [LoginController::class, 'verificaSeContaExiste']);
 });
 
-Route::post('auth/refresh', RefreshController::class)->name('auth.refresh');
+Route::post('auth/refresh', RefreshController::class)->middleware('throttle:30,1')->name('auth.refresh');
 
 Route::middleware('auth:jwt')->group(function () {
     Route::post('auth/logout', LogoutController::class)->name('auth.logout');

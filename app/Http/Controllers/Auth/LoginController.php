@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\Response;
@@ -18,8 +19,12 @@ class LoginController extends Controller
      */
     public function __invoke(Request $request): JsonResponse
     {
-        $email = $request->input('email');
-        $password = $request->input('password');
+        $dados = $request->validate([
+            'email' => 'required|email|max:255',
+            'password' => 'required|string|max:1024',
+        ]);
+        $email = $dados['email'];
+        $password = $dados['password'];
 
         /** @var JWTGuard $guard */
         $guard = auth('jwt');
@@ -55,10 +60,7 @@ class LoginController extends Controller
 
     public function enviarCodigo(Request $request): JsonResponse
     {
-        $request->validate([
-            'telefone' => 'required',
-        ]);
-        $telefone = preg_replace('/\D/', '', $request->string('telefone')->toString());
+        $telefone = $this->telefoneNormalizado($request);
 
         // código fake — TTL generoso (30min) porque isso é só mockado pro
         // ambiente de dev; com 60s (valor original) qualquer teste manual
@@ -76,12 +78,8 @@ class LoginController extends Controller
 
     public function verificarCodigo(Request $request): JsonResponse
     {
-        $request->validate([
-            'telefone' => 'required',
-            'codigo' => 'required',
-        ]);
-
-        $telefone = preg_replace('/\D/', '', $request->string('telefone')->toString());
+        $telefone = $this->telefoneNormalizado($request);
+        $request->validate(['codigo' => 'required|digits:4']);
 
         $codigo = preg_replace('/\D/', '', $request->string('codigo')->toString());
 
@@ -128,10 +126,7 @@ class LoginController extends Controller
 
     public function verificaSeContaExiste(Request $request): JsonResponse
     {
-        $request->validate([
-            'telefone' => 'required',
-        ]);
-        $telefone = preg_replace('/\D/', '', $request->string('telefone')->toString());
+        $telefone = $this->telefoneNormalizado($request);
         $user = User::where('telefone', $telefone)->first();
 
         return response()->json([
@@ -152,5 +147,17 @@ class LoginController extends Controller
             raw: false,
             sameSite: 'Lax'
         );
+    }
+
+    private function telefoneNormalizado(Request $request): string
+    {
+        $request->validate(['telefone' => 'required|string|max:32']);
+        $telefone = preg_replace('/\D/', '', $request->string('telefone')->toString());
+
+        if ($telefone === null || strlen($telefone) < 10 || strlen($telefone) > 13) {
+            throw ValidationException::withMessages(['telefone' => 'Informe um telefone válido.']);
+        }
+
+        return $telefone;
     }
 }

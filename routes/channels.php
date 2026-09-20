@@ -25,5 +25,5 @@ Broadcast::channel('corrida.{corridaId}', function (User $user, int $corridaId) 
 });
 
 Broadcast::channel('corridas-disponiveis', function (User $user) {
-    return Motorista::where('user_id', $user->id)->exists();
+    return Motorista::where('user_id', $user->id)->where('status', 'aprovado')->exists();
 });

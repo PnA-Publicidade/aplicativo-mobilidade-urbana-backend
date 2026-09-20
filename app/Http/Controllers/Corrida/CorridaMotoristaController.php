@@ -135,7 +135,10 @@ class CorridaMotoristaController extends Controller
 
     public function cancelar(Request $request, int $corrida): JsonResponse
     {
-        $dados = $request->validate(['motivo' => 'nullable|string|max:255']);
+        $dados = $request->validate([
+            'motivo' => 'nullable|string|max:255',
+            'tipo' => 'nullable|in:nao_comparecimento',
+        ]);
 
         $motorista = $this->motoristaDoUsuario($request);
 
@@ -148,7 +151,8 @@ class CorridaMotoristaController extends Controller
                 corridaId: $corrida,
                 quem: 'motorista',
                 donoId: $motorista->id,
-                motivo: $dados['motivo'] ?? null
+                motivo: $dados['motivo'] ?? null,
+                tipo: $dados['tipo'] ?? null
             );
         } catch (RuntimeException $excecao) {
             return response()->json(['message' => $excecao->getMessage()], $this->status($excecao));
