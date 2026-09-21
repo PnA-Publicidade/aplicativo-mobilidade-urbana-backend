@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CidadeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -25,4 +26,5 @@ Route::middleware('auth:jwt')->group(function () {
     require __DIR__ . '/api/produto.php';
     require __DIR__ . '/api/estimativa.php';
     require __DIR__ . '/api/publicidade.php';
+    Route::apiResource('cidades', CidadeController::class);
 });
