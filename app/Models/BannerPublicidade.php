@@ -13,8 +13,12 @@ class BannerPublicidade extends Model
     protected $fillable = [
         'cidade_id',
         'titulo',
-        'imagem',
-        'imagem_thumbnail',
+        'name',
+        'type',
+        'mime_type',
+        'size',
+        'path',
+        'url'
     ];
 
     public function cidade()

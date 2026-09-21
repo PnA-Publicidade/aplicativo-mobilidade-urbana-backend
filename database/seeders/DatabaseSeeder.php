@@ -83,10 +83,10 @@ class DatabaseSeeder extends Seeder
             'ibge' => 1100205,
         ]);
 
-        BannerPublicidade::factory()->create([
-            'cidade_id' => 4382,
-            'Titulo' => 'Convide um amigo para dirigir',
-        ]);
+        // BannerPublicidade::factory()->create([
+        //     'cidade_id' => 4382,
+        //     'Titulo' => 'Convide um amigo para dirigir',
+        // ]);
 
         // $motorista = Motorista::factory()->create([
         //     'user_id' => $userMotorista->id,

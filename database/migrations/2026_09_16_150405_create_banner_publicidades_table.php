@@ -15,8 +15,12 @@ return new class extends Migration
             $table->id();
             $table->integer('cidade_id');
             $table->string('titulo');
-            $table->string('imagem')->nullable();
-            $table->string('imagem_thumbnail')->nullable();
+            $table->string('name');
+            $table->string('type');
+            $table->string('mime_type');
+            $table->bigInteger('size');
+            $table->string('path');
+            $table->string('url');
             $table->timestamps();
             $table->softDeletes();
         });
