@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AjustarPontoEmbarqueService
@@ -94,13 +95,13 @@ class AjustarPontoEmbarqueService
 
             return $maisProximo;
         } catch (Throwable $erro) {
-            report($erro);
+            $this->relatarFalha($erro);
             Cache::put(self::CACHE_ROADS_INDISPONIVEL, true, now()->addMinute());
 
             try {
                 return $this->consultarDirections($latitude, $longitude, $original, $chaveCache);
             } catch (Throwable $erroDirections) {
-                report($erroDirections);
+                $this->relatarFalha($erroDirections);
 
                 return $original;
             }
@@ -228,5 +229,18 @@ class AjustarPontoEmbarqueService
             + cos($origemRad) * cos($destinoRad) * sin($deltaLongitude / 2) ** 2;
 
         return $raioTerra * 2 * atan2(sqrt($a), sqrt(1 - $a));
+    }
+
+    /**
+     * Loga a falha sem a chave da API: exceções do cliente HTTP (timeout,
+     * conexão recusada etc.) trazem a URL completa na mensagem, e ela
+     * inclui o parâmetro `key`.
+     */
+    private function relatarFalha(Throwable $erro): void
+    {
+        Log::warning('Falha ao consultar API de rotas do Google.', [
+            'excecao' => $erro::class,
+            'mensagem' => preg_replace('/key=[^&\s"]+/', 'key=***', $erro->getMessage()),
+        ]);
     }
 }
