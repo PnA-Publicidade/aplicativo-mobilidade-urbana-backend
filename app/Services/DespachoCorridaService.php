@@ -210,11 +210,19 @@ class DespachoCorridaService
                 ? $status->veiculo_id
                 : $this->veiculoPadrao($motorista);
 
+            $origemAceite = $corrida->corrida_destinos->firstWhere('tipo', 'origem');
+
             $corrida->update([
                 'motorista_id' => $motorista->id,
                 'veiculo_id' => $veiculoId,
                 'status_corrida' => 'aceita',
                 'tempo_aceite' => now(),
+                'distancia_motorista_aceite_km' => $origemAceite === null ? null : round($this->distanciaKm(
+                    (float) $status->latitude,
+                    (float) $status->longitude,
+                    (float) $origemAceite->latitude,
+                    (float) $origemAceite->longitude
+                ), 3),
             ]);
 
             StatusBusca::where('motorista_id', $motorista->id)
@@ -249,7 +257,7 @@ class DespachoCorridaService
     ];
 
     private const CANCELAVEL_POR = [
-        'passageiro' => ['solicitada', 'em_busca'],
+        'passageiro' => ['solicitada', 'em_busca', 'aceita', 'motorista_chegou'],
         'motorista' => ['aceita', 'motorista_chegou'],
     ];
 
@@ -275,6 +283,10 @@ class DespachoCorridaService
                 );
             }
 
+            if ($regra['para'] === 'motorista_chegou') {
+                $this->validarChegadaNoEmbarque($corrida, $motorista->id);
+            }
+
             $mudanca = ['status_corrida' => $regra['para']];
 
             foreach ($regra['carimbo'] as $campo) {
@@ -298,11 +310,11 @@ class DespachoCorridaService
         });
     }
 
-    public function cancelar(int $corridaId, string $quem, ?int $donoId, ?string $motivo, ?string $tipo = null): Corrida
+    public function cancelar(int $corridaId, string $quem, ?int $donoId, ?string $motivo, ?string $tipo = null, ?float $taxaConfirmada = null): Corrida
     {
         $permitidos = self::CANCELAVEL_POR[$quem] ?? [];
 
-        return DB::transaction(function () use ($corridaId, $quem, $donoId, $motivo, $tipo, $permitidos) {
+        return DB::transaction(function () use ($corridaId, $quem, $donoId, $motivo, $tipo, $permitidos, $taxaConfirmada) {
             $corrida = Corrida::whereKey($corridaId)->lockForUpdate()->first();
 
             $campo = $quem === 'motorista' ? 'motorista_id' : 'passageiro_id';
@@ -313,8 +325,6 @@ class DespachoCorridaService
 
             if (! in_array($corrida->status_corrida, $permitidos, true)) {
                 $mensagem = match ($corrida->status_corrida) {
-                    'aceita' => 'O motorista já aceitou sua corrida e está a caminho. Por isso, o cancelamento não está mais disponível no aplicativo.',
-                    'motorista_chegou' => 'O motorista já chegou ao local de embarque. Por isso, esta corrida não pode mais ser cancelada pelo aplicativo.',
                     'em_andamento' => 'Sua viagem já começou e não pode mais ser cancelada.',
                     'finalizada' => 'Esta corrida já foi concluída e não pode mais ser cancelada.',
                     'cancelada' => 'Esta corrida já foi cancelada.',
@@ -374,13 +384,31 @@ class DespachoCorridaService
                 ]);
             }
 
+            $tipoRegistrado = $tipo;
+
+            if ($quem === 'passageiro') {
+                $previsao = $this->previsaoCancelamentoPassageiro($corrida);
+
+                if ($previsao['cobra']) {
+                    if ($taxaConfirmada === null || $previsao['taxa'] > $taxaConfirmada + 0.01) {
+                        throw new RuntimeException(
+                            'O valor do cancelamento mudou. Confira o novo valor antes de confirmar.',
+                            409
+                        );
+                    }
+
+                    $this->aplicarTaxaCancelamento($corrida, $previsao['taxa']);
+                    $tipoRegistrado = 'cancelamento_com_taxa';
+                }
+            }
+
             $motoristaId = $corrida->motorista_id;
 
             $corrida->update([
                 'status_corrida' => 'cancelada',
                 'cancelado_por' => $quem,
                 'motivo_cancelamento' => $motivo,
-                'tipo_cancelamento' => $tipo,
+                'tipo_cancelamento' => $tipoRegistrado,
             ]);
 
             if ($motoristaId !== null) {
@@ -558,6 +586,161 @@ class DespachoCorridaService
         $limite = max((int) config('precificacao.motorista_online_expira_segundos', 90), 30);
 
         return $status->visto_em->lt(now()->subSeconds($limite));
+    }
+
+    /**
+     * @return array{cobra: bool, taxa: float, km_percorridos: float, motivo: string}
+     */
+    public function previsaoCancelamentoPassageiro(Corrida $corrida): array
+    {
+        $gratis = fn (string $motivo) => [
+            'cobra' => false,
+            'taxa' => 0.0,
+            'km_percorridos' => 0.0,
+            'motivo' => $motivo,
+        ];
+
+        $status = $corrida->status_corrida;
+
+        if (in_array($status, ['solicitada', 'em_busca'], true)) {
+            return $gratis('Nenhum motorista aceitou sua corrida ainda.');
+        }
+
+        if (! in_array($status, ['aceita', 'motorista_chegou'], true)) {
+            return $gratis('Esta corrida não pode ser cancelada agora.');
+        }
+
+        $distanciaAceite = (float) ($corrida->distancia_motorista_aceite_km ?? 0);
+
+        if ($status === 'motorista_chegou') {
+            $km = $distanciaAceite;
+        } else {
+            $carencia = max(0, (int) config('precificacao.cancelamento_passageiro_carencia_segundos', 120));
+
+            if ($corrida->tempo_aceite !== null
+                && Carbon::parse($corrida->tempo_aceite)->diffInSeconds(now()) < $carencia) {
+                return $gratis('Cancelamento gratuito logo após o aceite do motorista.');
+            }
+
+            $km = $this->kmPercorridosAteEmbarque($corrida, $distanciaAceite);
+            $minimo = max(0.0, (float) config('precificacao.cancelamento_passageiro_distancia_minima_km', 1.0));
+
+            if ($km < $minimo) {
+                return $gratis('O motorista ainda não avançou o bastante até você.');
+            }
+        }
+
+        $taxa = $this->valorTaxaCancelamento($corrida, $km);
+
+        if ($taxa <= 0) {
+            return $gratis('Não há taxa para este cancelamento.');
+        }
+
+        return [
+            'cobra' => true,
+            'taxa' => $taxa,
+            'km_percorridos' => round($km, 2),
+            'motivo' => $status === 'motorista_chegou'
+                ? 'O motorista já chegou ao ponto de embarque.'
+                : 'O motorista já percorreu parte do caminho até você.',
+        ];
+    }
+
+    private function kmPercorridosAteEmbarque(Corrida $corrida, float $distanciaAceite): float
+    {
+        if ($distanciaAceite <= 0 || $corrida->motorista_id === null) {
+            return 0.0;
+        }
+
+        $origem = $corrida->corrida_destinos()->where('tipo', 'origem')->first();
+        $posicao = StatusBusca::where('motorista_id', $corrida->motorista_id)->first();
+
+        if ($origem === null || $posicao === null
+            || $posicao->latitude === null || $posicao->longitude === null) {
+            return 0.0;
+        }
+
+        $distanciaAtual = $this->distanciaKm(
+            (float) $posicao->latitude,
+            (float) $posicao->longitude,
+            (float) $origem->latitude,
+            (float) $origem->longitude
+        );
+
+        return max(0.0, $distanciaAceite - $distanciaAtual);
+    }
+
+    private function valorTaxaCancelamento(Corrida $corrida, float $km): float
+    {
+        $financeiro = $corrida->corrida_financeiro()->first();
+
+        if ($financeiro === null) {
+            return 0.0;
+        }
+
+        $valor = max(
+            (float) ($financeiro->tarifa_base ?? 0),
+            $km * (float) ($financeiro->valor_por_km ?? 0)
+        );
+
+        $teto = (float) ($financeiro->valor_pago_passageiro ?? 0);
+
+        if ($teto > 0) {
+            $valor = min($valor, $teto);
+        }
+
+        return round(max(0.0, $valor), 2);
+    }
+
+    private function aplicarTaxaCancelamento(Corrida $corrida, float $taxa): void
+    {
+        $financeiro = $corrida->corrida_financeiro()->first();
+
+        if ($financeiro === null) {
+            throw new RuntimeException('Dados financeiros da corrida indisponíveis.', 409);
+        }
+
+        $financeiro->update([
+            'valor_bruto' => $taxa,
+            'valor_sem_dinamica' => $taxa,
+            'valor_base_calculado' => $taxa,
+            'valor_pago_passageiro' => $taxa,
+            'valor_motorista' => $taxa,
+            'valor_liquido_motorista' => $taxa,
+            'taxa_plataforma_valor' => 0,
+            'taxa_plataforma_percentual' => 0,
+            'taxa_espera' => 0,
+            'taxa_cancelamento' => $taxa,
+        ]);
+    }
+
+    private function validarChegadaNoEmbarque(Corrida $corrida, int $motoristaId): void
+    {
+        $origem = $corrida->corrida_destinos()->where('tipo', 'origem')->first();
+        $posicao = StatusBusca::where('motorista_id', $motoristaId)->lockForUpdate()->first();
+        $validadeSegundos = max(
+            30,
+            (int) config('precificacao.posicao_chegada_validade_segundos', 120)
+        );
+        $distanciaMaximaKm = max(
+            0.05,
+            (float) config('precificacao.distancia_maxima_chegada_km', 0.5)
+        );
+
+        if ($origem === null || $posicao === null || $posicao->latitude === null
+            || $posicao->longitude === null || $posicao->visto_em === null
+            || $posicao->visto_em->lt(now()->subSeconds($validadeSegundos))
+            || $this->distanciaKm(
+                (float) $posicao->latitude,
+                (float) $posicao->longitude,
+                (float) $origem->latitude,
+                (float) $origem->longitude
+            ) > $distanciaMaximaKm) {
+            throw new RuntimeException(
+                'Ative o GPS, aproxime-se do ponto de embarque e tente informar a chegada novamente.',
+                409
+            );
+        }
     }
 
     private function distanciaKm(float $latA, float $lonA, float $latB, float $lonB): float

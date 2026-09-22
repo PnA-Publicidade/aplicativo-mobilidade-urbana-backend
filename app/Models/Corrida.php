@@ -30,6 +30,7 @@ class Corrida extends Model
         'cancelado_por',
         'tempo_solicitacao',
         'tempo_aceite',
+        'distancia_motorista_aceite_km',
         'tempo_embarque',
         'tempo_inicio',
         'tempo_final',

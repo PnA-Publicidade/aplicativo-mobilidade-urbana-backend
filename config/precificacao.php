@@ -16,6 +16,11 @@ return [
     'raio_busca_maximo_km' => (float) env('PRECIFICACAO_RAIO_BUSCA_MAXIMO_KM', 20),
 
     'motorista_online_expira_segundos' => (int) env('MOTORISTA_ONLINE_EXPIRA_SEGUNDOS', 90),
+    'distancia_maxima_chegada_km' => (float) env('MOTORISTA_DISTANCIA_MAXIMA_CHEGADA_KM', 0.5),
+    'posicao_chegada_validade_segundos' => (int) env('MOTORISTA_POSICAO_CHEGADA_VALIDADE_SEGUNDOS', 120),
+
+    'cancelamento_passageiro_carencia_segundos' => (int) env('CANCELAMENTO_PASSAGEIRO_CARENCIA_SEGUNDOS', 120),
+    'cancelamento_passageiro_distancia_minima_km' => (float) env('CANCELAMENTO_PASSAGEIRO_DISTANCIA_MINIMA_KM', 1.0),
 
     'cotacao_validade_minutos' => (int) env('PRECIFICACAO_COTACAO_VALIDADE_MIN', 10),
 

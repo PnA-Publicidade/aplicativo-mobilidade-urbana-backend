@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Route;
 // já dentro do grupo auth:jwt (ver routes/api.php)
 Route::middleware('throttle:30,1')->group(function () {
     Route::get('buscar-endereco', [CorridaController::class, 'buscarEndereco']);
+    Route::post('ajustar-ponto-embarque', [CorridaController::class, 'ajustarPontoEmbarque']);
     Route::get('calculos-entre-endereco', [CorridaController::class, 'calculoEntreEnderecos']);
     Route::post('tracado-rota', [CorridaController::class, 'tracadoRota']);
 });
@@ -22,6 +23,7 @@ Route::post('motorista/corridas/{corrida}/{acao}', [CorridaMotoristaController::
 Route::post('motorista/corridas/{corrida}/cancelar', [CorridaMotoristaController::class, 'cancelar']);
 
 Route::get('minha-corrida-atual', [CorridaController::class, 'minhaCorridaAtual']);
+Route::get('corridas/{corrida}/cancelamento', [CorridaController::class, 'previsaoCancelamento']);
 Route::post('corridas/{corrida}/cancelar', [CorridaController::class, 'cancelar']);
 
 Route::apiResource('corridas', CorridaController::class)->only(['index', 'store', 'show']);

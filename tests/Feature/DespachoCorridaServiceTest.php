@@ -76,7 +76,7 @@ function criarPassageiroDespacho(): Passageiro
 
 function criarCorridaDespacho(
     Passageiro $passageiro,
-    float $latitude = -8.756160,
+    float $latitude = -8.760160,
     float $longitude = -63.900430,
     string $status = 'solicitada',
     ?int $motoristaId = null,
@@ -388,6 +388,45 @@ it('mantem o motorista online depois de finalizar a corrida', function () {
     Event::assertDispatched(CorridaAtualizada::class, fn ($evento) => $evento->status === 'finalizada');
 });
 
+it('impede informar chegada longe do ponto de embarque', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $servico = app(DespachoCorridaService::class);
+    $corrida = criarCorridaDespacho(
+        criarPassageiroDespacho(),
+        latitude: -8.750000,
+        longitude: -63.890000
+    );
+    $servico->aceitar($motorista, $corrida->id);
+
+    expect(fn () => $servico->transicionar($motorista, $corrida->id, 'cheguei'))
+        ->toThrow(RuntimeException::class, 'Ative o GPS, aproxime-se do ponto de embarque')
+        ->and($corrida->fresh()->status_corrida)->toBe('aceita');
+});
+
+it('impede informar chegada com uma posicao desatualizada', function () {
+    config()->set('precificacao.posicao_chegada_validade_segundos', 120);
+    [$motorista, $status] = criarMotoristaDespacho(true);
+    $servico = app(DespachoCorridaService::class);
+    $corrida = criarCorridaDespacho(criarPassageiroDespacho());
+    $servico->aceitar($motorista, $corrida->id);
+    $status->update(['visto_em' => now()->subSeconds(121)]);
+
+    expect(fn () => $servico->transicionar($motorista, $corrida->id, 'cheguei'))
+        ->toThrow(RuntimeException::class, 'Ative o GPS, aproxime-se do ponto de embarque')
+        ->and($corrida->fresh()->status_corrida)->toBe('aceita');
+});
+
+it('permite informar chegada com uma posicao recente perto do embarque', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $servico = app(DespachoCorridaService::class);
+    $corrida = criarCorridaDespacho(criarPassageiroDespacho());
+    $servico->aceitar($motorista, $corrida->id);
+
+    $atualizada = $servico->transicionar($motorista, $corrida->id, 'cheguei');
+
+    expect($atualizada->status_corrida)->toBe('motorista_chegou');
+});
+
 it('restaura a disponibilidade quando a corrida aceita e cancelada', function () {
     [$motorista] = criarMotoristaDespacho(true);
     $servico = app(DespachoCorridaService::class);
@@ -400,22 +439,127 @@ it('restaura a disponibilidade quando a corrida aceita e cancelada', function ()
         ->and(StatusBusca::where('motorista_id', $motorista->id)->value('disponivel'))->toBeTrue();
 });
 
-it('impede o passageiro de cancelar depois que o motorista aceita', function () {
-    [$motorista] = criarMotoristaDespacho(true);
+/**
+ * @return array{Motorista, StatusBusca, Passageiro, Corrida}
+ */
+function corridaAceitaLonge(): array
+{
+    [$motorista, $status] = criarMotoristaDespacho(true, -8.790160, -63.900430);
     $passageiro = criarPassageiroDespacho();
-    $servico = app(DespachoCorridaService::class);
     $corrida = criarCorridaDespacho($passageiro);
-    $servico->aceitar($motorista, $corrida->id);
+    $corrida->corrida_financeiro()->update([
+        'tarifa_base' => 2.00,
+        'valor_por_km' => 1.55,
+        'valor_pago_passageiro' => 22.00,
+    ]);
+    app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
 
-    expect(fn () => $servico->cancelar(
-        $corrida->id,
-        'passageiro',
-        $passageiro->id,
-        'tentativa depois do aceite'
-    ))->toThrow(RuntimeException::class, 'O motorista já aceitou sua corrida e está a caminho. Por isso, o cancelamento não está mais disponível no aplicativo.')
-        ->and($corrida->fresh()->status_corrida)->toBe('aceita')
-        ->and(StatusBusca::where('motorista_id', $motorista->id)->value('disponivel'))
-        ->toBeFalse();
+    return [$motorista, $status, $passageiro, $corrida];
+}
+
+it('guarda a distancia do motorista ao embarque no aceite', function () {
+    [, , , $corrida] = corridaAceitaLonge();
+
+    expect((float) $corrida->fresh()->distancia_motorista_aceite_km)->toEqualWithDelta(3.336, 0.01);
+});
+
+it('deixa o passageiro cancelar de graca logo apos o aceite', function () {
+    [$motorista, $status, $passageiro, $corrida] = corridaAceitaLonge();
+    $status->update(['latitude' => -8.761160]);
+    $servico = app(DespachoCorridaService::class);
+
+    expect($servico->previsaoCancelamentoPassageiro($corrida->fresh())['cobra'])->toBeFalse();
+
+    $cancelada = $servico->cancelar($corrida->id, 'passageiro', $passageiro->id, 'mudei de ideia');
+
+    expect($cancelada->status_corrida)->toBe('cancelada')
+        ->and($cancelada->tipo_cancelamento)->toBeNull()
+        ->and(StatusBusca::where('motorista_id', $motorista->id)->value('disponivel'))->toBeTrue();
+});
+
+it('nao cobra depois da carencia se o motorista quase nao avancou', function () {
+    [, $status, $passageiro, $corrida] = corridaAceitaLonge();
+    $corrida->update(['tempo_aceite' => now()->subMinutes(5)]);
+    $status->update(['latitude' => -8.785160]);
+    $servico = app(DespachoCorridaService::class);
+
+    expect($servico->previsaoCancelamentoPassageiro($corrida->fresh())['cobra'])->toBeFalse();
+
+    $cancelada = $servico->cancelar($corrida->id, 'passageiro', $passageiro->id, null);
+
+    expect($cancelada->status_corrida)->toBe('cancelada')
+        ->and((float) $corrida->corrida_financeiro()->value('taxa_cancelamento'))->toBe(0.0);
+});
+
+it('cobra pela distancia percorrida quando o motorista avancou ate o embarque', function () {
+    [$motorista, $status, $passageiro, $corrida] = corridaAceitaLonge();
+    $corrida->update(['tempo_aceite' => now()->subMinutes(5)]);
+    $status->update(['latitude' => -8.770160]);
+    $servico = app(DespachoCorridaService::class);
+
+    $previsao = $servico->previsaoCancelamentoPassageiro($corrida->fresh());
+
+    expect($previsao['cobra'])->toBeTrue()
+        ->and($previsao['km_percorridos'])->toEqualWithDelta(2.22, 0.02)
+        ->and($previsao['taxa'])->toEqualWithDelta(3.44, 0.03);
+
+    expect(fn () => $servico->cancelar($corrida->id, 'passageiro', $passageiro->id, null))
+        ->toThrow(RuntimeException::class, 'O valor do cancelamento mudou')
+        ->and($corrida->fresh()->status_corrida)->toBe('aceita');
+
+    $cancelada = $servico->cancelar($corrida->id, 'passageiro', $passageiro->id, null, taxaConfirmada: $previsao['taxa']);
+    $financeiro = $corrida->corrida_financeiro()->first();
+
+    expect($cancelada->status_corrida)->toBe('cancelada')
+        ->and($cancelada->tipo_cancelamento)->toBe('cancelamento_com_taxa')
+        ->and((float) $financeiro->taxa_cancelamento)->toBe($previsao['taxa'])
+        ->and((float) $financeiro->valor_pago_passageiro)->toBe($previsao['taxa'])
+        ->and((float) $financeiro->valor_motorista)->toBe($previsao['taxa'])
+        ->and((float) $financeiro->taxa_plataforma_valor)->toBe(0.0)
+        ->and(StatusBusca::where('motorista_id', $motorista->id)->value('disponivel'))->toBeTrue();
+});
+
+it('pede nova confirmacao se a taxa subiu depois da previa', function () {
+    [, $status, $passageiro, $corrida] = corridaAceitaLonge();
+    $corrida->update(['tempo_aceite' => now()->subMinutes(5)]);
+    $status->update(['latitude' => -8.775160]);
+    $servico = app(DespachoCorridaService::class);
+    $previsao = $servico->previsaoCancelamentoPassageiro($corrida->fresh());
+    $status->update(['latitude' => -8.762160]);
+
+    expect(fn () => $servico->cancelar($corrida->id, 'passageiro', $passageiro->id, null, taxaConfirmada: $previsao['taxa']))
+        ->toThrow(RuntimeException::class, 'O valor do cancelamento mudou')
+        ->and($corrida->fresh()->status_corrida)->toBe('aceita');
+});
+
+it('cobra o trajeto inteiro quando o motorista ja chegou e respeita o piso da tarifa base', function () {
+    [$motorista, $status, $passageiro, $corrida] = corridaAceitaLonge();
+    $servico = app(DespachoCorridaService::class);
+    $status->update(['latitude' => -8.760200, 'visto_em' => now()]);
+    $servico->transicionar($motorista, $corrida->id, 'cheguei');
+
+    $previsao = $servico->previsaoCancelamentoPassageiro($corrida->fresh());
+
+    expect($previsao['cobra'])->toBeTrue()
+        ->and($previsao['taxa'])->toEqualWithDelta(5.17, 0.03);
+
+    $corrida->update(['distancia_motorista_aceite_km' => 0.2]);
+
+    expect($servico->previsaoCancelamentoPassageiro($corrida->fresh())['taxa'])->toBe(2.0);
+});
+
+it('mostra a previa do cancelamento apenas ao dono da corrida', function () {
+    [, , $passageiro, $corrida] = corridaAceitaLonge();
+    $outro = criarPassageiroDespacho();
+
+    $this->actingAs(User::find($outro->user_id), 'jwt')
+        ->getJson("/api/corridas/{$corrida->id}/cancelamento")
+        ->assertNotFound();
+
+    $this->actingAs(User::find($passageiro->user_id), 'jwt')
+        ->getJson("/api/corridas/{$corrida->id}/cancelamento")
+        ->assertOk()
+        ->assertJsonPath('cobra', false);
 });
 
 it('permite o passageiro cancelar enquanto ainda procura motorista', function () {
@@ -492,6 +636,26 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
         ->assertOk()
         ->assertJsonPath('passageiro.foto', 'https://example.test/maria.jpg')
         ->assertJsonPath('passageiro.foto_oculta', false);
+});
+
+it('protege os dados pessoais no detalhe da corrida e mostra somente o primeiro nome', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $motorista->user->update(['name' => 'João dos Santos']);
+    $passageiro = criarPassageiroDespacho();
+    $passageiro->user->update(['name' => 'Maria da Silva']);
+    $corrida = criarCorridaDespacho($passageiro);
+    app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
+
+    $resposta = $this->actingAs($passageiro->user, 'jwt')
+        ->getJson('/api/corridas/'.$corrida->id);
+
+    $resposta->assertOk()
+        ->assertJsonPath('motorista.user.name', 'João')
+        ->assertJsonPath('passageiro.user.name', 'Maria')
+        ->assertJsonMissingPath('motorista.user.telefone')
+        ->assertJsonMissingPath('motorista.user.cpf')
+        ->assertJsonMissingPath('motorista.user.email')
+        ->assertJsonMissingPath('motorista.user.data_nascimento');
 });
 
 it('fecha o fluxo completo e permite uma avaliacao para cada lado', function () {

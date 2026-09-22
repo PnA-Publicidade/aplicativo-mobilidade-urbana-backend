@@ -8,6 +8,7 @@ use App\Models\Corrida;
 use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
+use App\Services\AjustarPontoEmbarqueService;
 use App\Services\CalcularPrecoCorridaService;
 use App\Services\ContabilizarEsperaCorridaService;
 use App\Services\DespachoCorridaService;
@@ -70,6 +71,21 @@ class CorridaController extends Controller
         ]);
     }
 
+    public function ajustarPontoEmbarque(
+        Request $request,
+        AjustarPontoEmbarqueService $ajustarPontoEmbarqueService,
+    ): JsonResponse {
+        $dados = $request->validate([
+            'latitude' => 'required|numeric|between:-90,90|not_in:0',
+            'longitude' => 'required|numeric|between:-180,180|not_in:0',
+        ]);
+
+        return response()->json($ajustarPontoEmbarqueService->executar(
+            (float) $dados['latitude'],
+            (float) $dados['longitude'],
+        ));
+    }
+
     /**
      * Display a listing of the resource.
      *
@@ -103,9 +119,27 @@ class CorridaController extends Controller
         return $pagina;
     }
 
+    public function previsaoCancelamento(Request $request, int $corrida): JsonResponse
+    {
+        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+
+        $registro = $passageiroId === null ? null : Corrida::whereKey($corrida)
+            ->where('passageiro_id', $passageiroId)
+            ->first();
+
+        if ($registro === null) {
+            return response()->json(['message' => 'Corrida não encontrada.'], 404);
+        }
+
+        return response()->json($this->despachoCorridaService->previsaoCancelamentoPassageiro($registro));
+    }
+
     public function cancelar(Request $request, int $corrida): JsonResponse
     {
-        $dados = $request->validate(['motivo' => 'nullable|string|max:255']);
+        $dados = $request->validate([
+            'motivo' => 'nullable|string|max:255',
+            'taxa_confirmada' => 'nullable|numeric|min:0',
+        ]);
 
         $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
 
@@ -114,7 +148,8 @@ class CorridaController extends Controller
                 corridaId: $corrida,
                 quem: 'passageiro',
                 donoId: $passageiroId === null ? null : (int) $passageiroId,
-                motivo: $dados['motivo'] ?? null
+                motivo: $dados['motivo'] ?? null,
+                taxaConfirmada: isset($dados['taxa_confirmada']) ? (float) $dados['taxa_confirmada'] : null
             );
         } catch (RuntimeException $excecao) {
             $status = in_array($excecao->getCode(), [404, 409], true)
@@ -292,12 +327,22 @@ class CorridaController extends Controller
     {
         $encontrada = $this->doUsuario($request)
             ->whereKey($corrida)
-            ->with(['motorista.user', 'veiculo', 'corrida_destinos', 'corrida_financeiro'])
+            ->with([
+                'motorista:id,user_id',
+                'motorista.user:id,name,foto',
+                'passageiro:id,user_id',
+                'passageiro.user:id,name,foto',
+                'veiculo',
+                'corrida_destinos',
+                'corrida_financeiro',
+            ])
             ->first();
 
         if ($encontrada === null) {
             return response()->json(['message' => 'Corrida não encontrada.'], 404);
         }
+
+        $this->reduzirNomes($encontrada);
 
         return response()->json($encontrada);
     }
