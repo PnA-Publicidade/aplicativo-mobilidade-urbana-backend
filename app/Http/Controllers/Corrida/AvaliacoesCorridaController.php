@@ -14,8 +14,8 @@ use Illuminate\Http\Request;
 class AvaliacoesCorridaController extends Controller
 {
     private const RELACOES = [
-        'motorista.user',
-        'passageiro.user',
+        'motorista.user:id,name,foto',
+        'passageiro.user:id,name,foto',
         'veiculo',
         'corrida_destinos',
         'corrida_financeiro',
@@ -34,6 +34,12 @@ class AvaliacoesCorridaController extends Controller
 
         if ($corrida === null) {
             return response()->json(['corrida' => null]);
+        }
+
+        foreach ([$corrida->motorista?->user, $corrida->passageiro?->user] as $usuario) {
+            if ($usuario !== null) {
+                $usuario->setAttribute('name', preg_split('/\s+/u', trim((string) $usuario->name), 2)[0] ?? '');
+            }
         }
 
         return response()->json([

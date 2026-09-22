@@ -17,7 +17,7 @@ return new class extends Migration
 
         Schema::table('corridas', function (Blueprint $table) {
             $table->unsignedBigInteger('motorista_id')->nullable()->change();
-            
+
             $table->unsignedBigInteger('veiculo_id')->nullable()->change();
             $table->unsignedBigInteger('cidade_id')->nullable()->change();
             $table->unsignedBigInteger('tarifa_id')->nullable()->change();
@@ -28,7 +28,7 @@ return new class extends Migration
             $table->foreign('veiculo_id')->references('id')->on('veiculos')->cascadeOnDelete();
             $table->foreign('cidade_id')->references('id')->on('municipios')->cascadeOnDelete();
             $table->foreign('tarifa_id')->references('id')->on('tarifas')->cascadeOnDelete();
-            
+
             $table->unique('codigo_corrida');
         });
     }

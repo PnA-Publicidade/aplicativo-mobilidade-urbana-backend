@@ -16,7 +16,8 @@ class MotoristaMoveu implements ShouldBroadcastNow
     public function __construct(
         public int $corridaId,
         public float $latitude,
-        public float $longitude
+        public float $longitude,
+        public string $vistoEm
     ) {}
 
     /**
@@ -40,6 +41,7 @@ class MotoristaMoveu implements ShouldBroadcastNow
         return [
             'latitude' => $this->latitude,
             'longitude' => $this->longitude,
+            'visto_em' => $this->vistoEm,
         ];
     }
 }

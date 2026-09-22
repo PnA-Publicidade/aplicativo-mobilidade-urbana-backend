@@ -58,6 +58,7 @@ class CalcularPrecoCorridaService
                 'tempo_espera_min' => round($tempoEsperaMin, 2),
             ],
             'composicao' => [
+                'valor_por_minuto_espera' => round((float) $tarifa->valor_por_minuto_espera, 2),
                 'tarifa_base' => $this->reais($baseCentavos),
                 'valor_distancia' => $this->reais($distanciaCentavos),
                 'valor_tempo' => $this->reais($tempoCentavos),

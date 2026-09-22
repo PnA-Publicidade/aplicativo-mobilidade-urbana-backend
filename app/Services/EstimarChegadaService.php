@@ -77,11 +77,15 @@ class EstimarChegadaService
                     return null;
                 }
 
-                $minutos = (int) max(round((float) ($rota['tempo_minutos'] ?? 0)), 1);
+                if ($rota['distancia_km'] <= 0 || $rota['tempo_minutos'] <= 0) {
+                    return null;
+                }
+
+                $minutos = (int) max(round((float) $rota['tempo_minutos']), 1);
 
                 return [
                     'minutos' => $minutos,
-                    'distancia_km' => round((float) ($rota['distancia_km'] ?? 0), 2),
+                    'distancia_km' => round((float) $rota['distancia_km'], 2),
                     'alvo' => $alvo,
                     'chega_em' => now()->addMinutes($minutos)->toIso8601String(),
                 ];

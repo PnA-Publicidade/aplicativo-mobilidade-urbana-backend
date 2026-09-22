@@ -8,8 +8,9 @@ use App\Models\Corrida;
 use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
+use App\Services\AjustarPontoEmbarqueService;
 use App\Services\CalcularPrecoCorridaService;
+use App\Services\ContabilizarEsperaCorridaService;
 use App\Services\DespachoCorridaService;
 use App\Services\EstimarChegadaService;
 use App\Services\EstimarRotaService;
@@ -43,6 +44,7 @@ class CorridaController extends Controller
         protected ObterTracadoRotaService $obterTracadoRotaService,
         protected ResolverTarifaService $resolverTarifaService,
         protected CalcularPrecoCorridaService $calcularPrecoCorridaService,
+        protected ContabilizarEsperaCorridaService $contabilizarEsperaCorridaService,
         protected SolicitarCorridaService $solicitarCorridaService,
         protected DespachoCorridaService $despachoCorridaService,
         protected EstimarChegadaService $estimarChegadaService
@@ -51,7 +53,7 @@ class CorridaController extends Controller
     public function tracadoRota(Request $request): JsonResponse
     {
         $dados = $request->validate([
-            'pontos' => 'required|array|min:2',
+            'pontos' => 'required|array|min:2|max:6',
             'pontos.*.latitude' => 'required|numeric|between:-90,90',
             'pontos.*.longitude' => 'required|numeric|between:-180,180',
         ]);
@@ -69,6 +71,21 @@ class CorridaController extends Controller
         ]);
     }
 
+    public function ajustarPontoEmbarque(
+        Request $request,
+        AjustarPontoEmbarqueService $ajustarPontoEmbarqueService,
+    ): JsonResponse {
+        $dados = $request->validate([
+            'latitude' => 'required|numeric|between:-90,90|not_in:0',
+            'longitude' => 'required|numeric|between:-180,180|not_in:0',
+        ]);
+
+        return response()->json($ajustarPontoEmbarqueService->executar(
+            (float) $dados['latitude'],
+            (float) $dados['longitude'],
+        ));
+    }
+
     /**
      * Display a listing of the resource.
      *
@@ -79,22 +96,50 @@ class CorridaController extends Controller
      */
     public function index(Request $request): LengthAwarePaginator
     {
-        return $this->doUsuario($request)
+        $dados = $request->validate([
+            'per_page' => 'sometimes|integer|min:1|max:50',
+        ]);
+
+        $pagina = $this->doUsuario($request)
             ->with([
-                'produto',
-                'motorista.user',
-                'passageiro.user',
-                'veiculo',
-                'corrida_destinos',
-                'corrida_financeiro.corrida_desconto',
+                'produto:id,nome',
+                'motorista:id,user_id',
+                'motorista.user:id,name,foto',
+                'passageiro:id,user_id',
+                'passageiro.user:id,name,foto',
+                'veiculo:id,modelo,cor,placa',
+                'corrida_destinos:id,corrida_id,tipo,ordem,endereco',
+                'corrida_financeiro:id,corrida_id,valor_pago_passageiro,tarifa_base,taxa_cancelamento,taxa_plataforma_valor,taxa_plataforma_percentual,valor_motorista,valor_liquido_motorista,metodo_pagamento',
             ])
             ->orderByDesc('id')
-            ->paginate();
+            ->paginate($dados['per_page'] ?? 20);
+
+        $pagina->getCollection()->each(fn (Corrida $corrida) => $this->reduzirNomes($corrida));
+
+        return $pagina;
+    }
+
+    public function previsaoCancelamento(Request $request, int $corrida): JsonResponse
+    {
+        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+
+        $registro = $passageiroId === null ? null : Corrida::whereKey($corrida)
+            ->where('passageiro_id', $passageiroId)
+            ->first();
+
+        if ($registro === null) {
+            return response()->json(['message' => 'Corrida não encontrada.'], 404);
+        }
+
+        return response()->json($this->despachoCorridaService->previsaoCancelamentoPassageiro($registro));
     }
 
     public function cancelar(Request $request, int $corrida): JsonResponse
     {
-        $dados = $request->validate(['motivo' => 'nullable|string|max:255']);
+        $dados = $request->validate([
+            'motivo' => 'nullable|string|max:255',
+            'taxa_confirmada' => 'nullable|numeric|min:0',
+        ]);
 
         $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
 
@@ -103,7 +148,8 @@ class CorridaController extends Controller
                 corridaId: $corrida,
                 quem: 'passageiro',
                 donoId: $passageiroId === null ? null : (int) $passageiroId,
-                motivo: $dados['motivo'] ?? null
+                motivo: $dados['motivo'] ?? null,
+                taxaConfirmada: isset($dados['taxa_confirmada']) ? (float) $dados['taxa_confirmada'] : null
             );
         } catch (RuntimeException $excecao) {
             $status = in_array($excecao->getCode(), [404, 409], true)
@@ -120,12 +166,27 @@ class CorridaController extends Controller
     {
         $corrida = $this->doUsuario($request)
             ->whereIn('status_corrida', self::STATUS_ATIVOS)
-            ->with(['motorista.user', 'veiculo', 'corrida_destinos', 'corrida_financeiro'])
+            ->with([
+                'motorista.user:id,name,foto',
+                'passageiro.user:id,name,foto',
+                'veiculo',
+                'corrida_destinos',
+                'corrida_financeiro',
+            ])
             ->orderByDesc('id')
             ->first();
 
         if ($corrida === null) {
             return response()->json(['corrida' => null]);
+        }
+
+        $this->reduzirNomes($corrida);
+        $motoristaId = Motorista::where('user_id', $request->user()->id)->value('id');
+        $ocultarFotoPassageiro = $motoristaId !== null
+            && $corrida->motorista_id === (int) $motoristaId
+            && ! in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
+        if ($ocultarFotoPassageiro) {
+            $corrida->passageiro?->user?->setAttribute('foto', null);
         }
 
         $posicao = $corrida->motorista_id === null
@@ -137,6 +198,9 @@ class CorridaController extends Controller
             'motorista_posicao' => $posicao,
             'chegada' => $this->estimarChegadaService->paraCorrida($corrida),
             'passageiro' => $this->passageiroParaOMotorista($corrida, $request),
+            'espera' => $corrida->status_corrida === 'motorista_chegou'
+                ? $this->contabilizarEsperaCorridaService->resumo($corrida)
+                : null,
         ]);
     }
 
@@ -153,9 +217,10 @@ class CorridaController extends Controller
             return null;
         }
 
-        $passageiro = User::find($corrida->passageiro_id);
+        $passageiro = $corrida->passageiro;
+        $usuario = $passageiro?->user;
 
-        if ($passageiro === null) {
+        if ($passageiro === null || $usuario === null) {
             return null;
         }
 
@@ -165,15 +230,34 @@ class CorridaController extends Controller
             ->whereIn('corrida_id', (clone $corridasDoPassageiro)->select('id'))
             ->avg('nota');
 
+        $telefone = $passageiro->user()->value('telefone');
+
         return [
-            'nome' => $passageiro->name,
-            'foto' => $passageiro->foto,
-            'telefone' => $passageiro->telefone,
+            'nome' => $this->primeiroNome((string) $usuario->name),
+            'foto' => in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true)
+                ? $usuario->foto
+                : null,
+            'foto_oculta' => ! in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true),
+            'telefone' => is_string($telefone) ? $telefone : null,
             'nota' => $nota === null ? null : round((float) $nota, 2),
             'corridas' => (clone $corridasDoPassageiro)
                 ->where('status_corrida', 'finalizada')
                 ->count(),
         ];
+    }
+
+    private function reduzirNomes(Corrida $corrida): void
+    {
+        foreach ([$corrida->motorista?->user, $corrida->passageiro?->user] as $usuario) {
+            if ($usuario !== null) {
+                $usuario->setAttribute('name', $this->primeiroNome((string) $usuario->name));
+            }
+        }
+    }
+
+    private function primeiroNome(string $nome): string
+    {
+        return preg_split('/\s+/u', trim($nome), 2)[0] ?? '';
     }
 
     /**
@@ -243,12 +327,22 @@ class CorridaController extends Controller
     {
         $encontrada = $this->doUsuario($request)
             ->whereKey($corrida)
-            ->with(['motorista.user', 'veiculo', 'corrida_destinos', 'corrida_financeiro'])
+            ->with([
+                'motorista:id,user_id',
+                'motorista.user:id,name,foto',
+                'passageiro:id,user_id',
+                'passageiro.user:id,name,foto',
+                'veiculo',
+                'corrida_destinos',
+                'corrida_financeiro',
+            ])
             ->first();
 
         if ($encontrada === null) {
             return response()->json(['message' => 'Corrida não encontrada.'], 404);
         }
+
+        $this->reduzirNomes($encontrada);
 
         return response()->json($encontrada);
     }
@@ -271,7 +365,8 @@ class CorridaController extends Controller
 
     public function buscarEndereco(Request $request): JsonResponse
     {
-        $endereco = $request->string('endereco')->toString();
+        $dados = $request->validate(['endereco' => 'required|string|max:200']);
+        $endereco = $dados['endereco'];
 
         // menos de 3 caracteres quase nunca traz resultado útil — evita
         // gastar requisição da Places API à toa
@@ -433,15 +528,20 @@ class CorridaController extends Controller
 
     public function calculoEntreEnderecos(Request $request): JsonResponse
     {
-        $enderecos = $request->input('enderecos', []);
+        $dados = $request->validate([
+            'enderecos' => 'required|array|min:2|max:6',
+            'enderecos.*.order' => 'required|integer|min:0',
+            'enderecos.*.latitude' => 'required|numeric|between:-90,90',
+            'enderecos.*.longitude' => 'required|numeric|between:-180,180',
+        ]);
 
-        return response()->json($this->estimarRotaService->executar(enderecos: $enderecos));
+        return response()->json($this->estimarRotaService->executar(enderecos: $dados['enderecos']));
     }
 
     public function precosCorrida(Request $request): JsonResponse
     {
         $dados = $request->validate([
-            'enderecos' => 'required|array|min:2',
+            'enderecos' => 'required|array|min:2|max:6',
             'enderecos.*.order' => 'required|integer|min:0',
             'enderecos.*.latitude' => 'required|numeric|between:-90,90',
             'enderecos.*.longitude' => 'required|numeric|between:-180,180',

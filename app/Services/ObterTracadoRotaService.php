@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 class ObterTracadoRotaService
 {
@@ -15,18 +17,35 @@ class ObterTracadoRotaService
      */
     public function executar(array $pontos): array
     {
-        if (count($pontos) < 2) {
+        if (count($pontos) < 2 || count($pontos) > 6) {
             return [];
         }
 
         $chave = 'tracado-rota:'.md5($this->chaveDosPontos($pontos));
 
-        /** @var list<array{latitude: float, longitude: float}> */
-        return Cache::remember(
-            $chave,
-            now()->addMinutes(self::TTL_MINUTOS),
-            fn () => $this->consultarDirections($pontos)
-        );
+        try {
+            /** @var list<array{latitude: float, longitude: float}> */
+            return Cache::lock($chave.':lock', 10)->block(9, function () use ($chave, $pontos): array {
+                $cache = Cache::get($chave);
+                if (is_array($cache)) {
+                    return $cache;
+                }
+
+                $coordenadas = $this->consultarDirections($pontos);
+                if ($coordenadas !== []) {
+                    Cache::put($chave, $coordenadas, now()->addMinutes(self::TTL_MINUTOS));
+                }
+
+                return $coordenadas;
+            });
+        } catch (LockTimeoutException) {
+            /** @var list<array{latitude: float, longitude: float}> */
+            return Cache::get($chave, []);
+        } catch (Throwable $erro) {
+            report($erro);
+
+            return [];
+        }
     }
 
     /**
@@ -53,7 +72,7 @@ class ObterTracadoRotaService
             ->map(fn (array $p) => $p['latitude'].','.$p['longitude'])
             ->implode('|');
 
-        $response = Http::get('https://maps.googleapis.com/maps/api/directions/json', [
+        $response = Http::connectTimeout(3)->timeout(8)->get('https://maps.googleapis.com/maps/api/directions/json', [
             'origin' => $origem['latitude'].','.$origem['longitude'],
             'destination' => $destino['latitude'].','.$destino['longitude'],
             'waypoints' => $waypoints !== '' ? $waypoints : null,

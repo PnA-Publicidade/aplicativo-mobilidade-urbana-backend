@@ -110,6 +110,6 @@ class VeiculosController extends Controller
      */
     public function veiculoPorPlaca(string $placa): Collection
     {
-        return Veiculo::where('placa', 'ilike', "%{$placa}%")->get();
+        return Veiculo::where('placa', 'like', "%{$placa}%")->get();
     }
 }

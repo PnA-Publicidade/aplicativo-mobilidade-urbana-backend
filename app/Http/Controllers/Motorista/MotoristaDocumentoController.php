@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Motorista;
 
 use App\Http\Controllers\Controller;
+use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
+use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,6 +13,10 @@ use Illuminate\Support\Facades\Storage;
 
 class MotoristaDocumentoController extends Controller
 {
+    public function __construct(
+        protected AtualizarSituacaoMotoristaService $atualizarSituacaoMotoristaService
+    ) {}
+
     /**
      * Display a listing of the resource.
      *
@@ -27,8 +33,8 @@ class MotoristaDocumentoController extends Controller
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'motorista_id' => 'required|integer',
-            'tipo_documento' => 'required|string',
+            'motorista_id' => 'required|integer|exists:motoristas,id',
+            'tipo_documento' => 'required|string|max:60',
             'arquivo' => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048', // 2MB
         ]);
 
@@ -52,9 +58,13 @@ class MotoristaDocumentoController extends Controller
             'status' => 'em_analise',
         ]);
 
+        $motorista = Motorista::findOrFail($motoristaDocumento->motorista_id);
+        $situacao = $this->atualizarSituacaoMotoristaService->executar($motorista);
+
         return response()->json([
             'message' => 'Arquivo enviado com sucesso',
             'data' => $motoristaDocumento,
+            'situacao_motorista' => $situacao,
         ], 201);
     }
 
@@ -95,21 +105,57 @@ class MotoristaDocumentoController extends Controller
         }
 
         // Remove do banco (soft delete)
+        $motoristaId = $motoristaDocumento->motorista_id;
         $motoristaDocumento->delete();
+
+        $motorista = Motorista::find($motoristaId);
+        $situacao = $motorista === null
+            ? null
+            : $this->atualizarSituacaoMotoristaService->executar($motorista);
 
         return response()->json([
             'message' => 'Documento removido com sucesso',
+            'situacao_motorista' => $situacao,
         ]);
     }
 
     public function mudarStatusDocumento(Request $request, int $motoristaDocumentoId): JsonResponse
     {
+        $dados = $request->validate([
+            'status' => 'required|in:em_analise,aprovado,reprovado',
+            'observacao' => 'nullable|string|max:500',
+        ]);
+
         $motoristaDocumento = MotoristaDocumento::findOrFail($motoristaDocumentoId);
-        $motoristaDocumento->status = $request->status;
+
+        // ninguém aprova o próprio documento
+        $motoristaDoUsuario = Motorista::where('user_id', $request->user()->id)->value('id');
+
+        if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
+            return response()->json([
+                'message' => 'Você não pode alterar o status dos seus próprios documentos.',
+            ], 403);
+        }
+
+        $motoristaDocumento->status = $dados['status'];
+
+        if (array_key_exists('observacao', $dados)) {
+            $motoristaDocumento->observacao = $dados['observacao'];
+        }
+
         $motoristaDocumento->saveOrFail();
+
+        // a liberação do motorista é derivada dos documentos: sem isto o
+        // painel aprovava o documento e o motorista continuava pendente
+        $motorista = Motorista::find($motoristaDocumento->motorista_id);
+
+        $situacao = $motorista === null
+            ? null
+            : $this->atualizarSituacaoMotoristaService->executar($motorista);
 
         return response()->json([
             'message' => 'Status do documento alterado com sucesso',
+            'situacao_motorista' => $situacao,
         ]);
     }
 }

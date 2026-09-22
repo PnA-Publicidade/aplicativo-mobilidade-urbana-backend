@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Route;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
 // já dentro do grupo auth:jwt (ver routes/api.php)
-Route::apiResource('users', UsuarioController::class);
+Route::apiResource('users', UsuarioController::class)->only(['index', 'store', 'show', 'update']);
 Route::get('usuario-logado', [UsuarioController::class, 'usuarioLogado']);
 Route::delete('usuario-remover-foto-perfil/{id}', [UsuarioController::class, 'removerFotoPerfil']);
 Route::post('usuario-arquivar', [UsuarioController::class, 'usuarioArquivar']);
