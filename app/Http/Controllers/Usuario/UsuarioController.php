@@ -80,7 +80,7 @@ class UsuarioController extends Controller
 
         $dados = $request->validate(
             [
-                ...$this->regrasCadastro(),
+                ...$this->regrasCadastro($ehMotorista),
                 'perfil' => 'nullable|in:passageiro,motorista',
             ],
             $this->mensagensCadastro()
@@ -91,7 +91,7 @@ class UsuarioController extends Controller
                 'name' => $dados['name'],
                 'data_nascimento' => $dados['data_nascimento'],
                 'telefone' => $dados['telefone'] ?? null,
-                'cpf' => $dados['cpf'],
+                'cpf' => $dados['cpf'] ?? null,
                 'email' => $dados['email'],
                 'status' => 'ativo',
                 'password' => bcrypt($dados['password']),
@@ -162,16 +162,21 @@ class UsuarioController extends Controller
     public function destroy(string $id): void {}
 
     /**
+     * O motorista não informa CPF no cadastro: ele é pedido depois, ao
+     * configurar o recebimento (PIX).
+     *
      * @return array<string, string>
      */
-    private function regrasCadastro(): array
+    private function regrasCadastro(bool $ehMotorista = false): array
     {
         return [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'telefone' => 'nullable|string|unique:users,telefone',
-            'cpf' => 'required|string|size:11|unique:users,cpf',
+            'cpf' => $ehMotorista
+                ? 'nullable|string|size:11|unique:users,cpf'
+                : 'required|string|size:11|unique:users,cpf',
             'data_nascimento' => 'required|date|before_or_equal:'.now()->subYears(18)->toDateString(),
         ];
     }
