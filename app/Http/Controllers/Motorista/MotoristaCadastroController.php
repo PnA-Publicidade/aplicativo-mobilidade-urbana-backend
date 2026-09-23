@@ -9,6 +9,7 @@ use App\Models\MotoristaVeiculo;
 use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -184,6 +185,45 @@ class MotoristaCadastroController extends Controller
 
         return response()->json([
             'message' => 'Documento removido.',
+            'situacao' => $situacao,
+        ]);
+    }
+
+    /**
+     * Atalho de desenvolvimento: pula CNH e documentos e aprova o motorista
+     * direto, sem passar pela análise. Mesmo espírito do código de
+     * verificação fake em LoginController::enviarCodigo — remover antes de
+     * publicar.
+     */
+    public function aprovarDev(Request $request): JsonResponse
+    {
+        abort_unless(App::environment(['local', 'testing']), 404);
+
+        $motorista = Motorista::firstOrNew(['user_id' => $request->user()->id]);
+
+        $motorista->cnh_numero ??= '00000000000';
+        $motorista->cnh_categoria ??= 'B';
+        $motorista->cnh_expiracao ??= now()->addYears(5)->toDateString();
+        $motorista->ear ??= false;
+        $motorista->save();
+
+        foreach (AtualizarSituacaoMotoristaService::DOCUMENTOS_EXIGIDOS as $tipo) {
+            MotoristaDocumento::create([
+                'motorista_id' => $motorista->id,
+                'tipo_documento' => $tipo,
+                'name' => "dev-$tipo.pdf",
+                'type' => 'pdf',
+                'mime_type' => 'application/pdf',
+                'size' => 0,
+                'path' => "dev-aprovado/$tipo.pdf",
+                'status' => 'aprovado',
+            ]);
+        }
+
+        $situacao = $this->atualizarSituacaoMotoristaService->executar($motorista);
+
+        return response()->json([
+            'message' => 'Cadastro aprovado (atalho de desenvolvimento).',
             'situacao' => $situacao,
         ]);
     }

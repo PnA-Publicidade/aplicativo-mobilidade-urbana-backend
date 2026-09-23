@@ -86,3 +86,44 @@ it('não exibe documentos de outra conta no cadastro', function () {
         ->assertOk()
         ->assertJsonPath('documentos', []);
 });
+
+it('atalho de desenvolvimento aprova o motorista sem passar pela análise', function () {
+    $usuario = User::factory()->create();
+
+    $this->actingAs($usuario, 'jwt')
+        ->postJson('/api/motorista/cadastro/aprovar-dev')
+        ->assertOk()
+        ->assertJsonPath('situacao', 'aprovado');
+
+    $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+    expect($motorista->status)->toBe('aprovado')
+        ->and($motorista->cnh_numero)->not->toBeNull();
+
+    $documentos = MotoristaDocumento::where('motorista_id', $motorista->id)->get();
+    expect($documentos)->toHaveCount(4)
+        ->and($documentos->pluck('status')->unique()->all())->toBe(['aprovado']);
+
+    // veículo continua pendente: o atalho cobre CNH e documentos, não frota
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertOk()
+        ->assertJsonPath('situacao', 'aprovado')
+        ->assertJsonPath('pendencias', ['veiculo']);
+});
+
+it('atalho de desenvolvimento não duplica CNH já preenchida', function () {
+    $usuario = User::factory()->create();
+    $motorista = Motorista::create([
+        'user_id' => $usuario->id,
+        'status' => 'pendente',
+        'cnh_numero' => '11122233344',
+        'cnh_categoria' => 'A',
+        'cnh_expiracao' => now()->addYear()->toDateString(),
+        'ear' => true,
+    ]);
+
+    $this->actingAs($usuario, 'jwt')
+        ->postJson('/api/motorista/cadastro/aprovar-dev')
+        ->assertOk();
+
+    expect($motorista->fresh()->cnh_numero)->toBe('11122233344');
+});
