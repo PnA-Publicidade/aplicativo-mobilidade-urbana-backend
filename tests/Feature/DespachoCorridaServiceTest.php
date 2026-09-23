@@ -629,13 +629,58 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
 
     $this->actingAs($passageiro->user, 'jwt')->getJson('/api/minha-corrida-atual')
         ->assertOk()
-        ->assertJsonPath('corrida.motorista.user.name', 'João');
+        ->assertJsonPath('corrida.motorista.user.name', 'João')
+        ->assertJsonPath('motorista_info.nome', 'João')
+        ->assertJsonPath('motorista_info.telefone', $motorista->user->telefone)
+        ->assertJsonPath('motorista_info.nota', null)
+        ->assertJsonPath('motorista_info.corridas', 0);
 
     app(DespachoCorridaService::class)->transicionar($motorista, $corrida->id, 'cheguei');
     $this->actingAs($motorista->user, 'jwt')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('passageiro.foto', 'https://example.test/maria.jpg')
         ->assertJsonPath('passageiro.foto_oculta', false);
+});
+
+it('mostra a nota media e o total de corridas do motorista para o passageiro', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $servico = app(DespachoCorridaService::class);
+
+    foreach ([5, 3] as $nota) {
+        $outroPassageiro = criarPassageiroDespacho();
+        $corridaAnterior = criarCorridaDespacho($outroPassageiro);
+        $servico->aceitar($motorista, $corridaAnterior->id);
+        $servico->transicionar($motorista, $corridaAnterior->id, 'cheguei');
+        $servico->transicionar($motorista, $corridaAnterior->id, 'iniciar');
+        $servico->transicionar($motorista, $corridaAnterior->id, 'finalizar');
+
+        AvaliacoesCorrida::create([
+            'corrida_id' => $corridaAnterior->id,
+            'usuario_id' => $motorista->user_id,
+            'tipo_usuario' => 'passageiro',
+            'nota' => $nota,
+        ]);
+    }
+
+    $passageiro = criarPassageiroDespacho();
+    $corrida = criarCorridaDespacho($passageiro);
+    $servico->aceitar($motorista, $corrida->id);
+
+    $this->actingAs($passageiro->user, 'jwt')->getJson('/api/minha-corrida-atual')
+        ->assertOk()
+        ->assertJsonPath('motorista_info.nota', 4)
+        ->assertJsonPath('motorista_info.corridas', 2);
+});
+
+it('não mostra motorista_info pra quem consulta a própria corrida como motorista', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $passageiro = criarPassageiroDespacho();
+    $corrida = criarCorridaDespacho($passageiro);
+    app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
+
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/minha-corrida-atual')
+        ->assertOk()
+        ->assertJsonPath('motorista_info', null);
 });
 
 it('protege os dados pessoais no detalhe da corrida e mostra somente o primeiro nome', function () {

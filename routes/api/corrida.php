@@ -11,6 +11,7 @@ Route::middleware('throttle:30,1')->group(function () {
     Route::post('ajustar-ponto-embarque', [CorridaController::class, 'ajustarPontoEmbarque']);
     Route::get('calculos-entre-endereco', [CorridaController::class, 'calculoEntreEnderecos']);
     Route::post('tracado-rota', [CorridaController::class, 'tracadoRota']);
+    Route::post('navegacao-rota', [CorridaController::class, 'navegacaoRota']);
 });
 
 Route::get('motorista/situacao', [CorridaMotoristaController::class, 'situacao']);

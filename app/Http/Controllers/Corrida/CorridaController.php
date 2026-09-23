@@ -14,6 +14,7 @@ use App\Services\ContabilizarEsperaCorridaService;
 use App\Services\DespachoCorridaService;
 use App\Services\EstimarChegadaService;
 use App\Services\EstimarRotaService;
+use App\Services\ObterNavegacaoService;
 use App\Services\ObterTracadoRotaService;
 use App\Services\ResolverTarifaService;
 use App\Services\SimularCorridaNegociadaService;
@@ -84,6 +85,35 @@ class CorridaController extends Controller
             (float) $dados['latitude'],
             (float) $dados['longitude'],
         ));
+    }
+
+    /**
+     * Rota passo a passo (manobras) para a navegação dentro do app, entre a
+     * posição atual do motorista e o próximo ponto da corrida.
+     */
+    public function navegacaoRota(
+        Request $request,
+        ObterNavegacaoService $obterNavegacaoService,
+    ): JsonResponse {
+        $dados = $request->validate([
+            'origem_latitude' => 'required|numeric|between:-90,90',
+            'origem_longitude' => 'required|numeric|between:-180,180',
+            'destino_latitude' => 'required|numeric|between:-90,90',
+            'destino_longitude' => 'required|numeric|between:-180,180',
+        ]);
+
+        $rota = $obterNavegacaoService->executar(
+            (float) $dados['origem_latitude'],
+            (float) $dados['origem_longitude'],
+            (float) $dados['destino_latitude'],
+            (float) $dados['destino_longitude'],
+        );
+
+        if ($rota === null) {
+            return response()->json(['message' => 'Não foi possível calcular a rota.'], 422);
+        }
+
+        return response()->json($rota);
     }
 
     /**
@@ -167,11 +197,12 @@ class CorridaController extends Controller
         $corrida = $this->doUsuario($request)
             ->whereIn('status_corrida', self::STATUS_ATIVOS)
             ->with([
-                'motorista.user:id,name,foto',
+                'motorista.user:id,name,foto,telefone',
                 'passageiro.user:id,name,foto',
                 'veiculo',
                 'corrida_destinos',
                 'corrida_financeiro',
+                'produto:id,nome',
             ])
             ->orderByDesc('id')
             ->first();
@@ -198,10 +229,53 @@ class CorridaController extends Controller
             'motorista_posicao' => $posicao,
             'chegada' => $this->estimarChegadaService->paraCorrida($corrida),
             'passageiro' => $this->passageiroParaOMotorista($corrida, $request),
+            'motorista_info' => $this->motoristaParaOPassageiro($corrida, $request),
             'espera' => $corrida->status_corrida === 'motorista_chegou'
                 ? $this->contabilizarEsperaCorridaService->resumo($corrida)
                 : null,
         ]);
+    }
+
+    /**
+     * Só o passageiro dono da corrida enxerga a nota, o telefone e o total
+     * de corridas do motorista designado.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function motoristaParaOPassageiro(Corrida $corrida, Request $request): ?array
+    {
+        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+
+        if ($passageiroId === null || $corrida->passageiro_id !== $passageiroId) {
+            return null;
+        }
+
+        $motorista = $corrida->motorista;
+        $usuario = $motorista?->user;
+
+        if ($motorista === null || $usuario === null) {
+            return null;
+        }
+
+        $corridasDoMotorista = Corrida::where('motorista_id', $motorista->id);
+
+        // tipo_usuario guarda quem deu a nota: "passageiro" aqui são as
+        // notas que passageiros deram a este motorista, não o contrário
+        $nota = AvaliacoesCorrida::where('tipo_usuario', 'passageiro')
+            ->whereIn('corrida_id', (clone $corridasDoMotorista)->select('id'))
+            ->avg('nota');
+
+        $telefone = $usuario->telefone;
+
+        return [
+            'nome' => $this->primeiroNome((string) $usuario->name),
+            'foto' => $usuario->foto,
+            'telefone' => is_string($telefone) ? $telefone : null,
+            'nota' => $nota === null ? null : round((float) $nota, 2),
+            'corridas' => (clone $corridasDoMotorista)
+                ->where('status_corrida', 'finalizada')
+                ->count(),
+        ];
     }
 
     /**
