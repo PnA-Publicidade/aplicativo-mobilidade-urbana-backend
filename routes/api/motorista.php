@@ -10,6 +10,8 @@ Route::get('motorista/cadastro', [MotoristaCadastroController::class, 'mostrar']
 Route::post('motorista/cadastro/cnh', [MotoristaCadastroController::class, 'salvarCnh']);
 Route::post('motorista/cadastro/documentos', [MotoristaCadastroController::class, 'enviarDocumento']);
 Route::delete('motorista/cadastro/documentos/{documento}', [MotoristaCadastroController::class, 'removerDocumento']);
+// atalho de desenvolvimento: ver MotoristaCadastroController::aprovarDev
+Route::post('motorista/cadastro/aprovar-dev', [MotoristaCadastroController::class, 'aprovarDev']);
 
 Route::get('motorista-veiculos/{motoristaId}', [MotoristaController::class, 'motoristaVeiculos']);
 Route::apiResource('motoristas', MotoristaController::class);
