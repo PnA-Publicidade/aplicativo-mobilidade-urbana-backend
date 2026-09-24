@@ -1,5 +1,7 @@
 <?php
 
+// CODEX: 5 linhas alteradas neste arquivo; limita consultas repetidas da prévia de cancelamento.
+
 use App\Http\Controllers\Corrida\AvaliacoesCorridaController;
 use App\Http\Controllers\Corrida\CorridaController;
 use App\Http\Controllers\Corrida\CorridaMotoristaController;
@@ -24,7 +26,8 @@ Route::post('motorista/corridas/{corrida}/{acao}', [CorridaMotoristaController::
 Route::post('motorista/corridas/{corrida}/cancelar', [CorridaMotoristaController::class, 'cancelar']);
 
 Route::get('minha-corrida-atual', [CorridaController::class, 'minhaCorridaAtual']);
-Route::get('corridas/{corrida}/cancelamento', [CorridaController::class, 'previsaoCancelamento']);
+Route::get('corridas/{corrida}/cancelamento', [CorridaController::class, 'previsaoCancelamento'])
+    ->middleware('throttle:10,1');
 Route::post('corridas/{corrida}/cancelar', [CorridaController::class, 'cancelar']);
 
 Route::apiResource('corridas', CorridaController::class)->only(['index', 'store', 'show']);

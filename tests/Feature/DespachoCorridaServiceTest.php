@@ -1,5 +1,7 @@
 <?php
 
+// CODEX: 26 linhas alteradas neste arquivo; valida a separação entre os perfis do passageiro e do motorista.
+
 use App\Events\CorridaAtualizada;
 use App\Events\CorridasDisponiveisAlteradas;
 use App\Events\MotoristaMoveu;
@@ -681,6 +683,30 @@ it('não mostra motorista_info pra quem consulta a própria corrida como motoris
     $this->actingAs($motorista->user, 'jwt')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('motorista_info', null);
+});
+
+it('separa a corrida atual quando a mesma conta tem os perfis passageiro e motorista', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $perfilPassageiro = Passageiro::create([
+        'user_id' => $motorista->user_id,
+        'media_avaliacao' => null,
+    ]);
+    $corridaComoPassageiro = criarCorridaDespacho($perfilPassageiro);
+    $corridaComoMotorista = criarCorridaDespacho(criarPassageiroDespacho());
+    app(DespachoCorridaService::class)->aceitar($motorista, $corridaComoMotorista->id);
+    $this->mock(EstimarChegadaService::class)
+        ->shouldReceive('paraCorrida')
+        ->twice()
+        ->andReturn(null);
+
+    $this->actingAs($motorista->user, 'jwt')
+        ->getJson('/api/minha-corrida-atual?perfil=passageiro')
+        ->assertOk()
+        ->assertJsonPath('corrida.id', $corridaComoPassageiro->id);
+
+    $this->getJson('/api/minha-corrida-atual?perfil=motorista')
+        ->assertOk()
+        ->assertJsonPath('corrida.id', $corridaComoMotorista->id);
 });
 
 it('protege os dados pessoais no detalhe da corrida e mostra somente o primeiro nome', function () {

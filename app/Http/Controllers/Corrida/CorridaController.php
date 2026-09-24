@@ -1,5 +1,7 @@
 <?php
 
+// CODEX: 16 linhas alteradas neste arquivo; separa a corrida atual pelo perfil solicitado pelo aplicativo.
+
 namespace App\Http\Controllers\Corrida;
 
 use App\Http\Controllers\Controller;
@@ -194,7 +196,11 @@ class CorridaController extends Controller
 
     public function minhaCorridaAtual(Request $request): JsonResponse
     {
-        $corrida = $this->doUsuario($request)
+        $dados = $request->validate([
+            'perfil' => 'sometimes|in:passageiro,motorista',
+        ]);
+
+        $corrida = $this->doUsuario($request, $dados['perfil'] ?? null)
             ->whereIn('status_corrida', self::STATUS_ATIVOS)
             ->with([
                 'motorista.user:id,name,foto,telefone',
@@ -337,21 +343,21 @@ class CorridaController extends Controller
     /**
      * @return Builder<Corrida>
      */
-    private function doUsuario(Request $request): Builder
+    private function doUsuario(Request $request, ?string $perfil = null): Builder
     {
         $usuarioId = $request->user()->id;
 
         $passageiroId = Passageiro::where('user_id', $usuarioId)->value('id');
         $motoristaId = Motorista::where('user_id', $usuarioId)->value('id');
 
-        return Corrida::query()->where(function (Builder $consulta) use ($passageiroId, $motoristaId) {
+        return Corrida::query()->where(function (Builder $consulta) use ($passageiroId, $motoristaId, $perfil) {
             $consulta->whereRaw('1 = 0');
 
-            if ($passageiroId !== null) {
+            if ($passageiroId !== null && $perfil !== 'motorista') {
                 $consulta->orWhere('passageiro_id', $passageiroId);
             }
 
-            if ($motoristaId !== null) {
+            if ($motoristaId !== null && $perfil !== 'passageiro') {
                 $consulta->orWhere('motorista_id', $motoristaId);
             }
         });
