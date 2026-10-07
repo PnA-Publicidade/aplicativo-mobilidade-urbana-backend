@@ -25,11 +25,15 @@ class SolicitarCorridaService
         'em_andamento',
     ];
 
+    /**
+     * @param  array{nome: string, telefone: string}|null  $convidado  quem vai viajar, se não for o titular da conta
+     */
     public function executar(
         User $usuario,
         CotacaoCorrida $cotacao,
         string $produtoCodigo,
-        ?string $metodoPagamento = null
+        ?string $metodoPagamento = null,
+        ?array $convidado = null
     ): Corrida {
         $categoria = $cotacao->categoria($produtoCodigo);
 
@@ -45,7 +49,7 @@ class SolicitarCorridaService
 
         $prePago = $pagamento->ehPrePago($metodoPagamento);
 
-        $corrida = DB::transaction(function () use ($cotacao, $categoria, $passageiro, $metodoPagamento, $prePago, $pagamento) {
+        $corrida = DB::transaction(function () use ($cotacao, $categoria, $passageiro, $metodoPagamento, $prePago, $pagamento, $convidado) {
             // trava o passageiro: dois pedidos simultâneos não criam duas
             // corridas ativas nem gastam o mesmo crédito
             Passageiro::whereKey($passageiro->id)->lockForUpdate()->first();
@@ -69,6 +73,8 @@ class SolicitarCorridaService
                 'produto_id' => $categoria['produto']['id'] ?? null,
                 'tarifa_id' => $categoria['tarifa_id'] ?? null,
                 'passageiro_id' => $passageiro->id,
+                'convidado_nome' => $convidado['nome'] ?? null,
+                'convidado_telefone' => $convidado['telefone'] ?? null,
                 'cidade_id' => $cotacao->cidade_id,
                 // pré-pago: invisível aos motoristas até o pagamento ser confirmado
                 'status_corrida' => $prePago ? 'aguardando_pagamento' : 'solicitada',

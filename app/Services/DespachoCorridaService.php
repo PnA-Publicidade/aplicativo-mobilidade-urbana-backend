@@ -621,6 +621,7 @@ class DespachoCorridaService
             'origem' => $origem->endereco,
             'destino' => $destino?->endereco,
             'paradas' => $corrida->corrida_destinos->where('tipo', 'parada')->count(),
+            'para_outra_pessoa' => $corrida->convidado_nome !== null,
             'solicitada_em' => $corrida->tempo_solicitacao,
             ...($reputacoes[$corrida->passageiro_id] ?? [
                 'passageiro_nota' => null,

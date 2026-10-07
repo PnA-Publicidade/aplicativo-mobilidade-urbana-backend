@@ -399,14 +399,18 @@ class CorridaController extends Controller
             ->avg('nota');
 
         $telefone = $passageiro->user()->value('telefone');
+        $convidado = $corrida->convidado_nome !== null;
+        $fotoLiberada = ! $convidado
+            && in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
 
         return [
-            'nome' => $this->primeiroNome((string) $usuario->name),
-            'foto' => in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true)
-                ? $usuario->foto
-                : null,
-            'foto_oculta' => ! in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true),
-            'telefone' => is_string($telefone) ? $telefone : null,
+            'nome' => $this->primeiroNome((string) ($convidado ? $corrida->convidado_nome : $usuario->name)),
+            'solicitante' => $convidado ? $this->primeiroNome((string) $usuario->name) : null,
+            'foto' => $fotoLiberada ? $usuario->foto : null,
+            'foto_oculta' => ! $fotoLiberada,
+            'telefone' => $convidado
+                ? $corrida->convidado_telefone
+                : (is_string($telefone) ? $telefone : null),
             'nota' => $nota === null ? null : round((float) $nota, 2),
             'corridas' => (clone $corridasDoPassageiro)
                 ->where('status_corrida', 'finalizada')
@@ -456,10 +460,24 @@ class CorridaController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        if (is_array($request->input('convidado'))) {
+            $request->merge(['convidado' => [
+                'nome' => trim((string) $request->input('convidado.nome')),
+                'telefone' => preg_replace('/\D/', '', (string) $request->input('convidado.telefone')),
+            ]]);
+        }
+
         $dados = $request->validate([
             'cotacao_id' => 'required|uuid',
             'produto_codigo' => 'required|string|max:60',
             'metodo_pagamento' => 'nullable|in:dinheiro,cartao,pix',
+            'convidado' => 'nullable|array',
+            'convidado.nome' => 'required_with:convidado|string|min:2|max:60',
+            'convidado.telefone' => ['required_with:convidado', 'string', 'regex:/^\d{10,11}$/'],
+        ], [
+            'convidado.nome.required_with' => 'Informe o nome de quem vai viajar.',
+            'convidado.telefone.required_with' => 'Informe o telefone de quem vai viajar.',
+            'convidado.telefone.regex' => 'Informe um telefone com DDD.',
         ]);
 
         $cotacao = CotacaoCorrida::find((string) $dados['cotacao_id']);
@@ -477,7 +495,8 @@ class CorridaController extends Controller
                 usuario: $request->user(),
                 cotacao: $cotacao,
                 produtoCodigo: (string) $dados['produto_codigo'],
-                metodoPagamento: $dados['metodo_pagamento'] ?? null
+                metodoPagamento: $dados['metodo_pagamento'] ?? null,
+                convidado: $dados['convidado'] ?? null
             );
         } catch (RuntimeException $excecao) {
             $status = $excecao->getCode() === 409 ? 409 : 422;
