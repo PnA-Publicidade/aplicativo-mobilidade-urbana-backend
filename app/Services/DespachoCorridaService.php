@@ -177,6 +177,24 @@ class DespachoCorridaService
         return $ofertas;
     }
 
+    /**
+     * Recusar (ou deixar a chamada tocar até o fim) só pesa na taxa de
+     * aceitação se a corrida ainda estava esperando motorista.
+     */
+    public function recusar(Motorista $motorista, int $corridaId): void
+    {
+        DB::table('ofertas_motorista')
+            ->where('motorista_id', $motorista->id)
+            ->where('corrida_id', $corridaId)
+            ->whereNull('recusada_em')
+            ->whereExists(fn ($consulta) => $consulta
+                ->from('corridas')
+                ->whereColumn('corridas.id', 'ofertas_motorista.corrida_id')
+                ->where('corridas.status_corrida', 'solicitada')
+                ->whereNull('corridas.motorista_id'))
+            ->update(['recusada_em' => now()]);
+    }
+
     public function aceitar(Motorista $motorista, int $corridaId): Corrida
     {
         return DB::transaction(function () use ($motorista, $corridaId) {
