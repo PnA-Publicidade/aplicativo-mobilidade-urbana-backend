@@ -9,6 +9,7 @@ use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Models\StatusBusca;
 use App\Models\Veiculo;
+use App\Services\CarteiraMotoristaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,10 +42,10 @@ class MotoristaController extends Controller
     }
 
     /**
-     * Ganhos reais do motorista: o do dia (corridas finalizadas hoje) e o saldo
-     * acumulado. Não há saques registrados, então o saldo é tudo que foi ganho.
+     * Ganhos do dia (todas as corridas finalizadas hoje) e o saldo da carteira
+     * (ver CarteiraMotoristaService: dinheiro não entra, saques descontam).
      */
-    public function ganhos(Request $request): JsonResponse
+    public function ganhos(Request $request, CarteiraMotoristaService $carteira): JsonResponse
     {
         $motorista = Motorista::where('user_id', $request->user()->id)->first();
 
@@ -64,7 +65,7 @@ class MotoristaController extends Controller
             'ganhos_do_dia' => round((float) (clone $finalizadas)
                 ->whereDate('corridas.tempo_final', $hoje->toDateString())
                 ->sum('corrida_financeiros.valor_liquido_motorista'), 2),
-            'saldo' => round((float) (clone $finalizadas)->sum('corrida_financeiros.valor_liquido_motorista'), 2),
+            'saldo' => $carteira->saldo($motorista),
             'corridas_hoje' => (clone $finalizadas)
                 ->whereDate('corridas.tempo_final', $hoje->toDateString())
                 ->count(),
