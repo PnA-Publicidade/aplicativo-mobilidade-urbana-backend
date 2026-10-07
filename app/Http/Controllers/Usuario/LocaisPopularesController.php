@@ -24,6 +24,9 @@ class LocaisPopularesController extends Controller
         $locais = DB::table('corrida_destinos')
             ->join('corridas', 'corridas.id', '=', 'corrida_destinos.corrida_id')
             ->whereIn('corrida_destinos.tipo', ['parada', 'destino'])
+            // só viagens feitas de verdade: pedir e cancelar não pode inventar
+            // um lugar "em alta" com nome escolhido por quem pediu
+            ->where('corridas.status_corrida', 'finalizada')
             ->where('corridas.tempo_solicitacao', '>=', now()->subDays((int) config('locais.populares.dias')))
             ->whereBetween('corrida_destinos.latitude', [$latitude - $grausLatitude, $latitude + $grausLatitude])
             ->whereBetween('corrida_destinos.longitude', [$longitude - $grausLongitude, $longitude + $grausLongitude])

@@ -32,12 +32,12 @@ function passageiroDaBusca(): Passageiro
     return Passageiro::create(['user_id' => usuarioDaBusca()->id, 'media_avaliacao' => null]);
 }
 
-function corridaAte(Passageiro $passageiro, string $nome, float $latitude, float $longitude, ?string $quando = null): void
+function corridaAte(Passageiro $passageiro, string $nome, float $latitude, float $longitude, ?string $quando = null, string $status = 'finalizada'): void
 {
     $corrida = Corrida::create([
         'codigo_corrida' => 'POP-'.Str::upper(Str::random(8)),
         'passageiro_id' => $passageiro->id,
-        'status_corrida' => 'finalizada',
+        'status_corrida' => $status,
         'tempo_solicitacao' => $quando ?? now()->subDays(2),
         'metodo_pagamento' => 'dinheiro',
         'status_pagamento' => 'pendente',
@@ -76,6 +76,19 @@ it('mostra os destinos mais pedidos por passageiros diferentes perto de quem bus
     expect(collect($resposta->json('data'))->pluck('name')->all())->toBe(['Rodoviária', 'Shopping'])
         ->and($resposta->json('data.0.formattedAddress'))->toBe('Rodoviária, Porto Velho - RO')
         ->and($resposta->json('data.0.latitude'))->toEqualWithDelta(-8.752, 0.0001);
+});
+
+it('só conta corridas finalizadas, para pedidos cancelados não inventarem lugares em alta', function () {
+    $passageiros = collect(range(1, 3))->map(fn () => passageiroDaBusca());
+
+    foreach (['cancelada', 'solicitada', 'aguardando_pagamento'] as $status) {
+        $passageiros->each(fn (Passageiro $p) => corridaAte($p, 'Ligue 0800 golpe', -8.7520, -63.8800, null, $status));
+    }
+
+    $this->actingAs(usuarioDaBusca(), 'jwt')
+        ->getJson('/api/locais/populares?latitude=-8.7600&longitude=-63.9000')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
 });
 
 it('pede a posição de quem busca', function () {
