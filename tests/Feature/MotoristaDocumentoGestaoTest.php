@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    Storage::fake('local');
+    Storage::fake('motorista_documentos_anexos');
     $this->operador = User::factory()->create();
     $this->usuario = User::factory()->create();
     $this->motorista = Motorista::create([
@@ -57,10 +57,12 @@ it('salva os campos da CNH e o PDF no motorista indicado sem alterar seu usuario
             $response->assertJsonPath("motorista.{$campo}", $valor);
         }
     }
-    Storage::disk('local')->assertExists($response->json('data.path'));
+    Storage::disk('motorista_documentos_anexos')->assertExists(basename($response->json('data.path')));
+    expect($response->json('data.url'))->toBe('http://localhost/'.$response->json('data.path'));
+    $response->assertJsonMissingPath('data.observacao');
     expect(MotoristaDocumento::count())->toBe(1)
         ->and($this->usuario->fresh()->name)->toBe($nomeUsuario)
-        ->and(MotoristaDocumento::first()->observacao)->toBeNull();
+        ->and(MotoristaDocumento::first()->getAttributes())->not->toHaveKey('observacao');
 });
 
 it('mantem os dados existentes quando a CNH chega sem campos adicionais', function () {
@@ -117,7 +119,7 @@ it('recusa campos invalidos antes de salvar o arquivo ou alterar o motorista', f
         ->assertJsonValidationErrors($campo);
 
     expect(MotoristaDocumento::count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(Storage::disk('motorista_documentos_anexos')->allFiles())->toBe([])
         ->and($this->motorista->fresh()->nome)->toBe('Nome anterior');
 })->with([
     'CPF incompleto' => ['cnh', ['cpf' => '123'], 'cnh.cpf'],
@@ -145,7 +147,7 @@ it('desfaz dados documento e arquivo se o salvamento conjunto falhar', function 
     ], ['Accept' => 'application/json']))->toThrow(RuntimeException::class, 'Falha ao atualizar situacao');
 
     expect(MotoristaDocumento::count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(Storage::disk('motorista_documentos_anexos')->allFiles())->toBe([])
         ->and($this->motorista->fresh()->nome)->toBe('Nome anterior')
         ->and($this->motorista->fresh()->status)->toBe('pendente');
 });

@@ -19,7 +19,7 @@ it('mostra os quatro documentos exigidos antes do primeiro envio', function () {
 });
 
 it('aceita PDF e imagem do próprio motorista e mostra só o envio mais recente', function () {
-    Storage::fake('local');
+    Storage::fake('motorista_documentos_anexos');
     $usuario = User::factory()->create();
 
     $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
@@ -30,6 +30,7 @@ it('aceita PDF e imagem do próprio motorista e mostra só o envio mais recente'
     $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('nova-cnh.png', 100, 'image/png'),
+        'arquivo_verso' => UploadedFile::fake()->create('nova-cnh-verso.png', 100, 'image/png'),
     ], ['Accept' => 'application/json'])->assertCreated();
 
     $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
@@ -37,8 +38,8 @@ it('aceita PDF e imagem do próprio motorista e mostra só o envio mais recente'
     expect($documentos)->toHaveCount(2)
         ->and($documentos[0]->path)->not->toBe($documentos[1]->path)
         ->and($documentos[1]->name)->toBe('nova-cnh.png');
-    Storage::disk('local')->assertExists($documentos[0]->path);
-    Storage::disk('local')->assertExists($documentos[1]->path);
+    Storage::disk('motorista_documentos_anexos')->assertExists(basename($documentos[0]->path));
+    Storage::disk('motorista_documentos_anexos')->assertExists(basename($documentos[1]->path));
 
     $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
         ->assertOk()
@@ -48,7 +49,7 @@ it('aceita PDF e imagem do próprio motorista e mostra só o envio mais recente'
 });
 
 it('recusa tipo desconhecido e arquivo fora dos formatos permitidos', function () {
-    Storage::fake('local');
+    Storage::fake('motorista_documentos_anexos');
     $usuario = User::factory()->create();
 
     $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
@@ -73,7 +74,7 @@ it('recusa tipo desconhecido e arquivo fora dos formatos permitidos', function (
 });
 
 it('não exibe documentos de outra conta no cadastro', function () {
-    Storage::fake('local');
+    Storage::fake('motorista_documentos_anexos');
     $primeiro = User::factory()->create();
     $segundo = User::factory()->create();
 

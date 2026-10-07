@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    Storage::fake('local');
+    Storage::fake('motorista_documentos_anexos');
     $this->operador = User::factory()->create();
     $this->motorista = Motorista::create([
         'user_id' => User::factory()->create()->id,
@@ -53,14 +53,16 @@ it('salva cada tipo como enum e retorna seu valor na API de documentos', functio
         ->assertJsonPath('data.tipo_documento', $tipo)
         ->assertJsonPath('situacao_motorista', 'em_analise');
 
-    $this->assertDatabaseHas('motorista_documentos', [
+    $this->assertDatabaseHas('motorista_documentos_anexos', [
         'id' => $response->json('data.id'),
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => $tipo,
     ]);
     expect(MotoristaDocumento::findOrFail($response->json('data.id'))->tipo_documento)
         ->toBe(TipoDocumentoMotorista::from($tipo));
-    Storage::disk('local')->assertExists($response->json('data.path'));
+    Storage::disk('motorista_documentos_anexos')->assertExists(basename($response->json('data.path')));
+    expect($response->json('data.url'))->toBe('http://localhost/'.$response->json('data.path'));
+    $response->assertJsonMissingPath('data.observacao');
     $this->getJson('/api/motorista-documentos/'.$this->motorista->id)
         ->assertOk()->assertJsonPath('data.0.tipo_documento', $tipo);
     $indice = array_search($tipo, TipoDocumentoMotorista::valores(), true);
@@ -79,7 +81,7 @@ it('recusa tipos fora do enum antes de salvar documento ou arquivo', function (s
     ], ['Accept' => 'application/json'])
         ->assertUnprocessable()->assertJsonValidationErrors('tipo_documento');
     expect(MotoristaDocumento::count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([]);
+        ->and(Storage::disk('motorista_documentos_anexos')->allFiles())->toBe([]);
 })->with(['/api/motorista-documentos', '/api/motorista/cadastro/documentos']);
 
 it('aprova o motorista quando os quatro tipos do enum estao aprovados', function () {

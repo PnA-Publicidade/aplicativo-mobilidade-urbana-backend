@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers\Publicidade;
 
-use App\Http\Requests\StoreBannerPublicidadeRequest;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateBannerPublicidadeRequest;
 use App\Models\BannerPublicidade;
-use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -17,7 +16,7 @@ class BannerPublicidadeController extends Controller
      */
     public function index()
     {
-        return BannerPublicidade::with('cidade')->paginate();
+        return BannerPublicidade::query()->paginate();
     }
 
     /**
@@ -26,8 +25,7 @@ class BannerPublicidadeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'cidade_id' => 'required|integer',
-            'titulo' => 'required|string',
+            'titulo' => 'required|string|max:255',
             'arquivo' => 'required|file|mimes:jpg,jpeg,png|max:12048',
         ]);
 
@@ -52,7 +50,7 @@ class BannerPublicidadeController extends Controller
     |--------------------------------------------------------------------------
     */
 
-        $imageName = time() . '_' . $originalName;
+        $imageName = time().'_'.$originalName;
 
         /*
     |--------------------------------------------------------------------------
@@ -62,7 +60,7 @@ class BannerPublicidadeController extends Controller
 
         $directory = public_path('images');
 
-        if (!is_dir($directory)) {
+        if (! is_dir($directory)) {
             mkdir($directory, 0755, true);
         }
 
@@ -95,7 +93,6 @@ class BannerPublicidadeController extends Controller
     */
 
         $bannerPublicidade = BannerPublicidade::create([
-            'cidade_id' => $request->cidade_id,
             'titulo' => $request->titulo,
             'name' => $originalName,
             'type' => $extension,

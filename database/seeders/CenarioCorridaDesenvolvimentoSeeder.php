@@ -75,9 +75,9 @@ class CenarioCorridaDesenvolvimentoSeeder extends Seeder
                         'type' => 'pdf',
                         'mime_type' => 'application/pdf',
                         'size' => 1,
-                        'path' => "motorista_documentos/$tipo-desenvolvimento.pdf",
+                        'path' => "motorista_documentos_anexos/$tipo-desenvolvimento.pdf",
                         'status' => 'aprovado',
-                        'observacao' => 'Dado fictício para desenvolvimento.',
+                        'url' => rtrim((string) config('app.url'), '/')."/motorista_documentos_anexos/$tipo-desenvolvimento.pdf",
                     ]
                 );
             }

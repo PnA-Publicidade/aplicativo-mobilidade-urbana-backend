@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class BannerPublicidade extends Model
 {
     use HasFactory;
     use SoftDeletes;
+
     protected $fillable = [
         'titulo',
         'name',
@@ -17,11 +18,6 @@ class BannerPublicidade extends Model
         'mime_type',
         'size',
         'path',
-        'url'
+        'url',
     ];
-
-    public function cidade()
-    {
-        return $this->belongsTo(Cidade::class);
-    }
 }

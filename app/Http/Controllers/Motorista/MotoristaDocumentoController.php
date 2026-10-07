@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Motorista;
 
+use App\Enums\MotivoReprovacaoDocumento;
 use App\Enums\TipoDocumentoMotorista;
 use App\Http\Controllers\Controller;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
+use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -13,17 +15,24 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class MotoristaDocumentoController extends Controller
 {
     public function __construct(
-        protected AtualizarSituacaoMotoristaService $atualizarSituacaoMotoristaService
+        protected AtualizarSituacaoMotoristaService $atualizarSituacaoMotoristaService,
+        protected ArmazenarAnexoMotoristaService $armazenarAnexoMotoristaService
     ) {}
 
     public function tipos(): JsonResponse
     {
         return response()->json(['data' => TipoDocumentoMotorista::catalogo()]);
+    }
+
+    public function motivosReprovacao(): JsonResponse
+    {
+        return response()->json(['data' => MotivoReprovacaoDocumento::catalogo()]);
     }
 
     public function resumo(int $motoristaId): JsonResponse
@@ -45,11 +54,30 @@ class MotoristaDocumentoController extends Controller
             ...$tipo,
             'id' => null,
             'status' => null,
-            'observacao' => null,
+            'url' => null,
+            'verso' => null,
             ...($documentos->get($tipo['tipo_documento'])?->toArray() ?? []),
         ], TipoDocumentoMotorista::catalogo());
 
         return response()->json(['data' => $dados]);
+    }
+
+    public function baixar(Request $request, int $motoristaDocumentoId): StreamedResponse
+    {
+        $dados = $request->validate(['lado' => 'sometimes|in:frente,verso']);
+        $documento = MotoristaDocumento::findOrFail($motoristaDocumentoId);
+        $anexo = ($dados['lado'] ?? 'frente') === 'verso' ? $documento->verso : $documento->toArray();
+        $path = $anexo['path'] ?? null;
+        $diretorio = ArmazenarAnexoMotoristaService::DIRETORIO.'/';
+        abort_unless(is_string($path) && str_starts_with($path, $diretorio), 404, 'Arquivo não encontrado.');
+        $arquivo = substr($path, strlen($diretorio));
+        abort_if($arquivo === '' || basename($arquivo) !== $arquivo, 404, 'Arquivo não encontrado.');
+        $disk = Storage::disk(ArmazenarAnexoMotoristaService::DIRETORIO);
+        abort_unless($disk->exists($arquivo), 404, 'Arquivo não encontrado.');
+
+        return $disk->download($arquivo, $anexo['name'] ?? basename($arquivo), [
+            'Content-Type' => $anexo['mime_type'] ?? 'application/octet-stream',
+        ]);
     }
 
     /**
@@ -71,6 +99,7 @@ class MotoristaDocumentoController extends Controller
             'motorista_id' => 'required|integer|exists:motoristas,id',
             'tipo_documento' => ['required', Rule::enum(TipoDocumentoMotorista::class)],
             'arquivo' => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'arquivo_verso' => $this->armazenarAnexoMotoristaService->regrasVerso($request),
             'cnh' => 'sometimes|array:nome,cpf,data_nascimento,numero_registro,cnh_categoria,primeira_habilitacao,data_emissao,cnh_expiracao,ear,observacao|prohibited_unless:tipo_documento,'.TipoDocumentoMotorista::CNH->value,
             'cnh.nome' => 'nullable|string|max:255',
             'cnh.cpf' => ['nullable', 'string', 'regex:/^[0-9]{11}$/'],
@@ -84,12 +113,10 @@ class MotoristaDocumentoController extends Controller
             'cnh.observacao' => 'nullable|string|max:5000',
         ]);
 
-        $file = $request->file('arquivo');
-        $path = $file->store('motorista_documentos', 'local');
-        abort_if($path === false, 500, 'Não foi possível armazenar o arquivo.');
+        $anexo = $this->armazenarAnexoMotoristaService->salvarEnvio($request);
 
         try {
-            $resultado = DB::transaction(function () use ($dados, $file, $path): array {
+            $resultado = DB::transaction(function () use ($dados, $anexo): array {
                 $motorista = Motorista::lockForUpdate()->findOrFail($dados['motorista_id']);
 
                 if ($dados['tipo_documento'] === TipoDocumentoMotorista::CNH->value && isset($dados['cnh'])) {
@@ -99,11 +126,7 @@ class MotoristaDocumentoController extends Controller
                 $motoristaDocumento = MotoristaDocumento::create([
                     'motorista_id' => $motorista->id,
                     'tipo_documento' => $dados['tipo_documento'],
-                    'name' => $file->getClientOriginalName(),
-                    'type' => $file->extension(),
-                    'mime_type' => $file->getMimeType(),
-                    'size' => $file->getSize(),
-                    'path' => $path,
+                    ...$anexo,
                     'status' => 'em_analise',
                 ]);
 
@@ -116,7 +139,7 @@ class MotoristaDocumentoController extends Controller
                 ];
             });
         } catch (Throwable $exception) {
-            Storage::disk('local')->delete($path);
+            $this->armazenarAnexoMotoristaService->excluirEnvio($anexo);
             throw $exception;
         }
 
@@ -157,10 +180,7 @@ class MotoristaDocumentoController extends Controller
             ], 404);
         }
 
-        // Verifica e deleta o arquivo no storage PRIVATE (local)
-        if ($motoristaDocumento->path && Storage::disk('local')->exists($motoristaDocumento->path)) {
-            Storage::disk('local')->delete($motoristaDocumento->path);
-        }
+        $this->armazenarAnexoMotoristaService->excluirEnvio($motoristaDocumento->toArray());
 
         // Remove do banco (soft delete)
         $motoristaId = $motoristaDocumento->motorista_id;
@@ -181,7 +201,8 @@ class MotoristaDocumentoController extends Controller
     {
         $dados = $request->validate([
             'status' => 'required|in:em_analise,aprovado,reprovado',
-            'observacao' => 'nullable|string|max:500',
+            'motivo_reprovacao' => ['exclude_unless:status,reprovado', 'required', Rule::enum(MotivoReprovacaoDocumento::class)],
+            'descricao_reprovacao' => ['exclude_unless:status,reprovado', 'exclude_unless:motivo_reprovacao,outro', 'required', 'string', 'max:2000'],
         ]);
 
         $motoristaDocumento = MotoristaDocumento::findOrFail($motoristaDocumentoId);
@@ -189,30 +210,29 @@ class MotoristaDocumentoController extends Controller
         // ninguém aprova o próprio documento
         $motoristaDoUsuario = Motorista::where('user_id', $request->user()->id)->value('id');
 
-        if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
-            return response()->json([
-                'message' => 'Você não pode alterar o status dos seus próprios documentos.',
-            ], 403);
-        }
+        // if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
+        //     return response()->json([
+        //         'message' => 'Você não pode alterar o status dos seus próprios documentos.',
+        //     ], 403);
+        // }
 
-        $motoristaDocumento->status = $dados['status'];
+        $situacao = DB::transaction(function () use ($motoristaDocumento, $dados): ?string {
+            $registro = MotoristaDocumento::lockForUpdate()->findOrFail($motoristaDocumento->id);
+            $reprovado = $dados['status'] === 'reprovado';
+            $registro->update([
+                'status' => $dados['status'],
+                'motivo_reprovacao' => $reprovado ? $dados['motivo_reprovacao'] : null,
+                'descricao_reprovacao' => $reprovado && $dados['motivo_reprovacao'] === MotivoReprovacaoDocumento::OUTRO->value
+                    ? $dados['descricao_reprovacao'] : null,
+            ]);
+            $motorista = Motorista::lockForUpdate()->find($registro->motorista_id);
 
-        if (array_key_exists('observacao', $dados)) {
-            $motoristaDocumento->observacao = $dados['observacao'];
-        }
-
-        $motoristaDocumento->saveOrFail();
-
-        // a liberação do motorista é derivada dos documentos: sem isto o
-        // painel aprovava o documento e o motorista continuava pendente
-        $motorista = Motorista::find($motoristaDocumento->motorista_id);
-
-        $situacao = $motorista === null
-            ? null
-            : $this->atualizarSituacaoMotoristaService->executar($motorista);
+            return $motorista === null ? null : $this->atualizarSituacaoMotoristaService->executar($motorista);
+        });
 
         return response()->json([
             'message' => 'Status do documento alterado com sucesso',
+            'data' => $motoristaDocumento->fresh(),
             'situacao_motorista' => $situacao,
         ]);
     }

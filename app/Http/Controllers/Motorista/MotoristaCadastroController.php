@@ -7,20 +7,22 @@ use App\Http\Controllers\Controller;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use App\Models\MotoristaVeiculo;
+use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class MotoristaCadastroController extends Controller
 {
     public const APROVADO = 'aprovado';
 
     public function __construct(
-        protected AtualizarSituacaoMotoristaService $atualizarSituacaoMotoristaService
+        protected AtualizarSituacaoMotoristaService $atualizarSituacaoMotoristaService,
+        protected ArmazenarAnexoMotoristaService $armazenarAnexoMotoristaService
     ) {}
 
     public const SEM_CADASTRO = 'sem_cadastro';
@@ -47,7 +49,7 @@ class MotoristaCadastroController extends Controller
 
         $documentos = MotoristaDocumento::where('motorista_id', $motorista->id)
             ->orderByDesc('id')
-            ->get(['tipo_documento', 'status', 'observacao'])
+            ->get(['tipo_documento', 'status', 'url', 'verso', 'motivo_reprovacao', 'descricao_reprovacao'])
             ->unique('tipo_documento')
             ->values();
 
@@ -124,6 +126,7 @@ class MotoristaCadastroController extends Controller
         $dados = $request->validate([
             'tipo_documento' => ['required', Rule::enum(TipoDocumentoMotorista::class)],
             'arquivo' => 'required|file|mimes:jpg,jpeg,png,webp,heic,heif,gif,pdf|max:10240',
+            'arquivo_verso' => $this->armazenarAnexoMotoristaService->regrasVerso($request, 'jpg,jpeg,png,webp,heic,heif,gif', 10240),
         ]);
 
         $motorista = Motorista::firstOrCreate(
@@ -137,25 +140,27 @@ class MotoristaCadastroController extends Controller
             ], 409);
         }
 
-        $arquivo = $request->file('arquivo');
-        $caminho = $arquivo->storeAs('motorista_documentos', Str::uuid().'.'.$arquivo->extension());
+        $anexo = $this->armazenarAnexoMotoristaService->salvarEnvio($request);
+        try {
+            [$documento, $situacao] = DB::transaction(function () use ($motorista, $dados, $anexo): array {
+                $documento = MotoristaDocumento::create([
+                    'motorista_id' => $motorista->id,
+                    'tipo_documento' => $dados['tipo_documento'],
+                    ...$anexo,
+                    'status' => 'em_analise',
+                ]);
+                $situacao = $this->atualizarSituacaoMotoristaService->executar($motorista);
 
-        $documento = MotoristaDocumento::create([
-            'motorista_id' => $motorista->id,
-            'tipo_documento' => $dados['tipo_documento'],
-            'name' => $arquivo->getClientOriginalName(),
-            'type' => $arquivo->extension(),
-            'mime_type' => $arquivo->getMimeType(),
-            'size' => $arquivo->getSize(),
-            'path' => $caminho,
-            'status' => 'em_analise',
-        ]);
-
-        $situacao = $this->atualizarSituacaoMotoristaService->executar($motorista);
+                return [$documento, $situacao];
+            });
+        } catch (Throwable $exception) {
+            $this->armazenarAnexoMotoristaService->excluirEnvio($anexo);
+            throw $exception;
+        }
 
         return response()->json([
             'message' => 'Documento enviado para análise.',
-            'documento' => $documento->only(['tipo_documento', 'status']),
+            'documento' => $documento->only(['tipo_documento', 'status', 'path', 'url', 'verso']),
             'situacao' => $situacao,
         ], 201);
     }
@@ -180,9 +185,7 @@ class MotoristaCadastroController extends Controller
             return response()->json(['message' => 'Documento não encontrado.'], 404);
         }
 
-        if ($registro->path && Storage::disk('local')->exists($registro->path)) {
-            Storage::disk('local')->delete($registro->path);
-        }
+        $this->armazenarAnexoMotoristaService->excluirEnvio($registro->toArray());
 
         $registro->delete();
 
@@ -220,7 +223,8 @@ class MotoristaCadastroController extends Controller
                 'type' => 'pdf',
                 'mime_type' => 'application/pdf',
                 'size' => 0,
-                'path' => "dev-aprovado/$tipo.pdf",
+                'path' => "motorista_documentos_anexos/dev-$tipo.pdf",
+                'url' => rtrim((string) config('app.url'), '/')."/motorista_documentos_anexos/dev-$tipo.pdf",
                 'status' => 'aprovado',
             ]);
         }
