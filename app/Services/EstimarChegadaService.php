@@ -44,35 +44,47 @@ class EstimarChegadaService
             return null;
         }
 
+        // em viagem, o tempo até o destino passa pelas paradas que faltam
+        $paradas = $alvo === 'destino'
+            ? $corrida->corrida_destinos
+                ->where('tipo', 'parada')
+                ->whereNull('concluida_em')
+                ->sortBy('ordem')
+                ->values()
+            : collect();
+
         // a posição do motorista chega a cada 8s; arredondar a ~100m evita
         // refazer a chamada da Directions a cada respiro do GPS
         $chave = sprintf(
-            'chegada:%d:%s:%.3f,%.3f',
+            'chegada:%d:%s:%.3f,%.3f:%s',
             $corrida->id,
             $alvo,
             (float) $status->latitude,
-            (float) $status->longitude
+            (float) $status->longitude,
+            $paradas->map(fn ($parada) => sprintf('%.5f,%.5f', (float) $parada->latitude, (float) $parada->longitude))->implode('|')
         );
+
+        $enderecos = [[
+            'order' => 0,
+            'latitude' => (float) $status->latitude,
+            'longitude' => (float) $status->longitude,
+            'formattedAddress' => '',
+        ]];
+        foreach ([...$paradas->all(), $ponto] as $indice => $item) {
+            $enderecos[] = [
+                'order' => $indice + 1,
+                'latitude' => (float) $item->latitude,
+                'longitude' => (float) $item->longitude,
+                'formattedAddress' => (string) $item->endereco,
+            ];
+        }
 
         return Cache::remember(
             $chave,
             now()->addSeconds(self::SEGUNDOS_EM_CACHE),
-            function () use ($status, $ponto, $alvo) {
+            function () use ($enderecos, $alvo) {
                 try {
-                    $rota = $this->estimarRotaService->executar(enderecos: [
-                        [
-                            'order' => 0,
-                            'latitude' => (float) $status->latitude,
-                            'longitude' => (float) $status->longitude,
-                            'formattedAddress' => '',
-                        ],
-                        [
-                            'order' => 1,
-                            'latitude' => (float) $ponto->latitude,
-                            'longitude' => (float) $ponto->longitude,
-                            'formattedAddress' => (string) $ponto->endereco,
-                        ],
-                    ]);
+                    $rota = $this->estimarRotaService->executar(enderecos: $enderecos);
                 } catch (Throwable) {
                     return null;
                 }
