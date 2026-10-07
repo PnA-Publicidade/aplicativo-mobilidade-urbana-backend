@@ -9,6 +9,7 @@ use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Models\StatusBusca;
 use App\Models\Veiculo;
+use App\Services\CarteiraMotoristaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,10 +42,10 @@ class MotoristaController extends Controller
     }
 
     /**
-     * Ganhos reais do motorista: o do dia (corridas finalizadas hoje) e o saldo
-     * acumulado. Não há saques registrados, então o saldo é tudo que foi ganho.
+     * Ganhos do dia (todas as corridas finalizadas hoje) e o saldo da carteira
+     * (ver CarteiraMotoristaService: dinheiro não entra, saques descontam).
      */
-    public function ganhos(Request $request): JsonResponse
+    public function ganhos(Request $request, CarteiraMotoristaService $carteira): JsonResponse
     {
         $motorista = Motorista::where('user_id', $request->user()->id)->first();
 
@@ -64,7 +65,7 @@ class MotoristaController extends Controller
             'ganhos_do_dia' => round((float) (clone $finalizadas)
                 ->whereDate('corridas.tempo_final', $hoje->toDateString())
                 ->sum('corrida_financeiros.valor_liquido_motorista'), 2),
-            'saldo' => round((float) (clone $finalizadas)->sum('corrida_financeiros.valor_liquido_motorista'), 2),
+            'saldo' => $carteira->saldo($motorista),
             'corridas_hoje' => (clone $finalizadas)
                 ->whereDate('corridas.tempo_final', $hoje->toDateString())
                 ->count(),
@@ -72,9 +73,10 @@ class MotoristaController extends Controller
     }
 
     /**
-     * Números reais do motorista para o menu lateral. A finalização vem das
-     * corridas aceitas; a aceitação, das corridas ofertadas (ofertas_motorista)
-     * que ele acabou aceitando.
+     * Números do menu lateral, como na 99: só pesa o que dependeu do
+     * motorista. A aceitação conta as chamadas que ele aceitou ou recusou
+     * (deixar tocar até o fim é recusar); a finalização, as corridas que ele
+     * terminou ou cancelou. Cancelamento do passageiro não conta contra ele.
      */
     public function estatisticas(Request $request): JsonResponse
     {
@@ -87,20 +89,32 @@ class MotoristaController extends Controller
         $corridas = DB::table('corridas')->where('motorista_id', $motorista->id);
         $aceitas = (clone $corridas)->whereNotNull('tempo_aceite')->count();
         $finalizadas = (clone $corridas)->where('status_corrida', 'finalizada')->count();
+        $canceladasPeloMotorista = (clone $corridas)
+            ->where('status_corrida', 'cancelada')
+            ->where('cancelado_por', 'motorista')
+            ->count();
+        $encerradas = $finalizadas + $canceladasPeloMotorista;
 
-        $ofertadas = DB::table('ofertas_motorista')->where('ofertas_motorista.motorista_id', $motorista->id);
-        $total = (clone $ofertadas)->count();
-        $aceitasDasOfertas = (clone $ofertadas)
+        $ofertadas = DB::table('ofertas_motorista')
             ->join('corridas', 'corridas.id', '=', 'ofertas_motorista.corrida_id')
+            ->where('ofertas_motorista.motorista_id', $motorista->id);
+        $aceitasDasOfertas = (clone $ofertadas)
             ->where('corridas.motorista_id', $motorista->id)
             ->whereNotNull('corridas.tempo_aceite')
             ->count();
+        $recusadas = (clone $ofertadas)
+            ->whereNotNull('ofertas_motorista.recusada_em')
+            ->where(fn ($consulta) => $consulta
+                ->whereNull('corridas.motorista_id')
+                ->orWhere('corridas.motorista_id', '!=', $motorista->id))
+            ->count();
+        $respondidas = $aceitasDasOfertas + $recusadas;
 
         return response()->json([
             'corridas_aceitas' => $aceitas,
             'corridas_finalizadas' => $finalizadas,
-            'taxa_finalizacao' => $aceitas > 0 ? round($finalizadas / $aceitas * 100) : null,
-            'taxa_aceitacao' => $total > 0 ? round($aceitasDasOfertas / $total * 100) : null,
+            'taxa_finalizacao' => $encerradas > 0 ? round($finalizadas / $encerradas * 100) : null,
+            'taxa_aceitacao' => $respondidas > 0 ? round($aceitasDasOfertas / $respondidas * 100) : null,
         ]);
     }
 

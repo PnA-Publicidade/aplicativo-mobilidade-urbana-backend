@@ -23,6 +23,7 @@ Route::post('motorista/disponibilidade', [CorridaMotoristaController::class, 'di
 Route::post('motorista/posicao', [CorridaMotoristaController::class, 'posicao']);
 Route::get('motorista/corridas-disponiveis', [CorridaMotoristaController::class, 'corridasDisponiveis']);
 Route::post('motorista/corridas/{corrida}/aceitar', [CorridaMotoristaController::class, 'aceitar']);
+Route::post('motorista/corridas/{corrida}/recusar', [CorridaMotoristaController::class, 'recusar']);
 Route::post('motorista/corridas/{corrida}/{acao}', [CorridaMotoristaController::class, 'transicionar'])
     ->whereIn('acao', ['cheguei', 'iniciar', 'finalizar']);
 Route::post('motorista/corridas/{corrida}/cancelar', [CorridaMotoristaController::class, 'cancelar']);

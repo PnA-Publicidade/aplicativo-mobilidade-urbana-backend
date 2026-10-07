@@ -117,6 +117,19 @@ class CorridaMotoristaController extends Controller
         return response()->json($aceita);
     }
 
+    public function recusar(Request $request, int $corrida): JsonResponse
+    {
+        $motorista = $this->motoristaDoUsuario($request);
+
+        if ($motorista === null) {
+            return $this->negarPorCadastro();
+        }
+
+        $this->despachoCorridaService->recusar($motorista, $corrida);
+
+        return response()->json(null, 204);
+    }
+
     public function transicionar(Request $request, int $corrida, string $acao): JsonResponse
     {
         $motorista = $this->motoristaDoUsuario($request);

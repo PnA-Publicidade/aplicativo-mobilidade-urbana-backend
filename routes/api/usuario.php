@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Usuario\LocaisPopularesController;
 use App\Http\Controllers\Usuario\LocaisSalvosController;
+use App\Http\Controllers\Usuario\SugestoesLocaisController;
 use App\Http\Controllers\Usuario\UsuarioController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +22,10 @@ Route::put('usuario-alterar-foto-perfil/{id}', [UsuarioController::class, 'alter
 Route::get('locais-salvos', [LocaisSalvosController::class, 'index']);
 Route::post('locais-salvos', [LocaisSalvosController::class, 'store']);
 Route::delete('locais-salvos/{localSalvo}', [LocaisSalvosController::class, 'destroy'])->whereNumber('localSalvo');
+
+// busca de destino: lugares em alta e sugestões de lugar
+Route::get('locais/populares', [LocaisPopularesController::class, 'index'])->middleware('throttle:30,1');
+Route::post('locais/sugestoes', [SugestoesLocaisController::class, 'store'])->middleware('throttle:10,1');
 
 Route::get('/user', function (Request $request) {
     /** @var JWTGuard */

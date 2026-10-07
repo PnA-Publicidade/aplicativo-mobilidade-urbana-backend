@@ -20,6 +20,8 @@ class Corrida extends Model
         // 'dinamica_regioes',
         'motorista_id',
         'passageiro_id',
+        'convidado_nome',
+        'convidado_telefone',
         'cidade_id',
         'veiculo_id',
         'tarifa_id',
