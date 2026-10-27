@@ -37,6 +37,91 @@ class CompartilhamentoVeiculoService
         }, 5);
     }
 
+    public function contextoSelecao(Motorista $motorista): array
+    {
+        $status = StatusBusca::where('motorista_id', $motorista->id)->first();
+        $corrida = Corrida::where('motorista_id', $motorista->id)->whereIn('status_corrida', self::CORRIDAS_ATIVAS)->first();
+        $id = $corrida?->veiculo_id ?? $status?->veiculo_id;
+        if ($id === null || ! MotoristaVeiculo::where('motorista_id', $motorista->id)->where('veiculo_id', $id)->exists()) {
+            $id = MotoristaVeiculo::where('motorista_id', $motorista->id)->orderBy('id')->value('veiculo_id');
+        }
+
+        return [
+            'veiculo_ativo_id' => $id,
+            'disponivel' => (bool) ($status?->disponivel ?? false),
+            'em_corrida' => $corrida !== null,
+            'pode_trocar_veiculo' => ! ($status?->disponivel ?? false) && $corrida === null,
+        ];
+    }
+
+    public function selecionarVeiculo(Motorista $motorista, int $veiculoId): Veiculo
+    {
+        return DB::transaction(function () use ($motorista, $veiculoId): Veiculo {
+            $motorista = Motorista::whereKey($motorista->id)->lockForUpdate()->firstOrFail();
+            $status = StatusBusca::where('motorista_id', $motorista->id)->lockForUpdate()->first();
+            $corrida = Corrida::where('motorista_id', $motorista->id)->whereIn('status_corrida', self::CORRIDAS_ATIVAS)->first();
+            $this->validarPodeTrocar($status, $corrida);
+            $veiculo = $this->veiculoAprovadoParaSelecao($motorista, $veiculoId);
+            // A escolha não conecta o motorista nem altera a posição/último GPS.
+            if ($status === null) {
+                StatusBusca::create(['motorista_id' => $motorista->id, 'disponivel' => false, 'veiculo_id' => $veiculo->id]);
+            } else {
+                $status->update(['veiculo_id' => $veiculo->id]);
+            }
+
+            return $veiculo;
+        }, 5);
+    }
+
+    /**
+     * Tira o veículo do cadastro do motorista. O veículo e os documentos ficam
+     * (outros motoristas podem usá-lo e a gestão guarda o histórico); só o
+     * vínculo some.
+     */
+    public function desvincular(Motorista $motorista, int $veiculoId): void
+    {
+        DB::transaction(function () use ($motorista, $veiculoId): void {
+            $motorista = Motorista::whereKey($motorista->id)->lockForUpdate()->firstOrFail();
+            $vinculo = MotoristaVeiculo::where(['motorista_id' => $motorista->id, 'veiculo_id' => $veiculoId])->lockForUpdate()->first();
+            if ($vinculo === null) {
+                throw new RuntimeException('Veículo não encontrado no seu cadastro.', 404);
+            }
+            $status = StatusBusca::where('motorista_id', $motorista->id)->lockForUpdate()->first();
+            $corrida = Corrida::where('motorista_id', $motorista->id)->whereIn('status_corrida', self::CORRIDAS_ATIVAS)->first();
+            if ($corrida !== null) {
+                throw new RuntimeException('Finalize a corrida antes de remover um veículo.', 409);
+            }
+            if ($status?->disponivel) {
+                throw new RuntimeException('Desconecte-se antes de remover um veículo.', 409);
+            }
+            $vinculo->delete();
+            if ($status?->veiculo_id === $veiculoId) {
+                $status->update(['veiculo_id' => null]);
+            }
+            app(AtualizarSituacaoMotoristaService::class)->executar($motorista);
+        }, 5);
+    }
+
+    private function validarPodeTrocar(?StatusBusca $status, ?Corrida $corrida): void
+    {
+        if ($corrida !== null) {
+            throw new RuntimeException('Finalize a corrida antes de trocar o veículo.', 409);
+        }
+        if ($status?->disponivel) {
+            throw new RuntimeException('Desconecte-se antes de trocar o veículo em uso.', 409);
+        }
+    }
+
+    private function veiculoAprovadoParaSelecao(Motorista $motorista, int $veiculoId): Veiculo
+    {
+        $veiculo = $this->veiculoLiberado($motorista, $veiculoId);
+        if ($veiculo->status !== 'aprovado') {
+            throw new RuntimeException('Só é possível selecionar veículos aprovados.', 422);
+        }
+
+        return $veiculo;
+    }
+
     public function atualizarDisponibilidade(Motorista $motorista, bool $disponivel, ?float $latitude, ?float $longitude, ?int $veiculoId): StatusBusca
     {
         return DB::transaction(function () use ($motorista, $disponivel, $latitude, $longitude, $veiculoId): StatusBusca {
@@ -48,6 +133,13 @@ class CompartilhamentoVeiculoService
             $corrida = Corrida::where('motorista_id', $motorista->id)->whereIn('status_corrida', self::CORRIDAS_ATIVAS)->first();
             if ($corrida !== null && $disponivel) {
                 throw new RuntimeException('Você já está em uma corrida.', 409);
+            }
+            $selecionado = $corrida?->veiculo_id ?? $atual?->veiculo_id
+                ?? MotoristaVeiculo::where('motorista_id', $motorista->id)->orderBy('id')->value('veiculo_id');
+            // A rota de disponibilidade também não pode contornar a regra de troca offline.
+            if ($veiculoId !== null && $veiculoId !== $selecionado) {
+                $this->validarPodeTrocar($atual, $corrida);
+                $this->veiculoAprovadoParaSelecao($motorista, $veiculoId);
             }
             $veiculoId = $corrida?->veiculo_id ?? $veiculoId ?? $atual?->veiculo_id
                 ?? MotoristaVeiculo::where('motorista_id', $motorista->id)->orderBy('id')->value('veiculo_id');

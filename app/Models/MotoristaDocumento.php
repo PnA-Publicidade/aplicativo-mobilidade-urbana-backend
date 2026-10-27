@@ -20,6 +20,7 @@ class MotoristaDocumento extends Model
         'veiculo_id',
         'ordem',
         'informacoes_complementares',
+        'solicitacao_veiculo',
         'tipo_documento',
         'name',
         'type',
@@ -101,6 +102,6 @@ class MotoristaDocumento extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['tipo_documento' => TipoDocumentoMotorista::class, 'informacoes_complementares' => 'array', 'ordem' => 'integer', 'veiculo_id' => 'integer', 'motivo_reprovacao' => MotivoReprovacaoDocumento::class];
+        return ['tipo_documento' => TipoDocumentoMotorista::class, 'informacoes_complementares' => 'array', 'solicitacao_veiculo' => 'array', 'ordem' => 'integer', 'veiculo_id' => 'integer', 'motivo_reprovacao' => MotivoReprovacaoDocumento::class];
     }
 }

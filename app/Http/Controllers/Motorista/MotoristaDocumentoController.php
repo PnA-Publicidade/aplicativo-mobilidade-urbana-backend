@@ -5,16 +5,21 @@ namespace App\Http\Controllers\Motorista;
 use App\Enums\MotivoReprovacaoDocumento;
 use App\Enums\TipoDocumentoMotorista;
 use App\Http\Controllers\Controller;
+use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
+use App\Models\User;
 use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
 use App\Services\CrlvVeiculoService;
 use App\Services\DocumentosMotoristaService;
 use App\Services\InformacoesDocumentoMotoristaService;
+use App\Services\LeituraCrlvService;
+use App\Services\SolicitacaoVeiculoService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -156,14 +161,66 @@ class MotoristaDocumentoController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, MotoristaDocumento $motoristaDocumento): void
+    public function update(Request $request, int $motoristaDocumentoId): JsonResponse
     {
-        //
+        abort_unless($request->user() instanceof Gestor && $request->user()->pode('documentos.analisar'), 403);
+        $request->validate(['leitura_automatica' => 'sometimes|boolean']);
+        if ($request->boolean('leitura_automatica')) {
+            return $this->lerSolicitacao($motoristaDocumentoId);
+        }
+        $dados = $request->validate(['informacoes_complementares' => 'required|array']);
+        $informacoes = app(SolicitacaoVeiculoService::class)->validar($dados['informacoes_complementares']);
+        $documento = DB::transaction(function () use ($motoristaDocumentoId, $informacoes) {
+            $documento = MotoristaDocumento::lockForUpdate()->findOrFail($motoristaDocumentoId);
+            abort_unless($documento->solicitacao_veiculo !== null && $documento->veiculo_id === null && $documento->status !== 'aprovado', 409, 'Este documento não é uma solicitação de novo veículo pendente.');
+            app(SolicitacaoVeiculoService::class)->validarCategoriaDocumento($documento, $informacoes);
+            $documento->update(['informacoes_complementares' => $informacoes]);
+
+            return $documento;
+        });
+
+        return response()->json(['message' => 'Dados conferidos. O veículo será cadastrado ao aprovar o CRLV.', 'data' => $documento]);
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
+    /** Completa envios antigos sem substituir os campos já conferidos. */
+    private function lerSolicitacao(int $id): JsonResponse
+    {
+        $registro = MotoristaDocumento::findOrFail($id);
+        abort_unless($registro->solicitacao_veiculo !== null && $registro->veiculo_id === null && $registro->status !== 'aprovado', 409);
+        $dados = $registro->informacoes_complementares ?? [];
+        try {
+            app(SolicitacaoVeiculoService::class)->validar($dados);
+
+            // Documento completo: não repetir OCR nem sobrescrever a conferência.
+            return response()->json(['data' => $registro]);
+        } catch (ValidationException) {
+            // Compatibilidade com documentos enviados antes da leitura no upload.
+        }
+        $nome = basename((string) $registro->path);
+        abort_unless($nome !== '' && Storage::disk(ArmazenarAnexoMotoristaService::DIRETORIO)->exists($nome), 404);
+        $arquivo = new UploadedFile(Storage::disk(ArmazenarAnexoMotoristaService::DIRETORIO)->path($nome),
+            $registro->name, $registro->mime_type, null, true);
+        $extraidos = app(LeituraCrlvService::class)->extrair($arquivo);
+        $registro = DB::transaction(function () use ($id, $extraidos) {
+            $atual = MotoristaDocumento::lockForUpdate()->findOrFail($id);
+            abort_unless($atual->veiculo_id === null && $atual->status !== 'aprovado', 409);
+            $informacoes = $atual->informacoes_complementares ?? [];
+            foreach ($extraidos as $campo => $valor) {
+                if (trim((string) ($informacoes[$campo] ?? '')) === '') {
+                    $informacoes[$campo] = $valor;
+                }
+            }
+            if ($informacoes !== []) {
+                $atual->update(['informacoes_complementares' => $informacoes]);
+            }
+
+            return $atual;
+        });
+
+        return response()->json(['data' => $registro]);
+    }
+
+    /** Remove the specified resource from storage. */
     public function destroy(string $motoristaDocumentoId): JsonResponse
     {
         $motoristaDocumento = MotoristaDocumento::find($motoristaDocumentoId);
@@ -204,15 +261,16 @@ class MotoristaDocumentoController extends Controller
         ]);
 
         $motoristaDocumento = MotoristaDocumento::findOrFail($motoristaDocumentoId)->principalDoEnvio();
+        if ($motoristaDocumento->solicitacao_veiculo !== null) {
+            abort_unless($request->user() instanceof Gestor && $request->user()->pode('documentos.analisar'), 403);
+        }
 
-        // ninguém aprova o próprio documento
-        $motoristaDoUsuario = Motorista::where('user_id', $request->user()->id)->value('id');
-
-        // if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
-        //     return response()->json([
-        //         'message' => 'Você não pode alterar o status dos seus próprios documentos.',
-        //     ], 403);
-        // }
+        // IDs de gestores e usuários pertencem a tabelas diferentes.
+        $motoristaDoUsuario = $request->user() instanceof User
+            ? Motorista::where('user_id', $request->user()->id)->value('id') : null;
+        if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
+            return response()->json(['message' => 'Você não pode alterar o status dos seus próprios documentos.'], 403);
+        }
 
         $situacao = DB::transaction(function () use ($motoristaDocumento, $dados): ?string {
             $motorista = Motorista::lockForUpdate()->find($motoristaDocumento->motorista_id);
@@ -220,6 +278,9 @@ class MotoristaDocumentoController extends Controller
             $reprovado = $dados['status'] === 'reprovado';
             if ($dados['status'] === 'aprovado' && $registro->tipo_documento === TipoDocumentoMotorista::CRLV) {
                 $service = app(CrlvVeiculoService::class);
+                if ($registro->solicitacao_veiculo !== null && $registro->veiculo_id === null) {
+                    app(SolicitacaoVeiculoService::class)->vincularNaAprovacao($registro, $motorista);
+                }
                 if (! $registro->veiculo_id || ! $registro->informacoes_complementares) {
                     throw ValidationException::withMessages(['informacoes_complementares' => 'Vincule o CRLV a um veículo e confira os dados antes de aprovar.']);
                 }

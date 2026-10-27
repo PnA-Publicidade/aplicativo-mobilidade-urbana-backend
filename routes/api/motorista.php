@@ -7,6 +7,7 @@ use App\Http\Controllers\Motorista\MetodosResgateController;
 use App\Http\Controllers\Motorista\MotoristaCadastroController;
 use App\Http\Controllers\Motorista\MotoristaController;
 use App\Http\Controllers\Motorista\MotoristaDocumentoController;
+use App\Http\Controllers\Motorista\SolicitacoesVeiculoController;
 use App\Http\Controllers\Motorista\PreferenciasMotoristaController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,8 +18,12 @@ Route::post('motorista/cadastro/documentos', [MotoristaCadastroController::class
 Route::delete('motorista/cadastro/documentos/{documento}', [MotoristaCadastroController::class, 'removerDocumento']);
 // atalho de desenvolvimento: ver MotoristaCadastroController::aprovarDev
 Route::post('motorista/cadastro/aprovar-dev', [MotoristaCadastroController::class, 'aprovarDev']);
+Route::get('motorista/me/solicitacoes-veiculo', [SolicitacoesVeiculoController::class, 'index']);
+Route::post('motorista/me/solicitacoes-veiculo', [SolicitacoesVeiculoController::class, 'store'])->middleware('throttle:10,1');
 Route::get('motorista/me/veiculos', [MotoristaController::class, 'meusVeiculos']);
+Route::put('motorista/me/veiculo-ativo', [MotoristaController::class, 'selecionarMeuVeiculo']);
 Route::post('motorista/me/veiculos', [MotoristaController::class, 'cadastrarMeuVeiculo']);
+Route::delete('motorista/me/veiculos/{veiculo}', [MotoristaController::class, 'removerMeuVeiculo'])->whereNumber('veiculo');
 Route::get('motorista/me/estatisticas', [MotoristaController::class, 'estatisticas']);
 // viagem compartilhada: aceitar chamadas de grupo e lugares do carro
 Route::get('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'mostrar']);

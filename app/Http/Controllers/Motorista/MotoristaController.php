@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Motorista;
 use App\Http\Controllers\Controller;
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
+use App\Models\ProdutosCorrida;
 use App\Models\Veiculo;
 use App\Services\AtualizarSituacaoMotoristaService;
 use App\Services\CadastrarPerfilUsuarioService;
@@ -23,7 +24,7 @@ use Illuminate\Validation\Rule;
 class MotoristaController extends Controller
 {
     /**
-     * Lista somente os veículos vinculados ao motorista autenticado.
+     * Lista os veículos vinculados; a consulta de Meus veículos pode incluir os em análise.
      */
     public function meusVeiculos(Request $request): JsonResponse
     {
@@ -35,7 +36,8 @@ class MotoristaController extends Controller
 
         $veiculos = MotoristaVeiculo::query()
             ->where('motorista_id', $motorista->id)
-            ->whereHas('veiculo', fn ($query) => $query->liberados())
+            ->whereHas('veiculo', fn ($query) => $request->boolean('incluir_em_analise')
+                ? $query->visiveis() : $query->liberados())
             ->with('veiculo')
             ->orderByDesc('id')
             ->get()
@@ -43,7 +45,62 @@ class MotoristaController extends Controller
             ->filter()
             ->values();
 
-        return response()->json(['data' => $veiculos]);
+        $liberados = Veiculo::liberados()->where('status', 'aprovado')
+            ->whereIn('id', $veiculos->pluck('id'))->pluck('id')->all();
+
+        return response()->json([
+            'data' => $veiculos->map(fn ($veiculo) => [
+                ...$veiculo->toArray(),
+                'pode_selecionar' => in_array($veiculo->id, $liberados, true),
+                'categorias_servico' => in_array($veiculo->id, $liberados, true)
+                    ? ProdutosCorrida::atendidosPor($veiculo)->orderBy('ordem')->orderBy('id')->get(['id', 'codigo', 'nome'])
+                    : [],
+            ]),
+            ...app(CompartilhamentoVeiculoService::class)->contextoSelecao($motorista),
+        ]);
+    }
+
+    public function selecionarMeuVeiculo(Request $request): JsonResponse
+    {
+        $dados = $request->validate(['veiculo_id' => 'required|integer|exists:veiculos,id']);
+        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
+        $service = app(CompartilhamentoVeiculoService::class);
+        try {
+            $veiculo = $service->selecionarVeiculo($motorista, (int) $dados['veiculo_id']);
+        } catch (\RuntimeException $erro) {
+            if (! in_array($erro->getCode(), [403, 409, 422], true)) {
+                throw $erro;
+            }
+
+            return response()->json(['message' => $erro->getMessage()], $erro->getCode());
+        }
+
+        return response()->json([
+            'message' => 'Veículo em uso atualizado.', 'data' => $veiculo,
+            ...$service->contextoSelecao($motorista),
+        ]);
+    }
+
+    public function removerMeuVeiculo(Request $request, int $veiculo): JsonResponse
+    {
+        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
+        $service = app(CompartilhamentoVeiculoService::class);
+        try {
+            $service->desvincular($motorista, $veiculo);
+        } catch (\RuntimeException $erro) {
+            if (! in_array($erro->getCode(), [403, 404, 409, 422], true)) {
+                throw $erro;
+            }
+
+            return response()->json(['message' => $erro->getMessage()], $erro->getCode());
+        }
+
+        return response()->json([
+            'message' => 'Veículo removido.',
+            ...$service->contextoSelecao($motorista),
+        ]);
     }
 
     /**

@@ -125,15 +125,12 @@ class CrlvVeiculoService
             return;
         }
         $exercicio = (int) ($documento->informacoes_complementares['exercicio'] ?? $veiculo->exercicio);
-        // if ($exercicio < 1900 || $exercicio >= now()->year) {
-        //     throw ValidationException::withMessages(['arquivo' => 'Este veículo já possui CRLV cadastrado. A substituição só é permitida quando o exercício do documento atual for anterior ao ano atual.']);
-        // }
-        // Exigência de exercício atual suspensa temporariamente para os testes.
-        /*
+        if ($exercicio < 1900 || $exercicio >= now()->year) {
+            throw ValidationException::withMessages(['arquivo' => 'Este veículo já possui CRLV cadastrado. A substituição só é permitida quando o exercício do documento atual for anterior ao ano atual.']);
+        }
         if ((int) $dados['exercicio'] < now()->year) {
             throw ValidationException::withMessages(['informacoes_complementares.exercicio' => 'Para renovar, envie um CRLV com exercício do ano atual ou posterior.']);
         }
-        */
     }
 
     public function sincronizarStatus(Veiculo $veiculo): void
@@ -183,8 +180,6 @@ class CrlvVeiculoService
 
     public function validar(Veiculo $veiculo, array $dados): void
     {
-        // Validação de correspondência suspensa temporariamente para os testes.
-        /*
         $erros = [];
         foreach ($this->conferencia($veiculo, $dados) as $campo => $situacao) {
             if (in_array($situacao, ['divergente', 'nao_informado'], true)) {
@@ -194,6 +189,5 @@ class CrlvVeiculoService
         if ($erros) {
             throw ValidationException::withMessages($erros);
         }
-        */
     }
 }

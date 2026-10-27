@@ -4,6 +4,7 @@
 
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
+use App\Models\ProdutosCorrida;
 use App\Models\StatusBusca;
 use App\Models\User;
 use App\Models\Veiculo;
@@ -103,6 +104,36 @@ it('exige o CPF ou CNPJ do proprietário do veículo', function () {
     $this->postJson('/api/motorista/me/veiculos', dadosValidosDoVeiculo(['cpf_cnpj_proprietario' => '123']))
         ->assertUnprocessable()
         ->assertJsonPath('errors.cpf_cnpj_proprietario.0', 'Informe um CPF (11 números) ou CNPJ (14 números).');
+});
+
+it('lista categorias do veiculo com as mesmas restricoes do despacho', function () {
+    $motorista = criarMotoristaParaVeiculos();
+    $veiculo = Veiculo::create([...dadosValidosDoVeiculo(), 'status' => 'aprovado', 'eletrico' => false, 'taxi' => false]);
+    MotoristaVeiculo::create(['motorista_id' => $motorista->id, 'veiculo_id' => $veiculo->id]);
+    $categorias = collect([
+        ['codigo' => 'teste_pop', 'nome' => 'Pop', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => null],
+        ['codigo' => 'teste_comfort', 'nome' => 'Comfort', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => null],
+        ['codigo' => 'teste_plus', 'nome' => 'Plus', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => null],
+        ['codigo' => 'teste_moto', 'nome' => 'Moto', 'tipo_veiculo' => 'moto', 'requisito_veiculo' => null],
+        ['codigo' => 'teste_eletrico', 'nome' => 'Elétrico', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => 'eletrico'],
+        ['codigo' => 'teste_taxi', 'nome' => 'Táxi', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => 'taxi'],
+    ])->map(fn ($dados) => ProdutosCorrida::create([...$dados, 'estrategia_precificacao' => 'normal']));
+    $consulta = fn () => collect($this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/veiculos')
+        ->assertOk()->json('data.0.categorias_servico'))->pluck('codigo')->all();
+    expect($consulta())->toContain('teste_pop', 'teste_comfort', 'teste_plus')
+        ->not->toContain('teste_moto', 'teste_eletrico', 'teste_taxi');
+    $veiculo->update(['eletrico' => true, 'taxi' => true]);
+    expect($consulta())->toContain('teste_eletrico', 'teste_taxi');
+    $veiculo->update(['categoria' => 'moto', 'eletrico' => false, 'taxi' => false]);
+    expect($consulta())->toContain('teste_moto')->not->toContain('teste_pop', 'teste_comfort', 'teste_plus', 'teste_eletrico', 'teste_taxi');
+});
+
+it('nao anuncia categorias liberadas para um veiculo em analise', function () {
+    $motorista = criarMotoristaParaVeiculos();
+    $veiculo = Veiculo::create([...dadosValidosDoVeiculo(), 'status' => 'em_analise']);
+    MotoristaVeiculo::create(['motorista_id' => $motorista->id, 'veiculo_id' => $veiculo->id]);
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/veiculos?incluir_em_analise=1')
+        ->assertOk()->assertJsonPath('data.0.categorias_servico', [])->assertJsonPath('data.0.pode_selecionar', false);
 });
 
 it('rejeita placa inválida e dados duplicados', function () {
