@@ -275,7 +275,8 @@ class MotoristaController extends Controller
         ]);
 
         $busca = trim($dados['search'] ?? '');
-        $query = Motorista::with('user');
+        // arquivar arquiva só o usuário: sem este filtro o motorista viria com user nulo
+        $query = Motorista::with('user')->whereHas('user');
 
         if ($busca !== '') {
             $termo = '%'.$busca.'%';
