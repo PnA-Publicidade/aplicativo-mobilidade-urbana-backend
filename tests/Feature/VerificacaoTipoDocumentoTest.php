@@ -63,7 +63,7 @@ it('CNH digital: o texto do PDF é só o rodapé da assinatura e os dados estão
     $servico = app(VerificacaoTipoDocumentoService::class);
 
     $servico->validar($pdf, Tipo::CNH);
-    expect(fn () => $servico->validar($pdf, Tipo::SEGURO_OBRIGATORIO))->toThrow(ValidationException::class);
+    expect(fn () => $servico->validar($pdf, Tipo::NADA_CONSTA))->toThrow(ValidationException::class);
 });
 
 it('recusa arquivo ilegível ou sem relação com documento, mas não o verso sem título', function () {
@@ -80,6 +80,9 @@ it('o envio de um CRLV no campo da CNH é recusado e não substitui a CNH atual'
     $usuario = User::factory()->create();
     $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
     $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+    // CNH vencida: é quando o reenvio é liberado
+    MotoristaDocumento::where('motorista_id', $motorista->id)->update(['created_at' => now()->subYears(2)]);
+    $motorista->update(['cnh_expiracao' => now()->subDay()->toDateString()]);
     $antes = MotoristaDocumento::where('motorista_id', $motorista->id)->where('tipo_documento', 'cnh')->count();
 
     lendo(TEXTO_CRLV);
@@ -100,7 +103,7 @@ it('o envio de um CRLV no campo da CNH é recusado e não substitui a CNH atual'
     ], ['Accept' => 'application/json'])->assertCreated();
 });
 
-it('a mesma conferência vale para Nada consta e Seguro, e para o verso da CNH', function () {
+it('a mesma conferência vale para o Nada consta e para o verso da CNH', function () {
     Storage::fake('motorista_documentos_anexos');
     $usuario = User::factory()->create();
     $envio = fn (string $tipo, array $extra = []) => $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
@@ -111,16 +114,33 @@ it('a mesma conferência vale para Nada consta e Seguro, e para o verso da CNH',
 
     lendo(TEXTO_CNH);
     $envio('nada_consta')->assertUnprocessable()->assertJsonPath('errors.arquivo.0', fn ($m) => str_contains($m, 'parece ser uma CNH'));
-    $envio('seguro_obrigatorio')->assertUnprocessable();
     lendo(TEXTO_SEGURO);
     $envio('nada_consta')->assertUnprocessable();
-    $envio('seguro_obrigatorio')->assertCreated();
     lendo(TEXTO_NADA_CONSTA);
     $envio('nada_consta')->assertCreated();
 
     lendo(TEXTO_CRLV);
     $envio('cnh', ['arquivo' => UploadedFile::fake()->image('frente.png'), 'arquivo_verso' => UploadedFile::fake()->image('verso.png')])
         ->assertUnprocessable();
+});
+
+it('o Seguro entra sem conferência, no app e na gestão', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $motorista = Motorista::create(['user_id' => $usuario->id, 'status' => 'pendente']);
+    $arquivo = fn () => UploadedFile::fake()->create('seguro.pdf', 100, 'application/pdf');
+
+    // outro documento, ou sem nenhuma leitura disponível: nada disso importa
+    foreach ([TEXTO_CNH, null] as $texto) {
+        lendo($texto);
+        $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+            'tipo_documento' => 'seguro_obrigatorio', 'arquivo' => $arquivo(),
+        ], ['Accept' => 'application/json'])->assertCreated();
+        MotoristaDocumento::query()->update(['status' => 'reprovado']);
+    }
+    $this->actingAs(User::factory()->create(), 'jwt')->post('/api/motorista-documentos', [
+        'motorista_id' => $motorista->id, 'tipo_documento' => 'seguro_obrigatorio', 'arquivo' => $arquivo(),
+    ], ['Accept' => 'application/json'])->assertCreated();
 });
 
 it('sem leitura disponível o envio é recusado', function () {
@@ -161,7 +181,7 @@ function pdfDeTexto(array $linhas): UploadedFile
     return new UploadedFile($caminho, 'orcamento.pdf', 'application/pdf', null, true);
 }
 
-it('com a leitura real, um orçamento qualquer não entra como CNH, Nada consta, Seguro nem CRLV', function () {
+it('com a leitura real, um orçamento qualquer não entra como CNH, Nada consta nem CRLV', function () {
     if (trim((string) shell_exec('which tesseract pdftotext 2>/dev/null')) === '') {
         $this->markTestSkipped('Sem pdftotext/tesseract neste ambiente.');
     }
@@ -171,16 +191,14 @@ it('com a leitura real, um orçamento qualquer não entra como CNH, Nada consta,
     $motorista = Motorista::create(['user_id' => $usuario->id, 'status' => 'pendente']);
     $orcamento = ['PEN6 MARKETING Rua Brasilia 2930', 'Fornecedor RD GRAFICA E COMUNICACAO VISUAL', 'Cliente ALERO ASSEMBLEIA LEGISLATIVA', 'PRODUCAO E EXIBICAO OUT DOOR PORTO VELHO', 'HONORARIOS VALOR FINAL TOTAL 0,00'];
 
-    foreach (['cnh', 'nada_consta', 'seguro_obrigatorio', 'crlv'] as $tipo) {
+    foreach (['cnh', 'nada_consta', 'crlv'] as $tipo) {
         $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
             'tipo_documento' => $tipo, 'arquivo' => pdfDeTexto($orcamento),
         ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('arquivo');
     }
-    // o mesmo envio feito pela gestão, em nome do motorista (CNH e Seguro não exigem campos extras)
-    foreach (['cnh', 'seguro_obrigatorio'] as $tipo) {
-        $this->actingAs(User::factory()->create(), 'jwt')->post('/api/motorista-documentos', [
-            'motorista_id' => $motorista->id, 'tipo_documento' => $tipo, 'arquivo' => pdfDeTexto($orcamento),
-        ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('arquivo');
-    }
+    // o mesmo envio feito pela gestão, em nome do motorista
+    $this->actingAs(User::factory()->create(), 'jwt')->post('/api/motorista-documentos', [
+        'motorista_id' => $motorista->id, 'tipo_documento' => 'cnh', 'arquivo' => pdfDeTexto($orcamento),
+    ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('arquivo');
     expect(MotoristaDocumento::count())->toBe(0);
 });

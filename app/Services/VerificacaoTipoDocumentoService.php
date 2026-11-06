@@ -10,7 +10,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * Confere se o arquivo enviado é mesmo do tipo escolhido (uma CNH no campo do
  * CRLV, por exemplo). Se a leitura do texto não estiver disponível, o envio é
- * recusado: nenhum arquivo entra sem ser conferido.
+ * recusado. O Seguro não passa por aqui: fica para a análise da gestão, e seus
+ * sinais servem só para recusá-lo no campo dos outros documentos.
  */
 class VerificacaoTipoDocumentoService
 {
@@ -81,6 +82,10 @@ class VerificacaoTipoDocumentoService
      */
     public function validar(UploadedFile $arquivo, TipoDocumentoMotorista $esperado, string $campo = 'arquivo'): void
     {
+        if ($esperado === TipoDocumentoMotorista::SEGURO_OBRIGATORIO) {
+            return;
+        }
+
         $texto = $this->leitor->extrair($arquivo);
         if ($texto === null) {
             // sem conseguir ler, não há como saber o que é: nada entra sem conferência
