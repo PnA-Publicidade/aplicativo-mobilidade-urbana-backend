@@ -27,6 +27,7 @@ it('aceita PDF e imagem do próprio motorista e mostra só o envio mais recente'
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])->assertCreated();
+    MotoristaDocumento::query()->update(['status' => 'reprovado']);
 
     $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'cnh',
@@ -173,14 +174,23 @@ it('salva e retorna o numero de registro como identificacao unica da CNH', funct
         ->assertJsonPath('pendencias', ['documentos', 'veiculo']);
 });
 
-it('motorista ativo renova CNH, Nada Consta e Seguro e continua ativo durante a análise', function () {
+it('motorista ativo renova a CNH e o Nada Consta vencidos e continua ativo durante a análise', function () {
     Storage::fake('motorista_documentos_anexos');
     $usuario = User::factory()->create();
     $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
     $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
     expect($motorista->status)->toBe('ativo');
 
-    foreach (['cnh', 'nada_consta', 'seguro_obrigatorio'] as $tipo) {
+    // documentos antigos, com a validade já passada
+    MotoristaDocumento::where('motorista_id', $motorista->id)->update(['created_at' => now()->subYears(2)]);
+    $motorista->update(['cnh_expiracao' => now()->subDay()->toDateString()]);
+    MotoristaDocumento::where('motorista_id', $motorista->id)->where('tipo_documento', 'nada_consta')->firstOrFail()
+        ->update(['informacoes_complementares' => ['data_validade' => now()->subDay()->toDateString()]]);
+
+    $vencidos = $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->json('documentos');
+    expect(collect($vencidos)->where('vencido', true)->pluck('tipo_documento')->sort()->values()->all())->toBe(['cnh', 'nada_consta']);
+
+    foreach (['cnh', 'nada_consta'] as $tipo) {
         $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
             'tipo_documento' => $tipo,
             'arquivo' => UploadedFile::fake()->create("$tipo.pdf", 100, 'application/pdf'),
@@ -189,12 +199,115 @@ it('motorista ativo renova CNH, Nada Consta e Seguro e continua ativo durante a 
 
     $cadastro = $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->assertOk();
     $cadastro->assertJsonPath('situacao', 'ativo');
-    expect(collect($cadastro->json('documentos'))->where('tipo_documento', '!=', 'crlv')->pluck('status')->unique()->all())->toBe(['em_analise']);
+    expect(collect($cadastro->json('documentos'))->whereIn('tipo_documento', ['cnh', 'nada_consta'])->pluck('status')->unique()->all())->toBe(['em_analise']);
 
     // recusado pela gestão: deixa de estar em dia e o motorista precisa reenviar
-    $novo = MotoristaDocumento::where('motorista_id', $motorista->id)->where('tipo_documento', 'seguro_obrigatorio')->latest('id')->first();
+    $novo = MotoristaDocumento::where('motorista_id', $motorista->id)->where('tipo_documento', 'nada_consta')->latest('id')->first();
     $novo->update(['status' => 'reprovado']);
     expect(app(App\Services\AtualizarSituacaoMotoristaService::class)->executar($motorista->fresh()))->toBe('pendente');
+});
+
+it('documento aprovado dentro da validade não é trocado pelo app', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
+    $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+    $enviados = MotoristaDocumento::where('motorista_id', $motorista->id)->count();
+
+    foreach (['cnh', 'nada_consta', 'seguro_obrigatorio'] as $tipo) {
+        $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+            'tipo_documento' => $tipo,
+            'arquivo' => UploadedFile::fake()->create("$tipo.pdf", 100, 'application/pdf'),
+        ], ['Accept' => 'application/json'])->assertStatus(409);
+    }
+
+    expect(MotoristaDocumento::where('motorista_id', $motorista->id)->count())->toBe($enviados);
+});
+
+it('documento em análise não é trocado, e o recusado pode ser enviado de novo', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $envio = fn () => $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        'tipo_documento' => 'seguro_obrigatorio',
+        'arquivo' => UploadedFile::fake()->create('seguro.pdf', 100, 'application/pdf'),
+    ], ['Accept' => 'application/json']);
+
+    $envio()->assertCreated();
+    $envio()->assertStatus(409);
+    expect(MotoristaDocumento::count())->toBe(1);
+
+    MotoristaDocumento::latest('id')->firstOrFail()->update(['status' => 'reprovado']);
+    $envio()->assertCreated();
+});
+
+it('CNH enviada depois da data do cadastro não aparece vencida', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
+    Motorista::where('user_id', $usuario->id)->firstOrFail()
+        ->update(['cnh_expiracao' => now()->subDay()->toDateString()]);
+
+    $documentos = $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->json('documentos');
+
+    expect(collect($documentos)->firstWhere('tipo_documento', 'cnh')['vencido'])->toBeFalse();
+});
+
+it('documento vencido vira ação necessária e impede ficar online até reenviar', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
+    $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+    $online = ['disponivel' => true, 'latitude' => -8.76, 'longitude' => -63.9];
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->assertJsonPath('acoes_necessarias', []);
+
+    MotoristaDocumento::where('motorista_id', $motorista->id)->update(['created_at' => now()->subYears(2)]);
+    $motorista->update(['cnh_expiracao' => now()->subDay()->toDateString()]);
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->assertJsonPath('acoes_necessarias', ['cnh']);
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/disponibilidade', $online)
+        ->assertForbidden()->assertJsonPath('message', 'Resolva as ações necessárias para ficar online.');
+
+    $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        'tipo_documento' => 'cnh',
+        'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->assertJsonPath('acoes_necessarias', []);
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/disponibilidade', $online)->assertOk();
+});
+
+it('quem já foi aprovado fica na home e vê reprovado e falta de veículo como ações', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
+    $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+
+    MotoristaDocumento::where('motorista_id', $motorista->id)->where('tipo_documento', 'seguro_obrigatorio')
+        ->firstOrFail()->update(['status' => 'reprovado']);
+    app(App\Services\AtualizarSituacaoMotoristaService::class)->executar($motorista->fresh());
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertJsonPath('situacao', 'pendente')
+        ->assertJsonPath('liberado', true)
+        ->assertJsonPath('acoes_necessarias', ['seguro_obrigatorio']);
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/situacao')->assertOk();
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/disponibilidade', [
+        'disponivel' => true, 'latitude' => -8.76, 'longitude' => -63.9,
+    ])->assertForbidden();
+
+    MotoristaVeiculo::where('motorista_id', $motorista->id)->delete();
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertJsonPath('acoes_necessarias', ['seguro_obrigatorio', 'veiculo']);
+});
+
+it('no primeiro cadastro o motorista pendente continua na liberação', function () {
+    $usuario = User::factory()->create();
+    Motorista::create(['user_id' => $usuario->id, 'status' => 'pendente']);
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')->assertJsonPath('liberado', false);
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/situacao')->assertForbidden();
 });
 
 it('motorista ativo não troca o CRLV por este envio', function () {

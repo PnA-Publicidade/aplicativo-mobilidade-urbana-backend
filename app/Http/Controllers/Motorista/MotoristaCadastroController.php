@@ -46,20 +46,23 @@ class MotoristaCadastroController extends Controller
         if ($motorista === null) {
             return response()->json([
                 'situacao' => self::SEM_CADASTRO,
+                'liberado' => false,
                 'cnh' => null,
                 'documentos' => [],
                 'veiculos' => 0,
+                'acoes_necessarias' => [],
                 'pendencias' => ['cnh', 'documentos', 'veiculo'],
                 'documentos_faltando' => TipoDocumentoMotorista::valores(),
             ]);
         }
 
-        $documentos = app(DocumentosMotoristaService::class)->ultimos($motorista);
+        $documentos = app(DocumentosMotoristaService::class)->paraAcompanhar($motorista);
 
         $veiculos = MotoristaVeiculo::where('motorista_id', $motorista->id)->count();
 
         return response()->json([
             'situacao' => $motorista->status,
+            'liberado' => $motorista->liberado_em !== null,
             'cnh' => $motorista->numero_registro === null ? null : [
                 'numero' => $motorista->numero_registro,
                 'categoria' => $motorista->cnh_categoria,
@@ -69,6 +72,7 @@ class MotoristaCadastroController extends Controller
             ],
             'documentos' => $documentos,
             'veiculos' => $veiculos,
+            'acoes_necessarias' => app(DocumentosMotoristaService::class)->acoesNecessarias($motorista),
             'pendencias' => $this->pendencias($motorista, $veiculos),
             'documentos_faltando' => $this->atualizarSituacaoMotoristaService
                 ->documentosQueFaltam($motorista),
@@ -149,11 +153,19 @@ class MotoristaCadastroController extends Controller
             ['status' => 'pendente']
         );
 
-        // CNH, Nada Consta e Seguro podem ser renovados a qualquer momento; o CRLV
-        // de quem já está ativo entra pelo cadastro de novo veículo
+        // o motorista ativo também reenvia CNH, Nada Consta e Seguro; o CRLV de quem
+        // já está ativo entra pelo cadastro de novo veículo
         if ($motorista->status === self::ATIVO && $dados['tipo_documento'] === TipoDocumentoMotorista::CRLV->value) {
             return response()->json([
                 'message' => 'Seu cadastro já foi aprovado. Para trocar o CRLV, envie-o pelo cadastro de veículo.',
+            ], 409);
+        }
+
+        $atual = app(DocumentosMotoristaService::class)->paraAcompanhar($motorista)
+            ->first(fn (MotoristaDocumento $documento) => $documento->tipo_documento->value === $dados['tipo_documento']);
+        if ($atual !== null && $atual->status !== 'reprovado' && ! $atual->vencido) {
+            return response()->json([
+                'message' => 'Este documento já foi enviado. Só é possível enviar outro se ele vencer ou for recusado.',
             ], 409);
         }
 

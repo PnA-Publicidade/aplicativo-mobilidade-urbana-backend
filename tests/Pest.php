@@ -96,6 +96,7 @@ function informacoesDoDocumento(string $tipo): array
             'data_validade' => '2026-12-31',
             'resultado' => 'Nada consta.',
         ]],
+        'seguro_obrigatorio' => ['informacoes_complementares' => ['data_validade' => now()->addYear()->toDateString()]],
         default => [],
     };
 }
