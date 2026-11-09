@@ -16,6 +16,22 @@ use Tests\TestCase;
 
 pest()->extend(TestCase::class)
  // ->use(RefreshDatabase::class)
+    ->beforeEach(function () {
+        // Os testes enviam arquivos de mentira: a leitura devolve um texto com a cara
+        // do documento pedido. Os testes de conferência trocam esta leitura.
+        app()->instance(App\Services\TextoDocumentoService::class, new class extends App\Services\TextoDocumentoService
+        {
+            public function extrair(Illuminate\Http\UploadedFile $arquivo, bool $imagem = false): ?string
+            {
+                return match (request()->input('tipo_documento')) {
+                    'cnh' => 'CARTEIRA NACIONAL DE HABILITACAO NOME FILIACAO VALIDADE REGISTRO',
+                    'nada_consta' => 'CERTIDAO NEGATIVA DE ANTECEDENTES CRIMINAIS NADA CONSTA',
+                    'seguro_obrigatorio' => 'SPVAT SEGURO OBRIGATORIO DE DANOS PESSOAIS APOLICE',
+                    default => 'CERTIFICADO DE REGISTRO E LICENCIAMENTO DE VEICULO RENAVAM CHASSI PLACA',
+                };
+            }
+        });
+    })
     ->in('Feature');
 
 /*
@@ -80,6 +96,7 @@ function informacoesDoDocumento(string $tipo): array
             'data_validade' => '2026-12-31',
             'resultado' => 'Nada consta.',
         ]],
+        'seguro_obrigatorio' => ['informacoes_complementares' => ['data_validade' => now()->addYear()->toDateString()]],
         default => [],
     };
 }

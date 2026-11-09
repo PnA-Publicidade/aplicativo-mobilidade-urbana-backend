@@ -16,6 +16,7 @@ use App\Services\DocumentosMotoristaService;
 use App\Services\InformacoesDocumentoMotoristaService;
 use App\Services\LeituraCrlvService;
 use App\Services\SolicitacaoVeiculoService;
+use App\Services\VerificacaoTipoDocumentoService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -104,6 +105,12 @@ class MotoristaDocumentoController extends Controller
             $veiculo = $crlvService->veiculoVinculado((int) $dados['motorista_id'], (int) $dados['veiculo_id']);
             $crlvService->validar($veiculo, $dados['informacoes_complementares']);
         }
+        $verificacao = app(VerificacaoTipoDocumentoService::class);
+        $tipo = TipoDocumentoMotorista::from($dados['tipo_documento']);
+        $verificacao->validar($request->file('arquivo'), $tipo);
+        if ($request->hasFile('arquivo_verso')) {
+            $verificacao->validar($request->file('arquivo_verso'), $tipo, 'arquivo_verso');
+        }
         $anexo = $this->armazenarAnexoMotoristaService->salvarEnvio($request);
 
         try {
@@ -167,6 +174,13 @@ class MotoristaDocumentoController extends Controller
         $request->validate(['leitura_automatica' => 'sometimes|boolean']);
         if ($request->boolean('leitura_automatica')) {
             return $this->lerSolicitacao($motoristaDocumentoId);
+        }
+        $seguro = MotoristaDocumento::whereKey($motoristaDocumentoId)->where('tipo_documento', TipoDocumentoMotorista::SEGURO_OBRIGATORIO)->first();
+        if ($seguro !== null) {
+            $validade = $request->validate(['informacoes_complementares.data_validade' => 'required|date_format:Y-m-d']);
+            $seguro->update(['informacoes_complementares' => $validade['informacoes_complementares']]);
+
+            return response()->json(['message' => 'Validade do seguro salva.', 'data' => $seguro]);
         }
         $dados = $request->validate(['informacoes_complementares' => 'required|array']);
         $informacoes = app(SolicitacaoVeiculoService::class)->validar($dados['informacoes_complementares']);
@@ -276,6 +290,10 @@ class MotoristaDocumentoController extends Controller
             $motorista = Motorista::lockForUpdate()->find($motoristaDocumento->motorista_id);
             $registro = MotoristaDocumento::lockForUpdate()->findOrFail($motoristaDocumento->id);
             $reprovado = $dados['status'] === 'reprovado';
+            if ($dados['status'] === 'aprovado' && $registro->tipo_documento === TipoDocumentoMotorista::SEGURO_OBRIGATORIO
+                && empty($registro->informacoes_complementares['data_validade'])) {
+                throw ValidationException::withMessages(['informacoes_complementares.data_validade' => 'Informe a data de validade do seguro antes de aprovar.']);
+            }
             if ($dados['status'] === 'aprovado' && $registro->tipo_documento === TipoDocumentoMotorista::CRLV) {
                 $service = app(CrlvVeiculoService::class);
                 if ($registro->solicitacao_veiculo !== null && $registro->veiculo_id === null) {

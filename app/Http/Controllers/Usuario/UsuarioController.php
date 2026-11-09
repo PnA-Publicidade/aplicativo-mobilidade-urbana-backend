@@ -122,6 +122,17 @@ class UsuarioController extends Controller
         ], 201);
     }
 
+    /** Antecipa a regra de e-mail do cadastro, para o app barrar já na tela do e-mail. */
+    public function validarEmailCadastro(Request $request): JsonResponse
+    {
+        $request->validate(
+            ['email' => CadastroUsuarioRequest::REGRAS_EMAIL],
+            ['email.unique' => 'Este e-mail já está cadastrado. Faça login ou use outro e-mail.'],
+        );
+
+        return response()->json(['disponivel' => true]);
+    }
+
     public function register(CadastroUsuarioRequest $request, PerfilUsuarioService $perfis): JsonResponse
     {
         $dados = $request->validated();

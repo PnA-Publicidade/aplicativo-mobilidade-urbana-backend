@@ -8,6 +8,7 @@ use App\Models\MotoristaVeiculo;
 use App\Models\Veiculo;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -66,15 +67,35 @@ class SolicitacaoVeiculoService
     {
         $dados = $this->validar($documento->informacoes_complementares ?? []);
         $this->validarCategoriaDocumento($documento, $dados);
-        if (Veiculo::where('placa', $dados['placa'])->orWhere('renavam', $dados['renavam'])
-            ->orWhere('chassi', $dados['chassi'])->lockForUpdate()->exists()) {
+        $cadastrados = Veiculo::where('placa', $dados['placa'])->orWhere('renavam', $dados['renavam'])
+            ->orWhere('chassi', $dados['chassi'])->lockForUpdate()->get();
+        if ($cadastrados->isNotEmpty()) {
+            $veiculo = $this->compartilhar($cadastrados, $motorista, $dados);
+        } else {
+            $origem = MotoristaVeiculo::where('motorista_id', $motorista->id)->exists() ? 'veiculos' : 'documentos';
+            $veiculo = app(CrlvVeiculoService::class)->registrarOuAtualizar($motorista, $dados, null, $origem);
+        }
+        $documento->update(['veiculo_id' => $veiculo->id, 'informacoes_complementares' => $dados]);
+        $documento->unsetRelation('veiculo');
+    }
+
+    /**
+     * Carro de família ou de locadora: o motorista entra no veículo que já existe, sem
+     * alterar os dados dele. Só vale com placa, Renavam e chassi do mesmo veículo.
+     */
+    private function compartilhar(Collection $cadastrados, Motorista $motorista, array $dados): Veiculo
+    {
+        $veiculo = $cadastrados->first();
+        $mesmoVeiculo = $cadastrados->count() === 1
+            && collect(app(CrlvVeiculoService::class)->conferencia($veiculo, $dados))->every(fn (string $campo) => $campo === 'confere');
+        $jaVinculado = MotoristaVeiculo::where('motorista_id', $motorista->id)->where('veiculo_id', $veiculo->id)->exists();
+        if (! $mesmoVeiculo || $jaVinculado) {
             throw ValidationException::withMessages([
                 'informacoes_complementares.placa' => 'O veículo já está cadastrado. Use o fluxo de compartilhamento ou renovação do CRLV.',
             ]);
         }
-        $origem = MotoristaVeiculo::where('motorista_id', $motorista->id)->exists() ? 'veiculos' : 'documentos';
-        $veiculo = app(CrlvVeiculoService::class)->registrarOuAtualizar($motorista, $dados, null, $origem);
-        $documento->update(['veiculo_id' => $veiculo->id, 'informacoes_complementares' => $dados]);
-        $documento->unsetRelation('veiculo');
+        app(CompartilhamentoVeiculoService::class)->vincular($motorista, $veiculo);
+
+        return $veiculo;
     }
 }

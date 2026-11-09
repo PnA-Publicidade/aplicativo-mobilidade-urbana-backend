@@ -16,6 +16,8 @@ class CorridaMotoristaController extends Controller
 {
     private string $situacaoDoCadastro = MotoristaCadastroController::SEM_CADASTRO;
 
+    private bool $jaLiberado = false;
+
     public function __construct(
         protected DespachoCorridaService $despachoCorridaService
     ) {}
@@ -72,7 +74,9 @@ class CorridaMotoristaController extends Controller
      */
     public function situacao(Request $request): JsonResponse
     {
-        $motorista = $this->motoristaDoUsuario($request);
+        // quem já foi aprovado fica na home, mesmo com pendência: lá estão as ações necessárias
+        $motorista = $this->motoristaDoUsuario($request)
+            ?? Motorista::where('user_id', $request->user()->id)->whereNotNull('liberado_em')->first();
 
         if ($motorista === null) {
             return $this->negarPorCadastro();
@@ -245,6 +249,7 @@ class CorridaMotoristaController extends Controller
         if ($motorista === null || $motorista->status !== MotoristaCadastroController::ATIVO) {
             $this->situacaoDoCadastro = $motorista->status
                 ?? MotoristaCadastroController::SEM_CADASTRO;
+            $this->jaLiberado = $motorista?->liberado_em !== null;
 
             return null;
         }
@@ -257,7 +262,9 @@ class CorridaMotoristaController extends Controller
         return response()->json([
             'message' => $this->situacaoDoCadastro === MotoristaCadastroController::SEM_CADASTRO
                 ? 'Envie seus documentos para dirigir pelo aplicativo.'
-                : 'Seu cadastro de motorista ainda não foi aprovado.',
+                : ($this->jaLiberado
+                    ? 'Resolva as ações necessárias ou aguarde a análise dos documentos para ficar online.'
+                    : 'Seu cadastro de motorista ainda não foi aprovado.'),
             'situacao' => $this->situacaoDoCadastro,
         ], 403);
     }

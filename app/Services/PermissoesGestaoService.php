@@ -20,7 +20,7 @@ class PermissoesGestaoService
         if ($recurso === 'motorista-documentos' || $recurso === 'mudar-status-documento') {
             return $consulta ? 'documentos.consultar' : 'documentos.analisar';
         }
-        if (in_array($recurso, ['veiculos', 'veiculo-por-placa', 'motorista-veiculos', 'adicionar-veiculo-ao-motorista'], true)) {
+        if (in_array($recurso, ['veiculos', 'veiculo-por-placa', 'motorista-veiculos', 'adicionar-veiculo-ao-motorista', 'marcas-veiculos', 'modelos-veiculos'], true)) {
             return $consulta ? 'veiculos.consultar' : 'veiculos.gerenciar';
         }
         if ($recurso === 'plataforma-lucros') {
