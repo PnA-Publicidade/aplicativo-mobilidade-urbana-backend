@@ -2,6 +2,7 @@
 
 use App\Models\BannerPublicidade;
 use App\Models\Cidade;
+use App\Models\Gestor;
 use App\Models\Tarifa;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -164,6 +165,49 @@ it('lista os banners da cidade, mostra um e exclui de forma reversível', functi
     $this->deleteJson('/api/publicidades/'.$banner->id)->assertOk();
     $this->getJson('/api/publicidades/'.$banner->id)->assertNotFound();
     expect(BannerPublicidade::withTrashed()->find($banner->id))->not->toBeNull();
+});
+
+it('lista os banners arquivados e restaura um deles', function () {
+    $this->actingAs(usuarioPublicidade(), 'jwt');
+    $ativo = BannerPublicidade::factory()->create();
+    $arquivado = BannerPublicidade::factory()->create();
+    $arquivado->delete();
+
+    $this->getJson('/api/publicidades-arquivados')
+        ->assertOk()
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.id', $arquivado->id);
+
+    $this->postJson('/api/publicidades/'.$arquivado->id.'/restaurar')
+        ->assertOk()
+        ->assertJsonPath('data.id', $arquivado->id);
+
+    $this->getJson('/api/publicidades-arquivados')->assertJsonPath('total', 0);
+    $this->getJson('/api/publicidades')->assertJsonPath('total', 2);
+    expect($ativo->fresh()->trashed())->toBeFalse();
+});
+
+it('deixa a gestão ver os arquivados e restaurar pelo painel', function () {
+    $gestor = Gestor::create([
+        'name' => 'Gestor Publicidade',
+        'email' => 'publicidade@example.test',
+        'cpf' => '52998224725',
+        'data_nascimento' => '1985-01-01',
+        'telefone' => '69988887777',
+        'password' => 'senha-de-teste',
+    ]);
+    $gestor->forceFill(['perfil_acesso' => 'admin'])->save();
+    $token = auth('gestores')->claims(['perfil' => 'gestao'])->login($gestor);
+    $arquivado = BannerPublicidade::factory()->create();
+    $arquivado->delete();
+
+    $this->withToken($token)->getJson('/api/gestao/publicidades-arquivados')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $arquivado->id);
+    $this->withToken($token)->postJson('/api/gestao/publicidades/'.$arquivado->id.'/restaurar')
+        ->assertOk();
+
+    expect($arquivado->fresh()->trashed())->toBeFalse();
 });
 
 it('não exclui cidade que tem banner, nem apagado', function () {
