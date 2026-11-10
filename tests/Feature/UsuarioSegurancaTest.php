@@ -77,6 +77,21 @@ it('recusa lote de arquivamento com usuário inexistente sem apagar os demais', 
     expect($alvo->fresh()->deleted_at)->toBeNull();
 });
 
+it('motorista de usuário arquivado sai da lista da gestão e volta ao restaurar', function () {
+    $operador = User::factory()->create();
+    $alvo = User::factory()->create();
+    $motorista = Motorista::create(['user_id' => $alvo->id, 'status' => 'pendente']);
+    $listados = fn () => collect($this->actingAs($operador, 'jwt')->getJson('/api/motoristas')->assertOk()->json('data'))->pluck('id');
+
+    expect($listados())->toContain($motorista->id);
+
+    $this->postJson('/api/usuario-arquivar', ['usuarios' => [['id' => $alvo->id]]])->assertOk();
+    expect($listados())->not->toContain($motorista->id);
+
+    $this->postJson('/api/usuario-restaurar', ['usuarios' => [['id' => $alvo->id]]])->assertOk();
+    expect($listados())->toContain($motorista->id);
+});
+
 it('atualiza somente os campos editáveis da conta pelo painel', function () {
     $operador = User::factory()->create();
     $alvo = User::factory()->create();

@@ -18,6 +18,7 @@ Route::middleware('throttle:3,1,auth-codigo')->group(function () {
 
 Route::middleware('throttle:10,1,auth-conta-existe')->group(function () {
     Route::get('auth/verifica-se-conta-existe', [LoginController::class, 'verificaSeContaExiste']);
+    Route::post('auth/valida-email-cadastro', [UsuarioController::class, 'validarEmailCadastro']);
 });
 
 Route::post('auth/refresh', RefreshController::class)->middleware('throttle:30,1,auth-refresh')->name('auth.refresh');

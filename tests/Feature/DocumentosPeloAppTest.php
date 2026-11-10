@@ -38,6 +38,21 @@ it('o app envia o CRLV só com o arquivo e ele fica no veículo do motorista', f
         ->and($this->veiculo->fresh()->status)->toBe('em_analise');
 });
 
+it('o CRLV sem veículo aparece no cadastro, mas o veículo continua pendente', function () {
+    MotoristaVeiculo::query()->delete();
+
+    $this->post('/api/motorista/cadastro/documentos', [
+        'tipo_documento' => 'crlv',
+        'arquivo' => UploadedFile::fake()->create('crlv.pdf', 100, 'application/pdf'),
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $this->getJson('/api/motorista/cadastro')
+        ->assertOk()
+        ->assertJsonPath('documentos.0.tipo_documento', 'crlv')
+        ->assertJsonPath('documentos.0.status', 'em_analise')
+        ->assertJsonPath('pendencias', ['cnh', 'documentos', 'veiculo']);
+});
+
 it('o app envia o Nada Consta só com o arquivo', function () {
     $this->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'nada_consta',

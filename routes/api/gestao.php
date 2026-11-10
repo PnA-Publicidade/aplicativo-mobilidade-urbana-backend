@@ -15,6 +15,8 @@ use App\Http\Controllers\Gestor\GestorController;
 use App\Http\Controllers\Motorista\MotoristaController;
 use App\Http\Controllers\Motorista\MotoristaDocumentoController;
 use App\Http\Controllers\Usuario\UsuarioController;
+use App\Http\Controllers\Veiculo\MarcaVeiculoController;
+use App\Http\Controllers\Veiculo\ModeloVeiculoController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -87,6 +89,10 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::get('motorista-documentos/{motoristaDocumentoId}/download', [MotoristaDocumentoController::class, 'baixar']);
             Route::apiResource('motorista-documentos', MotoristaDocumentoController::class);
             Route::put('mudar-status-documento/{motoristaDocumentoId}', [MotoristaDocumentoController::class, 'mudarStatusDocumento']);
+
+            Route::get('marcas-veiculos/{marca}/modelos', [MarcaVeiculoController::class, 'modelos'])->whereNumber('marca');
+            Route::apiResource('marcas-veiculos', MarcaVeiculoController::class)->parameters(['marcas-veiculos' => 'marca']);
+            Route::apiResource('modelos-veiculos', ModeloVeiculoController::class)->except('index')->parameters(['modelos-veiculos' => 'modelo']);
             Route::apiResource('corridas', CorridasController::class)->only(['index', 'show']);
 
             Route::get('veiculos/{veiculoId}/usuarios', VeiculoUsuariosController::class)->whereNumber('veiculoId');

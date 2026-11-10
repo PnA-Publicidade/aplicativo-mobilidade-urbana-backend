@@ -37,9 +37,20 @@ class Motorista extends Model
     /**
      * @return array<string, string>
      */
+    protected static function booted(): void
+    {
+        // aprovado uma vez, não volta para o cadastro: um problema depois vira ação na home
+        static::saving(function (Motorista $motorista): void {
+            if ($motorista->status === 'ativo' && $motorista->liberado_em === null) {
+                $motorista->liberado_em = now();
+            }
+        });
+    }
+
     protected function casts(): array
     {
         return [
+            'liberado_em' => 'datetime',
             'data_nascimento' => 'date:Y-m-d',
             'primeira_habilitacao' => 'date:Y-m-d',
             'data_emissao' => 'date:Y-m-d',

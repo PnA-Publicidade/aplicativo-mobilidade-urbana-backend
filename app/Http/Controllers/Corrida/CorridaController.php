@@ -25,7 +25,6 @@ use App\Services\EstimarRotaService;
 use App\Services\ObterNavegacaoService;
 use App\Services\ObterTracadoRotaService;
 use App\Services\PagamentoCorridaService;
-use App\Services\PontosDeEmbarqueService;
 use App\Services\ResolverTarifaService;
 use App\Services\SimularCorridaNegociadaService;
 use App\Services\SolicitarCorridaService;
@@ -99,23 +98,6 @@ class CorridaController extends Controller
             (float) $dados['latitude'],
             (float) $dados['longitude'],
         ));
-    }
-
-    /**
-     * Pontos de parada sugeridos perto do embarque marcado (entradas de
-     * shopping, aeroporto etc.).
-     */
-    public function pontosDeEmbarque(Request $request, PontosDeEmbarqueService $pontosDeEmbarque): JsonResponse
-    {
-        $dados = $request->validate([
-            'latitude' => 'required|numeric|between:-90,90|not_in:0',
-            'longitude' => 'required|numeric|between:-180,180|not_in:0',
-        ]);
-
-        return response()->json(['data' => $pontosDeEmbarque->executar(
-            (float) $dados['latitude'],
-            (float) $dados['longitude'],
-        )]);
     }
 
     /**

@@ -53,8 +53,12 @@ class InformacoesDocumentoMotoristaService
             ];
         }
         if ($request->input('tipo_documento') !== TipoDocumentoMotorista::CNH->value) {
-            // O seguro ainda não possui campos próprios no formulário.
-            return ['informacoes_complementares' => 'nullable|array|max:0', 'veiculo_id' => 'prohibited'];
+            // no seguro só a validade: nem sempre ela está no arquivo, e aí a gestão preenche
+            return [
+                'veiculo_id' => 'prohibited',
+                'informacoes_complementares' => 'nullable|array:data_validade',
+                'informacoes_complementares.data_validade' => 'nullable|date_format:Y-m-d',
+            ];
         }
 
         return [
