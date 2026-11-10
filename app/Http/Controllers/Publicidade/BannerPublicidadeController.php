@@ -24,14 +24,43 @@ class BannerPublicidadeController extends Controller
      */
     public function index(Request $request): LengthAwarePaginator
     {
+        return $this->listar($request, BannerPublicidade::query());
+    }
+
+    /**
+     * Os banners arquivados (excluídos de forma reversível), com os mesmos filtros.
+     *
+     * @return LengthAwarePaginator<int, BannerPublicidade>
+     */
+    public function arquivados(Request $request): LengthAwarePaginator
+    {
+        return $this->listar($request, BannerPublicidade::onlyTrashed());
+    }
+
+    public function restaurar(BannerPublicidade $banner): JsonResponse
+    {
+        $banner->restore();
+
+        return response()->json([
+            'message' => 'Banner restaurado.',
+            'data' => $banner->load('cidade:id,nome,uf'),
+        ]);
+    }
+
+    /**
+     * @param  Builder<BannerPublicidade>  $consulta
+     * @return LengthAwarePaginator<int, BannerPublicidade>
+     */
+    private function listar(Request $request, Builder $consulta): LengthAwarePaginator
+    {
         $filtros = $request->validate([
             'cidade_id' => 'sometimes|integer',
             'per_page' => 'sometimes|integer|min:1|max:50',
         ]);
 
-        return BannerPublicidade::query()
+        return $consulta
             ->with('cidade:id,nome,uf')
-            ->when(isset($filtros['cidade_id']), fn (Builder $consulta) => $consulta->where('cidade_id', $filtros['cidade_id']))
+            ->when(isset($filtros['cidade_id']), fn (Builder $filtrada) => $filtrada->where('cidade_id', $filtros['cidade_id']))
             ->latest('id')
             ->paginate($filtros['per_page'] ?? 15);
     }
