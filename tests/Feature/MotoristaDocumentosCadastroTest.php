@@ -10,6 +10,21 @@ use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
+it('motorista cadastrado pelo app guarda o nome e o CPF do usuário', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create(['name' => 'Diogo Guimarães', 'cpf' => '12345678909']);
+
+    // a CNH sem os dados lidos não apaga o que veio do usuário
+    $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        'tipo_documento' => 'cnh',
+        'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
+        'informacoes_complementares' => ['nome' => null, 'cnh_expiracao' => '2031-01-01'],
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    expect(Motorista::where('user_id', $usuario->id)->firstOrFail()->only(['nome', 'cpf']))
+        ->toBe(['nome' => 'Diogo Guimarães', 'cpf' => '12345678909']);
+});
+
 it('mostra os quatro documentos exigidos antes do primeiro envio', function () {
     $usuario = User::factory()->create();
 
