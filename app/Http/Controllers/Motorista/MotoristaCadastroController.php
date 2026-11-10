@@ -51,6 +51,7 @@ class MotoristaCadastroController extends Controller
                 'documentos' => [],
                 'veiculos' => 0,
                 'acoes_necessarias' => [],
+                'veiculos_em_analise' => [],
                 'pendencias' => ['cnh', 'documentos', 'veiculo'],
                 'documentos_faltando' => TipoDocumentoMotorista::valores(),
             ]);
@@ -73,6 +74,7 @@ class MotoristaCadastroController extends Controller
             'documentos' => $documentos,
             'veiculos' => $veiculos,
             'acoes_necessarias' => app(DocumentosMotoristaService::class)->acoesNecessarias($motorista),
+            'veiculos_em_analise' => app(DocumentosMotoristaService::class)->veiculosEmAnalise($motorista),
             'pendencias' => $this->pendencias($motorista, $veiculos),
             'documentos_faltando' => $this->atualizarSituacaoMotoristaService
                 ->documentosQueFaltam($motorista),
@@ -329,6 +331,23 @@ class MotoristaCadastroController extends Controller
 
         return response()->json([
             'message' => 'Cadastro aprovado (atalho de desenvolvimento).',
+            'situacao' => $motorista->status,
+        ]);
+    }
+
+    /**
+     * Atalho de desenvolvimento: leva à home sem enviar nada, para testar as ações
+     * necessárias com todos os documentos e o veículo faltando. Remover antes de publicar.
+     */
+    public function liberarDev(Request $request): JsonResponse
+    {
+        abort_unless(App::environment(['local', 'testing']), 404);
+
+        $motorista = Motorista::firstOrCreate(['user_id' => $request->user()->id], ['status' => 'pendente']);
+        $motorista->forceFill(['liberado_em' => $motorista->liberado_em ?? now()])->save();
+
+        return response()->json([
+            'message' => 'Entrou sem documentos (atalho de desenvolvimento).',
             'situacao' => $motorista->status,
         ]);
     }

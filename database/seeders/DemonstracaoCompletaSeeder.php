@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Cidade;
 use App\Models\Corrida;
+use App\Models\Motorista;
 use App\Models\PlataformaLucro;
 use App\Services\PlataformaLucrosService;
 use Illuminate\Database\Seeder;
@@ -35,6 +36,9 @@ class DemonstracaoCompletaSeeder extends Seeder
             ]);
             $this->identificarCorridas(Corrida::whereNotIn('id', $idsAnteriores)->where('status_corrida', 'finalizada')->where('status_pagamento', 'pago')->with(['corrida_financeiro', 'produto'])->get());
         }));
+        // com os eventos desligados o model não marca a liberação: sem ela, um documento
+        // reprovado mandaria o motorista de volta à liberação em vez das ações na home
+        Motorista::where('status', 'ativo')->whereNull('liberado_em')->update(['liberado_em' => now()]);
         $this->command?->info('Demonstração completa pronta. Admin: admin@example.com / password (contas novas). Ative Mostrar demonstração em Ganhos da plataforma.');
         $this->command?->info('Ganhos e saldo: selecione Motorista de demonstração de ganhos; também permanece o Motorista financeiro de teste.');
     }

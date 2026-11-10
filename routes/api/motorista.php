@@ -18,6 +18,7 @@ Route::post('motorista/cadastro/documentos', [MotoristaCadastroController::class
 Route::delete('motorista/cadastro/documentos/{documento}', [MotoristaCadastroController::class, 'removerDocumento']);
 // atalho de desenvolvimento: ver MotoristaCadastroController::aprovarDev
 Route::post('motorista/cadastro/aprovar-dev', [MotoristaCadastroController::class, 'aprovarDev']);
+Route::post('motorista/cadastro/liberar-dev', [MotoristaCadastroController::class, 'liberarDev']);
 Route::get('motorista/me/solicitacoes-veiculo', [SolicitacoesVeiculoController::class, 'index']);
 Route::post('motorista/me/solicitacoes-veiculo', [SolicitacoesVeiculoController::class, 'store'])->middleware('throttle:10,1');
 Route::get('motorista/me/veiculos', [MotoristaController::class, 'meusVeiculos']);
