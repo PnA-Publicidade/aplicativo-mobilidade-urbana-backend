@@ -44,6 +44,12 @@ class Motorista extends Model
             if ($motorista->status === 'ativo' && $motorista->liberado_em === null) {
                 $motorista->liberado_em = now();
             }
+            // pelo app ele só preenche o usuário: o motorista guarda o nome e o CPF de lá
+            if (blank($motorista->nome) || blank($motorista->cpf)) {
+                $usuario = User::whereKey($motorista->user_id)->first(['name', 'cpf']);
+                $motorista->nome = filled($motorista->nome) ? $motorista->nome : $usuario?->name;
+                $motorista->cpf = filled($motorista->cpf) ? $motorista->cpf : $usuario?->cpf;
+            }
         });
     }
 

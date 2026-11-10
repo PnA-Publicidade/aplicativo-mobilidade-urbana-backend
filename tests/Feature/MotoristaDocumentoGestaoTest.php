@@ -88,7 +88,8 @@ it('permite limpar campos opcionais e salvar EAR como nao', function () {
 
     $this->assertDatabaseHas('motoristas', [
         'id' => $this->motorista->id,
-        'nome' => null,
+        // sem o nome da CNH, fica o do usuário: o motorista nunca fica sem nome
+        'nome' => $this->usuario->name,
         'numero_registro' => null,
         'data_emissao' => null,
         'ear' => 0,

@@ -6,6 +6,7 @@ use App\Enums\TipoDocumentoMotorista;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use App\Models\MotoristaVeiculo;
+use App\Models\Veiculo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -51,6 +52,13 @@ class DocumentosMotoristaService
         $documentos = $this->paraAcompanhar($motorista)->unique(fn (MotoristaDocumento $documento) => $documento->tipo_documento->value);
         $acoes = $documentos->filter(fn (MotoristaDocumento $documento) => $documento->vencido || $documento->status === 'reprovado')
             ->map(fn (MotoristaDocumento $documento) => $documento->tipo_documento->value)->values()->all();
+        // liberado sem ter enviado (atalho de dev ou documento removido pela gestão); quem
+        // está ativo já tem todos, ver AtualizarSituacaoMotoristaService
+        if ($motorista->status !== 'ativo') {
+            $enviados = $documentos->map(fn (MotoristaDocumento $documento) => $documento->tipo_documento->value)->all();
+            $pessoais = [TipoDocumentoMotorista::CNH->value, TipoDocumentoMotorista::NADA_CONSTA->value, TipoDocumentoMotorista::SEGURO_OBRIGATORIO->value];
+            $acoes = [...$acoes, ...array_values(array_diff($pessoais, $enviados))];
+        }
 
         if ($this->veiculos($motorista)->isNotEmpty()) {
             return $acoes;
@@ -61,6 +69,32 @@ class DocumentosMotoristaService
         $acoes = array_values(array_diff($acoes, [TipoDocumentoMotorista::CRLV->value]));
 
         return $crlv === null || $crlv->status === 'reprovado' ? [...$acoes, 'veiculo'] : $acoes;
+    }
+
+    /**
+     * Veículos aguardando a gestão, para a home. Com um veículo aprovado ele já roda:
+     * os outros em análise ficam só em "Meus veículos".
+     *
+     * @return list<array{nome: string, placa: ?string}>
+     */
+    public function veiculosEmAnalise(Motorista $motorista): array
+    {
+        if ($this->veiculos($motorista)->contains(fn (Veiculo $veiculo) => $veiculo->status === 'aprovado')) {
+            return [];
+        }
+        $vinculados = $this->veiculos($motorista)
+            ->filter(fn (Veiculo $veiculo) => $veiculo->status === 'em_analise' || $veiculo->ultimoCrlv?->status === 'em_analise')
+            ->map(fn (Veiculo $veiculo) => ['nome' => trim("{$veiculo->marca} {$veiculo->modelo}"), 'placa' => $veiculo->placa]);
+        // o veículo só é criado quando a gestão aprova o CRLV
+        $semVeiculo = MotoristaDocumento::where('motorista_id', $motorista->id)
+            ->where('tipo_documento', TipoDocumentoMotorista::CRLV)->where('ordem', 0)
+            ->whereNull('veiculo_id')->where('status', 'em_analise')->latest('id')->get()
+            ->map(fn (MotoristaDocumento $crlv) => [
+                'nome' => str_replace('/', ' ', $crlv->informacoes_complementares['marca_modelo'] ?? 'Veículo'),
+                'placa' => $crlv->informacoes_complementares['placa'] ?? null,
+            ]);
+
+        return $vinculados->concat($semVeiculo)->values()->all();
     }
 
     /**

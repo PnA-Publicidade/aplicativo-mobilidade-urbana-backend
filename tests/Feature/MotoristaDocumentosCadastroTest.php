@@ -10,6 +10,21 @@ use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
+it('motorista cadastrado pelo app guarda o nome e o CPF do usuário', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create(['name' => 'Diogo Guimarães', 'cpf' => '12345678909']);
+
+    // a CNH sem os dados lidos não apaga o que veio do usuário
+    $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        'tipo_documento' => 'cnh',
+        'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
+        'informacoes_complementares' => ['nome' => null, 'cnh_expiracao' => '2031-01-01'],
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    expect(Motorista::where('user_id', $usuario->id)->firstOrFail()->only(['nome', 'cpf']))
+        ->toBe(['nome' => 'Diogo Guimarães', 'cpf' => '12345678909']);
+});
+
 it('mostra os quatro documentos exigidos antes do primeiro envio', function () {
     $usuario = User::factory()->create();
 
@@ -300,6 +315,56 @@ it('quem já foi aprovado fica na home e vê reprovado e falta de veículo como 
 
     $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
         ->assertJsonPath('acoes_necessarias', ['seguro_obrigatorio', 'veiculo']);
+});
+
+it('veículo em análise só aparece na home enquanto não há veículo aprovado', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
+    $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+    $aprovado = MotoristaVeiculo::where('motorista_id', $motorista->id)->firstOrFail();
+    MotoristaDocumento::create([
+        'motorista_id' => $motorista->id, 'tipo_documento' => 'crlv', 'status' => 'em_analise',
+        'name' => 'crlv.pdf', 'type' => 'pdf', 'mime_type' => 'application/pdf', 'size' => 1,
+        'path' => 'motorista_documentos_anexos/crlv.pdf', 'url' => 'http://localhost/crlv.pdf',
+        'informacoes_complementares' => ['placa' => 'ABC1D23', 'marca_modelo' => 'RENAULT/KWID ZEN'],
+        'solicitacao_veiculo' => ['categoria' => 'carro', 'id_envio' => 'teste-em-analise-0001'],
+    ]);
+
+    // com o veículo aprovado ele roda: o novo em análise fica só em "Meus veículos"
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertJsonPath('acoes_necessarias', [])
+        ->assertJsonPath('veiculos_em_analise', []);
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/disponibilidade', [
+        'disponivel' => true, 'latitude' => -8.76, 'longitude' => -63.9,
+    ])->assertOk();
+
+    $aprovado->delete();
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertJsonPath('acoes_necessarias', [])
+        ->assertJsonPath('veiculos_em_analise', [['nome' => 'RENAULT KWID ZEN', 'placa' => 'ABC1D23']]);
+});
+
+it('entrar sem documentos (dev) leva à home com tudo o que falta como ação', function () {
+    Storage::fake('motorista_documentos_anexos');
+    $usuario = User::factory()->create();
+
+    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/liberar-dev')->assertOk();
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertJsonPath('liberado', true)
+        ->assertJsonPath('acoes_necessarias', ['cnh', 'nada_consta', 'seguro_obrigatorio', 'veiculo']);
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/situacao')->assertOk();
+
+    // enviado, sai das ações e fica aguardando a gestão
+    $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        'tipo_documento' => 'cnh',
+        'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $this->actingAs($usuario, 'jwt')->getJson('/api/motorista/cadastro')
+        ->assertJsonPath('acoes_necessarias', ['nada_consta', 'seguro_obrigatorio', 'veiculo']);
 });
 
 it('no primeiro cadastro o motorista pendente continua na liberação', function () {
