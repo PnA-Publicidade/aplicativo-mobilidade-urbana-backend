@@ -13,6 +13,9 @@ class TextoDocumentoService
 {
     private const PRAZO_SEGUNDOS = 20;
 
+    /** Motivo técnico da última falha de leitura; só deve ser exposto com APP_DEBUG. */
+    public ?string $ultimoErro = null;
+
     /**
      * Texto lido, ou null quando a leitura não está disponível (ferramentas ausentes, tempo esgotado).
      * Com `$imagem`, um PDF é lido como imagem mesmo que tenha texto: a CNH digital, por exemplo,
@@ -20,6 +23,7 @@ class TextoDocumentoService
      */
     public function extrair(UploadedFile $arquivo, bool $imagem = false): ?string
     {
+        $this->ultimoErro = null;
         $temporario = sys_get_temp_dir().'/documento-'.Str::uuid();
         try {
             mkdir($temporario, 0700);
@@ -43,6 +47,7 @@ class TextoDocumentoService
         } catch (Throwable $exception) {
             // Nunca registrar o conteúdo nem o caminho do documento.
             Log::warning('Leitura do texto do documento indisponível.', ['erro' => $exception::class]);
+            $this->ultimoErro = $exception::class.': '.Str::limit(trim($exception->getMessage()), 400);
 
             return null;
         } finally {

@@ -84,6 +84,7 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::apiResource('motoristas', MotoristaController::class);
             Route::post('adicionar-veiculo-ao-motorista', [MotoristaController::class, 'adicionarVeiculoAoMotorista']);
             Route::get('motorista-documentos/tipos', [MotoristaDocumentoController::class, 'tipos']);
+            Route::get('motorista-documentos/fila', [MotoristaDocumentoController::class, 'fila']);
             Route::get('motorista-documentos/motivos-reprovacao', [MotoristaDocumentoController::class, 'motivosReprovacao']);
             Route::get('motorista-documentos/{motoristaId}/resumo', [MotoristaDocumentoController::class, 'resumo']);
             Route::get('motorista-documentos/{motoristaDocumentoId}/download', [MotoristaDocumentoController::class, 'baixar']);

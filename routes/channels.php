@@ -43,6 +43,8 @@ Broadcast::channel('ajuda.ticket.{ticketId}.suporte', function (Gestor $gestor, 
     return $ticket && $gestor->podeAcessarTicket($ticket);
 }, ['guards' => ['gestores']]);
 
+Broadcast::channel('documentos.fila', fn (Gestor $gestor) => $gestor->pode('documentos.consultar'), ['guards' => ['gestores']]);
+
 Broadcast::channel('ajuda.suporte', fn (Gestor $gestor) => $gestor->visualizaTodosTickets(), ['guards' => ['gestores']]);
 
 Broadcast::channel('ajuda.entrada', fn (Gestor $gestor) => $gestor->visualizaEntradaTickets(), ['guards' => ['gestores']]);
