@@ -3,6 +3,7 @@
 // CODEX: 4 linhas alteradas; publica as rotas autenticadas dos veículos da própria conta.
 
 use App\Http\Controllers\Motorista\CarteiraMotoristaController;
+use App\Http\Controllers\Motorista\GanhosController;
 use App\Http\Controllers\Motorista\MetodosResgateController;
 use App\Http\Controllers\Motorista\MotoristaCadastroController;
 use App\Http\Controllers\Motorista\MotoristaController;
@@ -30,6 +31,9 @@ Route::get('motorista/me/estatisticas', [MotoristaController::class, 'estatistic
 Route::get('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'mostrar']);
 Route::put('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'atualizar']);
 Route::get('motorista/me/ganhos', [MotoristaController::class, 'ganhos']);
+// "Seus ganhos": resumo do dia, semana ou mês e a lista por trás de cada valor
+Route::get('motorista/me/ganhos/resumo', [GanhosController::class, 'resumo']);
+Route::get('motorista/me/ganhos/detalhes', [GanhosController::class, 'detalhes']);
 
 // carteira, saques e para onde eles vão (chave Pix ou conta bancária)
 Route::get('motorista/me/carteira', [CarteiraMotoristaController::class, 'carteira']);
