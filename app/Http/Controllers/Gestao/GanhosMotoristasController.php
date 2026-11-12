@@ -56,7 +56,7 @@ class GanhosMotoristasController extends Controller
             'meta' => ['total' => $total, 'current_page' => $pagina, 'last_page' => max(1, (int) ceil($total / $porPagina))]]);
     }
 
-    private function filtros(Request $request): array
+    protected function filtros(Request $request): array
     {
         $dados = $request->validate([
             'motorista_id' => 'required|integer|min:1',
