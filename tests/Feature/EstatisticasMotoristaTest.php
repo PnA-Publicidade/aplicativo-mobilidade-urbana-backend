@@ -231,3 +231,69 @@ it('soma os ganhos do dia e o saldo só com corridas finalizadas', function () {
         ->assertJsonPath('saldo', 30.5)
         ->assertJsonPath('corridas_hoje', 2);
 });
+
+it('olha só os últimos 30 dias nas duas taxas', function () {
+    $motorista = motoristaEstatistica();
+    $passageiro = passageiroEstatistica();
+
+    $criar = fn (string $status, $aceiteEm, ?string $quem = null, ?string $tipo = null) => Corrida::create([
+        'codigo_corrida' => 'JAN-'.Str::upper(Str::random(8)),
+        'motorista_id' => $motorista->id,
+        'passageiro_id' => $passageiro->id,
+        'status_corrida' => $status,
+        'cancelado_por' => $quem,
+        'tipo_cancelamento' => $tipo,
+        'tempo_solicitacao' => $aceiteEm,
+        'tempo_aceite' => $aceiteEm,
+        'metodo_pagamento' => 'dinheiro',
+        'status_pagamento' => 'pendente',
+    ]);
+
+    // dentro da janela: 1 finalizada e 1 cancelada pelo motorista = 50%
+    $recentes = [
+        $criar('finalizada', now()->subDays(5)),
+        $criar('cancelada', now()->subDays(6), 'motorista'),
+    ];
+    // fora da janela (antigas): não entram em nenhuma das taxas
+    $antigas = [
+        $criar('finalizada', now()->subDays(40)),
+        $criar('finalizada', now()->subDays(41)),
+        $criar('finalizada', now()->subDays(42)),
+    ];
+    // o passageiro não apareceu: não pesa contra o motorista
+    $criar('cancelada', now()->subDays(2), 'motorista', 'nao_comparecimento');
+
+    foreach ([...$recentes, ...$antigas] as $corrida) {
+        DB::table('ofertas_motorista')->insert([
+            'motorista_id' => $motorista->id,
+            'corrida_id' => $corrida->id,
+            'ofertada_em' => $corrida->tempo_aceite,
+        ]);
+    }
+    // uma recusada recente e uma recusada antiga
+    foreach ([now()->subDays(3), now()->subDays(50)] as $quando) {
+        $solicitada = Corrida::create([
+            'codigo_corrida' => 'JAN-REC-'.Str::upper(Str::random(8)),
+            'passageiro_id' => $passageiro->id,
+            'status_corrida' => 'solicitada',
+            'tempo_solicitacao' => $quando,
+            'metodo_pagamento' => 'dinheiro',
+            'status_pagamento' => 'pendente',
+        ]);
+        DB::table('ofertas_motorista')->insert([
+            'motorista_id' => $motorista->id,
+            'corrida_id' => $solicitada->id,
+            'ofertada_em' => $quando,
+            'recusada_em' => $quando,
+        ]);
+    }
+
+    // aceitação: 2 aceitas recentes e 1 recusada recente = 67%
+    $this->actingAs($motorista->user, 'jwt')
+        ->getJson('/api/motorista/me/estatisticas')
+        ->assertOk()
+        ->assertJsonPath('janela_dias', 30)
+        ->assertJsonPath('taxa_finalizacao_minima', 70)
+        ->assertJsonPath('taxa_finalizacao', 50)
+        ->assertJsonPath('taxa_aceitacao', 67);
+});

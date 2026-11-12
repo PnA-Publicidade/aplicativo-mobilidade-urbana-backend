@@ -3,6 +3,7 @@
 use App\Http\Controllers\Ajuda\TicketsController;
 use App\Http\Controllers\Auth\GestorAutenticacaoController;
 use App\Http\Controllers\Corrida\ChatCorridaController;
+use App\Http\Controllers\Gestao\ConfiguracoesController;
 use App\Http\Controllers\Gestao\CorridasController;
 use App\Http\Controllers\Gestao\FotoPerfilController;
 use App\Http\Controllers\Gestao\GanhosMotoristasController;
@@ -60,6 +61,8 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::post('ajuda/tickets/{ticket}/leitura', [TicketsController::class, 'leitura'])->whereNumber('ticket')->middleware('throttle:120,1');
             Route::post('ajuda/tickets/{ticket}/assumir', [TicketsController::class, 'assumir'])->whereNumber('ticket');
             Route::patch('ajuda/tickets/{ticket}/status', [TicketsController::class, 'status'])->whereNumber('ticket');
+            Route::get('configuracoes', [ConfiguracoesController::class, 'index']);
+            Route::put('configuracoes', [ConfiguracoesController::class, 'update'])->middleware('throttle:20,1');
             Route::get('administracao/regras', [RegrasAcessoController::class, 'index']);
             Route::get('administracao/regras/{perfil}/gestores', [RegrasAcessoController::class, 'gestores']);
             Route::put('administracao/regras/{perfil}/gestores', [RegrasAcessoController::class, 'atribuir']);
