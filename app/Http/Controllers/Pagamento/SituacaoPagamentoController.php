@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Pagamento;
 use App\Http\Controllers\Controller;
 use App\Models\Passageiro;
 use App\Services\PagamentoCorridaService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,7 @@ class SituacaoPagamentoController extends Controller
 {
     public function __invoke(Request $request, PagamentoCorridaService $pagamento): JsonResponse
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         if ($passageiroId === null) {
             return response()->json(['pendencia' => null, 'credito' => 0]);

@@ -5,45 +5,19 @@ use App\Models\CorridaDestino;
 use App\Models\CorridaFinanceiro;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function criarUsuarioHistorico(string $papel): User
-{
-    $identificador = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Histórico',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $identificador).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $identificador).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$identificador@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function criarPassageiroHistorico(): Passageiro
 {
-    return Passageiro::create([
-        'user_id' => criarUsuarioHistorico('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    return Passageiro::factory()->create(['name' => 'Passageiro Histórico']);
 }
 
 function criarMotoristaHistorico(): Motorista
 {
-    return Motorista::create([
-        'user_id' => criarUsuarioHistorico('motorista')->id,
-        'status' => 'ativo',
-        'numero_registro' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['name' => 'Motorista Histórico', 'status' => 'ativo']);
 }
 
 function criarCorridaHistorico(
@@ -120,7 +94,7 @@ it('lista para o passageiro todas as suas solicitações inclusive canceladas', 
 
     criarCorridaHistorico(criarPassageiroHistorico(), 'finalizada', $motorista);
 
-    $primeiraPagina = $this->actingAs($passageiro->user, 'jwt')
+    $primeiraPagina = $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corridas?per_page=2');
 
     $primeiraPagina->assertOk()
@@ -133,8 +107,9 @@ it('lista para o passageiro todas as suas solicitações inclusive canceladas', 
         ->assertJsonPath('data.1.motivo_cancelamento', 'Motivo registrado')
         ->assertJsonPath('data.1.corrida_destinos.0.endereco', 'Rua de origem')
         ->assertJsonPath('data.1.corrida_financeiro.valor_pago_passageiro', '22.00')
-        ->assertJsonMissingPath('data.1.motorista.user.cpf')
-        ->assertJsonMissingPath('data.1.motorista.user.telefone');
+        ->assertJsonPath('data.1.motorista.name', 'Motorista')
+        ->assertJsonMissingPath('data.1.motorista.cpf')
+        ->assertJsonMissingPath('data.1.motorista.telefone');
 
     $this->getJson('/api/corridas?per_page=2&page=2')
         ->assertOk()
@@ -157,21 +132,21 @@ it('lista para o motorista somente corridas que foram atribuídas a ele', functi
     $finalizada = criarCorridaHistorico($passageiro, 'finalizada', $motorista);
     criarCorridaHistorico($passageiro, 'finalizada', $outroMotorista);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/corridas')
         ->assertOk()
         ->assertJsonPath('total', 2)
         ->assertJsonPath('data.0.id', $finalizada->id)
         ->assertJsonPath('data.1.id', $canceladaAtribuida->id)
-        ->assertJsonPath('data.1.passageiro.user.name', 'Passageiro')
-        ->assertJsonMissingPath('data.1.passageiro.user.cpf')
-        ->assertJsonMissingPath('data.1.passageiro.user.telefone');
+        ->assertJsonPath('data.1.passageiro.name', 'Passageiro')
+        ->assertJsonMissingPath('data.1.passageiro.cpf')
+        ->assertJsonMissingPath('data.1.passageiro.telefone');
 });
 
 it('limita o tamanho máximo de página do histórico', function () {
     $passageiro = criarPassageiroHistorico();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corridas?per_page=51')
         ->assertUnprocessable()
         ->assertJsonValidationErrors('per_page');

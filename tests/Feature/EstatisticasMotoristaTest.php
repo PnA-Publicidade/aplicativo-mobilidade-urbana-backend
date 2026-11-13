@@ -3,46 +3,20 @@
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function usuarioEstatistica(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Estatística',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function motoristaEstatistica(): Motorista
 {
-    return Motorista::create([
-        'user_id' => usuarioEstatistica('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 function passageiroEstatistica(): Passageiro
 {
-    return Passageiro::create([
-        'user_id' => usuarioEstatistica('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    return Passageiro::factory()->create();
 }
 
 it('calcula a finalização só com os cancelamentos do próprio motorista e não inventa a aceitação', function () {
@@ -83,7 +57,7 @@ it('calcula a finalização só com os cancelamentos do próprio motorista e nã
         'status_pagamento' => 'pendente',
     ]);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('corridas_aceitas', 7)
@@ -93,16 +67,9 @@ it('calcula a finalização só com os cancelamentos do próprio motorista e nã
 });
 
 it('responde sem corridas com finalização nula', function () {
-    $motorista = Motorista::create([
-        'user_id' => usuarioEstatistica('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('taxa_finalizacao', null);
@@ -138,7 +105,7 @@ it('calcula a aceitação só com as chamadas que o motorista respondeu', functi
     $ofertadas[3]->update(['motorista_id' => $outro->id, 'status_corrida' => 'aceita', 'tempo_aceite' => now()]);
     $ofertadas[4]->update(['status_corrida' => 'cancelada', 'cancelado_por' => 'passageiro']);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('taxa_aceitacao', 67);
@@ -171,7 +138,7 @@ it('registra a recusa só enquanto a chamada ainda está disponível', function 
     $pegaPorOutro->update(['motorista_id' => $outro->id, 'status_corrida' => 'aceita', 'tempo_aceite' => now()]);
 
     foreach ([$disponivel, $pegaPorOutro, $nuncaOfertada] as $corrida) {
-        $this->actingAs($motorista->user, 'jwt')
+        $this->actingAs($motorista, 'motoristas')
             ->postJson("/api/motorista/corridas/{$corrida->id}/recusar")
             ->assertNoContent();
     }
@@ -186,18 +153,8 @@ it('registra a recusa só enquanto a chamada ainda está disponível', function 
 });
 
 it('soma os ganhos do dia e o saldo só com corridas finalizadas', function () {
-    $motorista = Motorista::create([
-        'user_id' => usuarioEstatistica('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
-    $passageiro = Passageiro::create([
-        'user_id' => usuarioEstatistica('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
 
     $criar = function (string $status, ?string $quando, float $liquido, string $pagamento = 'pago') use ($motorista, $passageiro) {
         $corrida = Corrida::create([
@@ -224,7 +181,7 @@ it('soma os ganhos do dia e o saldo só com corridas finalizadas', function () {
     // pagamento ainda não confirmado: não é ganho nem saldo, mas foi feita hoje
     $criar('finalizada', now()->toDateTimeString(), 7.00, 'em_aberto');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/ganhos')
         ->assertOk()
         ->assertJsonPath('ganhos_do_dia', 10.5)

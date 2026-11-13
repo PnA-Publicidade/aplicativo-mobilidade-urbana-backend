@@ -8,6 +8,7 @@ use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Services\AlterarCorridaService;
 use App\Services\DespachoCorridaService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -76,7 +77,7 @@ class CorridaMotoristaController extends Controller
     {
         // quem já foi aprovado fica na home, mesmo com pendência: lá estão as ações necessárias
         $motorista = $this->motoristaDoUsuario($request)
-            ?? Motorista::where('user_id', $request->user()->id)->whereNotNull('liberado_em')->first();
+            ?? (PerfilLogado::motorista($request)?->liberado_em !== null ? PerfilLogado::motorista($request) : null);
 
         if ($motorista === null) {
             return $this->negarPorCadastro();
@@ -244,7 +245,7 @@ class CorridaMotoristaController extends Controller
      */
     private function motoristaDoUsuario(Request $request): ?Motorista
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null || $motorista->status !== MotoristaCadastroController::ATIVO) {
             $this->situacaoDoCadastro = $motorista->status

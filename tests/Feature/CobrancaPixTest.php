@@ -4,7 +4,6 @@ use App\Models\CobrancaPix;
 use App\Models\Corrida;
 use App\Models\CorridaFinanceiro;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -19,18 +18,7 @@ beforeEach(function () {
 
 function passageiroPix(string $cpf = '52998224725'): Passageiro
 {
-    $id = str_replace('-', '', (string) Str::uuid());
-    $user = User::create([
-        'name' => 'Passageiro Pix',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => $cpf,
-        'data_nascimento' => '1990-01-01',
-        'email' => "pix-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-
-    return Passageiro::create(['user_id' => $user->id, 'media_avaliacao' => null]);
+    return Passageiro::factory()->create(['name' => 'Passageiro Pix', 'cpf' => $cpf]);
 }
 
 function corridaPix(Passageiro $passageiro, string $status = 'finalizada', string $metodo = 'pix'): Corrida
@@ -78,7 +66,7 @@ it('gera a cobrança Pix da corrida finalizada com o valor pago pelo passageiro'
     $passageiro = passageiroPix();
     $corrida = corridaPix($passageiro);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/pix")
         ->assertOk()
         ->assertJsonPath('cobranca.valor', 15.5)
@@ -96,8 +84,8 @@ it('reaproveita a cobrança pendente em vez de criar outra', function () {
     $passageiro = passageiroPix();
     $corrida = corridaPix($passageiro);
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
 
     Http::assertSentCount(1);
 });
@@ -109,9 +97,9 @@ it('marca a corrida como paga quando a AbacatePay confirma o pagamento', functio
     ]);
     $passageiro = passageiroPix();
     $corrida = corridaPix($passageiro);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/pix")
         ->assertOk()
         ->assertJsonPath('cobranca.status', 'PAID');
@@ -127,9 +115,9 @@ it('simula o pagamento só com cobrança de desenvolvimento', function () {
     ]);
     $passageiro = passageiroPix();
     $corrida = corridaPix($passageiro);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/pix/simular")
         ->assertOk()
         ->assertJsonPath('cobranca.status', 'PAID');
@@ -145,9 +133,9 @@ it('recusa Pix para corrida não finalizada, paga em outro método ou de outro p
     $dinheiro = corridaPix($passageiro, 'finalizada', 'dinheiro');
     $alheia = corridaPix(passageiroPix('11144477735'));
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$emAndamento->id}/pix")->assertStatus(409);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$dinheiro->id}/pix")->assertStatus(409);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$alheia->id}/pix")->assertNotFound();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$emAndamento->id}/pix")->assertStatus(409);
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$dinheiro->id}/pix")->assertStatus(409);
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$alheia->id}/pix")->assertNotFound();
 
     Http::assertNothingSent();
 });
@@ -157,9 +145,9 @@ it('não simula pagamento quando a simulação está desligada', function () {
     Http::fake(['api.abacatepay.com/v2/transparents/create' => Http::response(respostaCobranca())]);
     $passageiro = passageiroPix();
     $corrida = corridaPix($passageiro);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/pix/simular")
         ->assertStatus(409);
 
@@ -173,9 +161,9 @@ it('não confirma pagamento de outra cobrança devolvida pela AbacatePay', funct
     ]);
     $passageiro = passageiroPix();
     $corrida = corridaPix($passageiro);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/pix")
         ->assertStatus(502);
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Motorista;
 
 use App\Http\Controllers\Gestao\GanhosMotoristasController;
 use App\Models\Motorista;
+use App\Support\PerfilLogado;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +21,7 @@ class GanhosController extends GanhosMotoristasController
             'periodo' => ['required', Rule::in(['diario', 'semanal', 'mensal'])],
             'tipo_servico' => ['required', Rule::in(['todos', 'corrida', 'entrega'])],
         ]);
-        $motorista = Motorista::with('user')->where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
         abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
 
         return [$motorista, $dados];

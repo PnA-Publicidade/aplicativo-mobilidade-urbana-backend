@@ -9,7 +9,7 @@ class CorridaMensagem extends Model
 {
     protected $table = 'corrida_mensagens';
 
-    protected $fillable = ['corrida_id', 'user_id', 'autor_tipo', 'autor_nome', 'conteudo', 'client_message_id'];
+    protected $fillable = ['corrida_id', 'autor_tipo', 'autor_nome', 'conteudo', 'client_message_id'];
 
     public function corrida(): BelongsTo
     {
@@ -18,7 +18,7 @@ class CorridaMensagem extends Model
 
     public function dados(): array
     {
-        return $this->only(['id', 'corrida_id', 'user_id', 'autor_tipo', 'autor_nome', 'conteudo', 'client_message_id'])
+        return $this->only(['id', 'corrida_id', 'autor_tipo', 'autor_nome', 'conteudo', 'client_message_id'])
             + ['created_at' => $this->created_at?->toISOString()];
     }
 }

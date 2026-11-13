@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
 use App\Services\CrlvVeiculoService;
@@ -17,6 +16,7 @@ use App\Services\InformacoesDocumentoMotoristaService;
 use App\Services\LeituraCrlvService;
 use App\Services\SolicitacaoVeiculoService;
 use App\Services\VerificacaoTipoDocumentoService;
+use App\Support\PerfilLogado;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -279,9 +279,8 @@ class MotoristaDocumentoController extends Controller
             abort_unless($request->user() instanceof Gestor && $request->user()->pode('documentos.analisar'), 403);
         }
 
-        // IDs de gestores e usuários pertencem a tabelas diferentes.
-        $motoristaDoUsuario = $request->user() instanceof User
-            ? Motorista::where('user_id', $request->user()->id)->value('id') : null;
+        // IDs de gestores e motoristas pertencem a tabelas diferentes.
+        $motoristaDoUsuario = PerfilLogado::motorista($request)?->id;
         if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
             return response()->json(['message' => 'Você não pode alterar o status dos seus próprios documentos.'], 403);
         }

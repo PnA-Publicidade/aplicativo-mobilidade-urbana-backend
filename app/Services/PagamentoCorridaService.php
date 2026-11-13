@@ -518,26 +518,20 @@ class PagamentoCorridaService
 
     private function avisarPendencia(Corrida $corrida, float $valor): void
     {
-        $userId = $corrida->passageiro()->value('user_id');
-
-        if ($userId !== null) {
-            $texto = number_format($valor, 2, ',', '.');
-            $this->notificarUsuario->executar(
-                (int) $userId,
-                'passageiro',
-                'Pagamento pendente',
-                "Falta pagar R$ {$texto} da corrida {$corrida->codigo_corrida}. Pague para pedir uma nova corrida."
-            );
-        }
+        $texto = number_format($valor, 2, ',', '.');
+        $this->notificarUsuario->executar(
+            (int) $corrida->passageiro_id,
+            'passageiro',
+            'Pagamento pendente',
+            "Falta pagar R$ {$texto} da corrida {$corrida->codigo_corrida}. Pague para pedir uma nova corrida."
+        );
     }
 
     private function avisarMotoristaRecebimento(Corrida $corrida): void
     {
-        $userId = $corrida->motorista()->value('user_id');
-
-        if ($userId !== null) {
+        if ($corrida->motorista_id !== null) {
             $this->notificarUsuario->executar(
-                (int) $userId,
+                (int) $corrida->motorista_id,
                 'motorista',
                 'Pagamento recebido',
                 "O passageiro quitou o valor pendente da corrida {$corrida->codigo_corrida}."

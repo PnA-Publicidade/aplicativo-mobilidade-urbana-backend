@@ -126,7 +126,6 @@ class NegociacaoCorridaService
             return CorridaNegociacoes::updateOrCreate(
                 ['corrida_id' => $corrida->id, 'motorista_id' => $motorista->id],
                 [
-                    'usuario_id' => $motorista->user_id,
                     'veiculo_id' => $veiculo?->id,
                     'tipo_usuario' => 'motorista',
                     'valor_proposto' => $valores['valor_passageiro'],
@@ -144,10 +143,10 @@ class NegociacaoCorridaService
 
         Avisar::semQuebrar(new CorridaAtualizada($proposta->corrida_id, 'solicitada'));
 
-        $passageiroUserId = Corrida::whereKey($proposta->corrida_id)->first()?->passageiro?->user_id;
-        if ($passageiroUserId !== null) {
+        $passageiroId = Corrida::whereKey($proposta->corrida_id)->value('passageiro_id');
+        if ($passageiroId !== null) {
             $this->notificarUsuario->executar(
-                $passageiroUserId,
+                (int) $passageiroId,
                 'passageiro',
                 'Nova proposta no Negocia',
                 'Um motorista propôs R$ '.number_format((float) $proposta->valor_passageiro, 2, ',', '.').'. Abra o app para escolher.'
@@ -198,8 +197,7 @@ class NegociacaoCorridaService
             ->update(['status' => 'expirada']);
 
         $propostas = CorridaNegociacoes::with([
-            'motorista:id,user_id,foto',
-            'motorista.user:id,name',
+            'motorista:id,name,foto',
             'veiculo',
         ])
             ->where('corrida_id', $corrida->id)
@@ -232,7 +230,7 @@ class NegociacaoCorridaService
         return array_values($propostas->map(function (CorridaNegociacoes $proposta) use ($corrida, $notas, $totais, $posicoes) {
             $posicao = $posicoes->get($proposta->motorista_id);
             $distancia = $posicao === null ? null : $this->despacho->distanciaAteOEmbarque($corrida, $posicao);
-            $nome = trim((string) $proposta->motorista?->user?->name);
+            $nome = trim((string) $proposta->motorista?->name);
 
             return [
                 'id' => $proposta->id,
@@ -424,10 +422,9 @@ class NegociacaoCorridaService
         Avisar::semQuebrar(new CorridaAtualizada($corrida->id, $corrida->status_corrida));
         Avisar::semQuebrar(new CorridasDisponiveisAlteradas);
 
-        $motoristaUserId = $corrida->motorista?->user_id;
-        if ($motoristaUserId !== null) {
+        if ($corrida->motorista_id !== null) {
             $this->notificarUsuario->executar(
-                $motoristaUserId,
+                (int) $corrida->motorista_id,
                 'motorista',
                 'O passageiro escolheu sua proposta',
                 $corrida->status_corrida === 'aguardando_pagamento'

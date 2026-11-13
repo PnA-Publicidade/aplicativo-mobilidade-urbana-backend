@@ -3,7 +3,6 @@
 use App\Enums\TipoDocumentoMotorista;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -12,20 +11,18 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Storage::fake('motorista_documentos_anexos');
-    $this->operador = User::factory()->create();
-    $this->motorista = Motorista::create([
-        'user_id' => User::factory()->create()->id,
-        'status' => 'pendente',
-    ]);
+    // quem opera é a gestão
+    $this->gestao = tokenDeGestor();
+    $this->motorista = Motorista::factory()->create();
 });
 
 it('exige autenticacao para consultar os tipos de documento', function () {
-    $this->getJson('/api/motorista-documentos/tipos')->assertUnauthorized();
+    $this->getJson('/api/gestao/motorista-documentos/tipos')->assertUnauthorized();
 });
 
 it('retorna o catalogo com os quatro tipos e os metadados exibidos no painel', function () {
-    $response = $this->actingAs($this->operador, 'jwt')
-        ->getJson('/api/motorista-documentos/tipos')
+    $response = $this->withToken($this->gestao)
+        ->getJson('/api/gestao/motorista-documentos/tipos')
         ->assertOk()
         ->assertJsonCount(4, 'data');
 
@@ -44,7 +41,7 @@ it('retorna o catalogo com os quatro tipos e os metadados exibidos no painel', f
 });
 
 it('salva cada tipo como enum e retorna seu valor na API de documentos', function (string $tipo) {
-    $response = $this->actingAs($this->operador, 'jwt')->post('/api/motorista-documentos', [
+    $response = $this->withToken($this->gestao)->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => $tipo,
         'arquivo' => UploadedFile::fake()->create('documento.pdf', 100, 'application/pdf'),
@@ -64,10 +61,10 @@ it('salva cada tipo como enum e retorna seu valor na API de documentos', functio
     Storage::disk('motorista_documentos_anexos')->assertExists(basename($response->json('data.path')));
     expect($response->json('data.url'))->toBe('http://localhost/'.$response->json('data.path'));
     $response->assertJsonMissingPath('data.observacao');
-    $this->getJson('/api/motorista-documentos/'.$this->motorista->id)
+    $this->getJson('/api/gestao/motorista-documentos/'.$this->motorista->id)
         ->assertOk()->assertJsonPath('data.0.tipo_documento', $tipo);
     $indice = array_search($tipo, TipoDocumentoMotorista::valores(), true);
-    $this->getJson('/api/motorista-documentos/'.$this->motorista->id.'/resumo')
+    $this->getJson('/api/gestao/motorista-documentos/'.$this->motorista->id.'/resumo')
         ->assertOk()->assertJsonCount(4, 'data')
         ->assertJsonPath("data.$indice.id", $response->json('data.id'))
         ->assertJsonPath("data.$indice.tipo_documento", $tipo)
@@ -75,7 +72,8 @@ it('salva cada tipo como enum e retorna seu valor na API de documentos', functio
 })->with(['cnh', 'crlv', 'nada_consta', 'seguro_obrigatorio']);
 
 it('recusa tipos fora do enum antes de salvar documento ou arquivo', function (string $endpoint) {
-    $this->actingAs($this->operador, 'jwt')->post($endpoint, [
+    // a gestão envia com o token do gestor; o app, com o motorista logado
+    $this->withToken($this->gestao)->actingAs($this->motorista, 'motoristas')->post($endpoint, [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'outro',
         'arquivo' => UploadedFile::fake()->create('documento.pdf', 100, 'application/pdf'),
@@ -83,35 +81,35 @@ it('recusa tipos fora do enum antes de salvar documento ou arquivo', function (s
         ->assertUnprocessable()->assertJsonValidationErrors('tipo_documento');
     expect(MotoristaDocumento::count())->toBe(0)
         ->and(Storage::disk('motorista_documentos_anexos')->allFiles())->toBe([]);
-})->with(['/api/motorista-documentos', '/api/motorista/cadastro/documentos']);
+})->with(['/api/gestao/motorista-documentos', '/api/motorista/cadastro/documentos']);
 
 it('aprova o motorista quando os quatro tipos do enum estao aprovados', function () {
-    $this->actingAs($this->operador, 'jwt');
+    $this->withToken($this->gestao);
     foreach (TipoDocumentoMotorista::cases() as $tipo) {
-        $envio = $this->post('/api/motorista-documentos', [
+        $envio = $this->post('/api/gestao/motorista-documentos', [
             'motorista_id' => $this->motorista->id,
             'tipo_documento' => $tipo->value,
             'arquivo' => UploadedFile::fake()->create('documento.pdf', 100, 'application/pdf'),
             ...informacoesDoDocumento($tipo->value),
         ], ['Accept' => 'application/json'])->assertCreated();
-        $this->putJson('/api/mudar-status-documento/'.$envio->json('data.id'), [
+        $this->putJson('/api/gestao/mudar-status-documento/'.$envio->json('data.id'), [
             'status' => 'aprovado',
         ])->assertOk();
     }
     expect($this->motorista->fresh()->status)->toBe('ativo');
-    $this->actingAs(User::findOrFail($this->motorista->user_id), 'jwt')
+    $this->actingAs($this->motorista->fresh(), 'motoristas')
         ->getJson('/api/motorista/cadastro')
         ->assertOk()->assertJsonPath('documentos_faltando', []);
 });
 
 it('exige autenticacao para o resumo dos documentos', function () {
-    $this->getJson('/api/motorista-documentos/'.$this->motorista->id.'/resumo')
+    $this->getJson('/api/gestao/motorista-documentos/'.$this->motorista->id.'/resumo')
         ->assertUnauthorized();
 });
 
 it('retorna tipos do enum mesmo quando o motorista ainda nao enviou documentos', function () {
-    $response = $this->actingAs($this->operador, 'jwt')
-        ->getJson('/api/motorista-documentos/'.$this->motorista->id.'/resumo')
+    $response = $this->withToken($this->gestao)
+        ->getJson('/api/gestao/motorista-documentos/'.$this->motorista->id.'/resumo')
         ->assertOk()->assertJsonCount(4, 'data');
     foreach (TipoDocumentoMotorista::catalogo() as $i => $tipo) {
         foreach ($tipo as $campo => $valor) {
@@ -136,7 +134,7 @@ it('resume somente o ultimo envio de cada tipo sem misturar motoristas ou pagina
         'name' => 'atual.pdf', 'type' => 'pdf', 'mime_type' => 'application/pdf',
         'size' => 100, 'path' => 'atual.pdf', 'status' => 'em_analise',
     ]);
-    $outro = Motorista::create(['user_id' => User::factory()->create()->id, 'status' => 'pendente']);
+    $outro = Motorista::factory()->create();
     foreach ([TipoDocumentoMotorista::CNH, TipoDocumentoMotorista::CRLV] as $tipo) {
         MotoristaDocumento::create([
             'motorista_id' => $outro->id, 'tipo_documento' => $tipo,
@@ -144,8 +142,8 @@ it('resume somente o ultimo envio de cada tipo sem misturar motoristas ou pagina
             'size' => 100, 'path' => 'outro.pdf', 'status' => 'reprovado',
         ]);
     }
-    $this->actingAs($this->operador, 'jwt')
-        ->getJson('/api/motorista-documentos/'.$this->motorista->id.'/resumo')
+    $this->withToken($this->gestao)
+        ->getJson('/api/gestao/motorista-documentos/'.$this->motorista->id.'/resumo')
         ->assertOk()->assertJsonCount(4, 'data')
         ->assertJsonPath('data.0.tipo_documento', 'cnh')
         ->assertJsonPath('data.0.id', $ultimo->id)
@@ -156,6 +154,6 @@ it('resume somente o ultimo envio de cada tipo sem misturar motoristas ou pagina
 });
 
 it('recusa resumo de motorista inexistente', function () {
-    $this->actingAs($this->operador, 'jwt')
-        ->getJson('/api/motorista-documentos/999999/resumo')->assertNotFound();
+    $this->withToken($this->gestao)
+        ->getJson('/api/gestao/motorista-documentos/999999/resumo')->assertNotFound();
 });

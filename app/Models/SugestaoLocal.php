@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * sobre a busca, enviados pelo passageiro para a equipe revisar.
  *
  * @property int $id
- * @property int $user_id
+ * @property int $passageiro_id
  * @property string $tipo
  * @property string|null $nome
  * @property string|null $endereco
@@ -26,7 +26,7 @@ class SugestaoLocal extends Model
     protected $table = 'sugestoes_locais';
 
     protected $fillable = [
-        'user_id',
+        'passageiro_id',
         'tipo',
         'nome',
         'endereco',
@@ -40,7 +40,7 @@ class SugestaoLocal extends Model
         'status' => 'recebida',
     ];
 
-    protected $hidden = ['user_id'];
+    protected $hidden = ['passageiro_id'];
 
     protected function casts(): array
     {
@@ -51,10 +51,10 @@ class SugestaoLocal extends Model
     }
 
     /**
-     * @return BelongsTo<User, $this>
+     * @return BelongsTo<Passageiro, $this>
      */
-    public function user(): BelongsTo
+    public function passageiro(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(Passageiro::class);
     }
 }

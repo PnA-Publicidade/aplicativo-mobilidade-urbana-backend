@@ -43,9 +43,9 @@ class CorridasTesteSeeder extends Seeder
         }
 
         $criadas = DB::transaction(function (): int {
-            $passageiro = Passageiro::whereHas('user')->orderBy('id')->first();
+            $passageiro = Passageiro::orderBy('id')->first();
             $vinculo = MotoristaVeiculo::with('veiculo')
-                ->whereHas('motorista.user')
+                ->whereHas('motorista')
                 ->whereHas('veiculo', fn ($query) => $query->where('categoria', 'carro'))
                 ->orderBy('id')->first();
             $cidade = Cidade::where('ibge', 1100205)->first();

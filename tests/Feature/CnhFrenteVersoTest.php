@@ -2,7 +2,6 @@
 
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,13 +12,13 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Storage::fake('motorista_documentos_anexos');
-    $this->usuario = User::factory()->create();
-    $this->motorista = Motorista::create(['user_id' => $this->usuario->id, 'status' => 'pendente', 'nome' => 'Nome anterior']);
-    $this->actingAs($this->usuario, 'jwt');
+    $this->motorista = Motorista::factory()->create(['status' => 'pendente', 'name' => 'Nome anterior']);
+    // o envio pelo app usa o motorista logado; o da gestão, o token do gestor
+    $this->withToken(tokenDeGestor())->actingAs($this->motorista, 'motoristas');
 });
 
 it('salva as duas fotos com metadados e urls em uma unica CNH', function ($mobile) {
-    $url = $mobile ? '/api/motorista/cadastro/documentos' : '/api/motorista-documentos';
+    $url = $mobile ? '/api/motorista/cadastro/documentos' : '/api/gestao/motorista-documentos';
     $response = $this->post($url, [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'cnh',
@@ -41,14 +40,14 @@ it('salva as duas fotos com metadados e urls em uma unica CNH', function ($mobil
     Storage::disk('motorista_documentos_anexos')->assertExists([basename($documento->path), basename($documento->verso['path'])]);
     if (! $mobile) {
         expect($this->motorista->fresh()->nome)->toBe('Nome conferido')->and($this->motorista->fresh()->observacao)->toBe('EAR');
-        $this->getJson('/api/motorista-documentos/'.$this->motorista->id.'/resumo')->assertOk()->assertJsonPath('data.0.verso.name', 'verso.png');
+        $this->getJson('/api/gestao/motorista-documentos/'.$this->motorista->id.'/resumo')->assertOk()->assertJsonPath('data.0.verso.name', 'verso.png');
     } else {
         $this->getJson('/api/motorista/cadastro')->assertOk()->assertJsonCount(1, 'documentos')->assertJsonPath('documentos.0.verso.name', 'verso.png');
     }
 })->with([false, true]);
 
 it('exige verso para fotos e recusa verso em PDF ou outros tipos sem salvar arquivos', function ($mobile, $tipo, $frente, $verso) {
-    $url = $mobile ? '/api/motorista/cadastro/documentos' : '/api/motorista-documentos';
+    $url = $mobile ? '/api/motorista/cadastro/documentos' : '/api/gestao/motorista-documentos';
     $mime = $frente === 'pdf' ? 'application/pdf' : 'image/png';
     $dados = ['motorista_id' => $this->motorista->id, 'tipo_documento' => $tipo, 'arquivo' => UploadedFile::fake()->create('frente.'.$frente, 100, $mime)];
     if ($verso !== null) {
@@ -66,7 +65,7 @@ it('exige verso para fotos e recusa verso em PDF ou outros tipos sem salvar arqu
 ]);
 
 it('mantem o envio de PDF sem verso', function ($mobile) {
-    $response = $this->post($mobile ? '/api/motorista/cadastro/documentos' : '/api/motorista-documentos', [
+    $response = $this->post($mobile ? '/api/motorista/cadastro/documentos' : '/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh', 'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])->assertCreated();
     $response->assertJsonPath(($mobile ? 'documento' : 'data').'.verso', null);
@@ -74,7 +73,7 @@ it('mantem o envio de PDF sem verso', function ($mobile) {
 })->with([false, true]);
 
 it('exclui frente e verso juntos e preserva outro envio', function ($mobile) {
-    $this->post($mobile ? '/api/motorista/cadastro/documentos' : '/api/motorista-documentos', [
+    $this->post($mobile ? '/api/motorista/cadastro/documentos' : '/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('frente.png', 100, 'image/png'),
         'arquivo_verso' => UploadedFile::fake()->create('verso.png', 100, 'image/png'),
@@ -83,7 +82,7 @@ it('exclui frente e verso juntos e preserva outro envio', function ($mobile) {
     // o verso é outro registro: guarda os caminhos antes de excluir
     $arquivos = [basename($documento->path), basename($documento->verso['path'])];
     Storage::disk('motorista_documentos_anexos')->put('outro.pdf', 'Outro documento');
-    $this->deleteJson(($mobile ? '/api/motorista/cadastro/documentos/' : '/api/motorista-documentos/').$documento->id)->assertOk();
+    $this->deleteJson(($mobile ? '/api/motorista/cadastro/documentos/' : '/api/gestao/motorista-documentos/').$documento->id)->assertOk();
     expect(MotoristaDocumento::count())->toBe(0);
     Storage::disk('motorista_documentos_anexos')->assertMissing($arquivos);
     Storage::disk('motorista_documentos_anexos')->assertExists('outro.pdf');
@@ -92,7 +91,7 @@ it('exclui frente e verso juntos e preserva outro envio', function ($mobile) {
 it('desfaz as duas fotos e os dados se a transacao falhar', function ($mobile) {
     $this->mock(AtualizarSituacaoMotoristaService::class)->shouldReceive('executar')->once()->andThrow(new RuntimeException('Falha conjunta'));
     $this->withoutExceptionHandling();
-    expect(fn () => $this->post($mobile ? '/api/motorista/cadastro/documentos' : '/api/motorista-documentos', [
+    expect(fn () => $this->post($mobile ? '/api/motorista/cadastro/documentos' : '/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('frente.png', 100, 'image/png'),
         'arquivo_verso' => UploadedFile::fake()->create('verso.png', 100, 'image/png'),
@@ -110,7 +109,7 @@ it('remove a frente se o armazenamento do verso falhar', function () {
         $mock->shouldReceive('salvar')->once()->andThrow(new RuntimeException('Falha no verso'))->ordered();
     });
     $this->withoutExceptionHandling();
-    expect(fn () => $this->post('/api/motorista-documentos', [
+    expect(fn () => $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('frente.png', 100, 'image/png'),
         'arquivo_verso' => UploadedFile::fake()->create('verso.png', 100, 'image/png'),
@@ -119,7 +118,7 @@ it('remove a frente se o armazenamento do verso falhar', function () {
 });
 
 it('recusa verso acima do limite por foto', function () {
-    $this->post('/api/motorista-documentos', [
+    $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('frente.png', 100, 'image/png'),
         'arquivo_verso' => UploadedFile::fake()->create('verso.png', 2049, 'image/png'),

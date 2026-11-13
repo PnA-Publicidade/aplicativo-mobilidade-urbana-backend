@@ -14,7 +14,6 @@ use App\Models\MotoristaVeiculo;
 use App\Models\Passageiro;
 use App\Models\StatusBusca;
 use App\Models\Tarifa;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\DespachoCorridaService;
 use App\Services\EstimarChegadaService;
@@ -25,21 +24,6 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function criarUsuarioDespacho(string $prefixo): User
-{
-    $sufixo = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => "Teste $prefixo",
-        'telefone' => substr('69'.preg_replace('/\D/', '', $sufixo).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $sufixo).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$prefixo-$sufixo@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 /**
  * @return array{Motorista, StatusBusca}
  */
@@ -48,15 +32,7 @@ function criarMotoristaDespacho(
     ?float $latitude = -8.761160,
     ?float $longitude = -63.900430,
 ): array {
-    $usuario = criarUsuarioDespacho('motorista');
-    $motorista = Motorista::create([
-        'user_id' => $usuario->id,
-        'status' => 'ativo',
-        'numero_registro' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
     // ficar online e aceitar exigem veículo vinculado e liberado
     $veiculo = Veiculo::create([
         'marca' => 'Chevrolet',
@@ -86,10 +62,7 @@ function criarMotoristaDespacho(
 
 function criarPassageiroDespacho(): Passageiro
 {
-    return Passageiro::create([
-        'user_id' => criarUsuarioDespacho('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    return Passageiro::factory()->create();
 }
 
 function criarCorridaDespacho(
@@ -331,7 +304,7 @@ it('agrega reputacao e mantem consultas constantes com muitas ofertas', function
     $historica = criarCorridaDespacho($passageiro, status: 'finalizada');
     AvaliacoesCorrida::create([
         'corrida_id' => $historica->id,
-        'usuario_id' => criarUsuarioDespacho('avaliador')->id,
+        'avaliador_id' => Motorista::factory()->create()->id,
         'tipo_usuario' => 'motorista',
         'nota' => 5,
         'comentario' => null,
@@ -611,11 +584,11 @@ it('mostra a previa do cancelamento apenas ao dono da corrida', function () {
     [, , $passageiro, $corrida] = corridaAceitaLonge();
     $outro = criarPassageiroDespacho();
 
-    $this->actingAs(User::find($outro->user_id), 'jwt')
+    $this->actingAs($outro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/cancelamento")
         ->assertNotFound();
 
-    $this->actingAs(User::find($passageiro->user_id), 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/cancelamento")
         ->assertOk()
         ->assertJsonPath('cobra', false);
@@ -663,9 +636,9 @@ it('publica a posicao mais recente da corrida pelo reverb', function () {
 
 it('entrega ao motorista os dados do passageiro correto e os pontos da rota', function () {
     [$motorista] = criarMotoristaDespacho(true);
-    $motorista->user->update(['name' => 'João dos Santos']);
+    $motorista->update(['name' => 'João dos Santos']);
     $passageiro = criarPassageiroDespacho();
-    $passageiro->user->update(['name' => 'Maria da Silva']);
+    $passageiro->update(['name' => 'Maria da Silva']);
     $passageiro->update(['foto' => 'https://example.test/maria.jpg']);
     $corrida = criarCorridaDespacho($passageiro);
     app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
@@ -674,7 +647,7 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
         ->times(3)
         ->andReturn(null);
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')
+    $resposta = $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/minha-corrida-atual');
 
     $resposta->assertOk()
@@ -682,22 +655,22 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
         ->assertJsonPath('passageiro.nome', 'Maria')
         ->assertJsonPath('passageiro.foto', null)
         ->assertJsonPath('passageiro.foto_oculta', true)
-        ->assertJsonPath('corrida.passageiro.user.name', 'Maria')
-        ->assertJsonPath('corrida.passageiro.user.foto', null)
-        ->assertJsonPath('passageiro.telefone', $passageiro->user->telefone)
+        ->assertJsonPath('corrida.passageiro.name', 'Maria')
+        ->assertJsonPath('corrida.passageiro.foto', null)
+        ->assertJsonPath('passageiro.telefone', $passageiro->telefone)
         ->assertJsonCount(2, 'corrida.corrida_destinos');
 
-    $this->actingAs($passageiro->user, 'jwt')->getJson('/api/minha-corrida-atual')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/minha-corrida-atual')
         ->assertOk()
-        ->assertJsonPath('corrida.motorista.user.name', 'João')
+        ->assertJsonPath('corrida.motorista.name', 'João')
         ->assertJsonPath('corrida.cancelamento_gratis_ate', fn ($valor) => is_string($valor) && str_contains($valor, 'T'))
         ->assertJsonPath('motorista_info.nome', 'João')
-        ->assertJsonPath('motorista_info.telefone', $motorista->user->telefone)
+        ->assertJsonPath('motorista_info.telefone', $motorista->telefone)
         ->assertJsonPath('motorista_info.nota', null)
         ->assertJsonPath('motorista_info.corridas', 0);
 
     app(DespachoCorridaService::class)->transicionar($motorista, $corrida->id, 'cheguei');
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/minha-corrida-atual')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('passageiro.foto', 'https://example.test/maria.jpg')
         ->assertJsonPath('passageiro.foto_oculta', false);
@@ -717,7 +690,8 @@ it('mostra a nota media e o total de corridas do motorista para o passageiro', f
 
         AvaliacoesCorrida::create([
             'corrida_id' => $corridaAnterior->id,
-            'usuario_id' => $motorista->user_id,
+            // o passageiro da corrida avaliou o motorista
+            'avaliador_id' => $outroPassageiro->id,
             'tipo_usuario' => 'passageiro',
             'nota' => $nota,
         ]);
@@ -728,14 +702,14 @@ it('mostra a nota media e o total de corridas do motorista para o passageiro', f
     $servico->aceitar($motorista, $corrida->id);
 
     // duas notas não bastam: a primeira avaliação viraria a média inteira
-    $this->actingAs($passageiro->user, 'jwt')->getJson('/api/minha-corrida-atual')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('motorista_info.nota', null)
         ->assertJsonPath('motorista_info.corridas', 2);
 
     config(['avaliacoes.minimo_corridas_para_media' => 2]);
 
-    $this->actingAs($passageiro->user, 'jwt')->getJson('/api/minha-corrida-atual')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('motorista_info.nota', 4)
         ->assertJsonPath('motorista_info.corridas', 2);
@@ -747,17 +721,15 @@ it('não mostra motorista_info pra quem consulta a própria corrida como motoris
     $corrida = criarCorridaDespacho($passageiro);
     app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/minha-corrida-atual')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('motorista_info', null);
 });
 
-it('separa a corrida atual quando a mesma conta tem os perfis passageiro e motorista', function () {
+it('separa a corrida atual da mesma pessoa no app do motorista e no do passageiro', function () {
     [$motorista] = criarMotoristaDespacho(true);
-    $perfilPassageiro = Passageiro::create([
-        'user_id' => $motorista->user_id,
-        'media_avaliacao' => null,
-    ]);
+    // a mesma pessoa (mesmo CPF) com conta nos dois apps
+    $perfilPassageiro = Passageiro::factory()->create(['cpf' => $motorista->cpf]);
     $corridaComoPassageiro = criarCorridaDespacho($perfilPassageiro);
     $corridaComoMotorista = criarCorridaDespacho(criarPassageiroDespacho());
     app(DespachoCorridaService::class)->aceitar($motorista, $corridaComoMotorista->id);
@@ -766,34 +738,35 @@ it('separa a corrida atual quando a mesma conta tem os perfis passageiro e motor
         ->twice()
         ->andReturn(null);
 
-    $this->actingAs($motorista->user, 'jwt')
-        ->getJson('/api/minha-corrida-atual?perfil=passageiro')
+    $this->actingAs($perfilPassageiro, 'passageiros')
+        ->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corridaComoPassageiro->id);
 
-    $this->getJson('/api/minha-corrida-atual?perfil=motorista')
+    $this->actingAs($motorista, 'motoristas')
+        ->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corridaComoMotorista->id);
 });
 
 it('protege os dados pessoais no detalhe da corrida e mostra somente o primeiro nome', function () {
     [$motorista] = criarMotoristaDespacho(true);
-    $motorista->user->update(['name' => 'João dos Santos']);
+    $motorista->update(['name' => 'João dos Santos']);
     $passageiro = criarPassageiroDespacho();
-    $passageiro->user->update(['name' => 'Maria da Silva']);
+    $passageiro->update(['name' => 'Maria da Silva']);
     $corrida = criarCorridaDespacho($passageiro);
     app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
 
-    $resposta = $this->actingAs($passageiro->user, 'jwt')
+    $resposta = $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corridas/'.$corrida->id);
 
     $resposta->assertOk()
-        ->assertJsonPath('motorista.user.name', 'João')
-        ->assertJsonPath('passageiro.user.name', 'Maria')
-        ->assertJsonMissingPath('motorista.user.telefone')
-        ->assertJsonMissingPath('motorista.user.cpf')
-        ->assertJsonMissingPath('motorista.user.email')
-        ->assertJsonMissingPath('motorista.user.data_nascimento');
+        ->assertJsonPath('motorista.name', 'João')
+        ->assertJsonPath('passageiro.name', 'Maria')
+        ->assertJsonMissingPath('motorista.telefone')
+        ->assertJsonMissingPath('motorista.cpf')
+        ->assertJsonMissingPath('motorista.email')
+        ->assertJsonMissingPath('motorista.data_nascimento');
 });
 
 it('manda os horarios da corrida com fuso, para o app nao ler UTC como hora local', function () {
@@ -803,7 +776,7 @@ it('manda os horarios da corrida com fuso, para o app nao ler UTC como hora loca
     $corrida->update(['tempo_solicitacao' => '2026-10-09 12:34:45']);
     app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
 
-    $resposta = $this->actingAs($passageiro->user, 'jwt')
+    $resposta = $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corridas/'.$corrida->id)
         ->assertOk();
 
@@ -822,7 +795,7 @@ it('fecha o fluxo completo e permite uma avaliacao para cada lado', function () 
     $servico->transicionar($motorista, $corrida->id, 'iniciar');
     $servico->transicionar($motorista, $corrida->id, 'finalizar');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corrida-para-avaliar')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id)
@@ -836,7 +809,7 @@ it('fecha o fluxo completo e permite uma avaliacao para cada lado', function () 
         ->assertOk()
         ->assertJsonPath('corrida', null);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/corrida-para-avaliar')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id)
@@ -861,13 +834,13 @@ it('mostra a avaliacao uma vez e preserva nota maxima quando o passageiro dispen
     $servico->transicionar($motorista, $corrida->id, 'iniciar');
     $servico->transicionar($motorista, $corrida->id, 'finalizar');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corrida-para-avaliar?perfil=passageiro&registrar_padrao=1')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id);
 
     $avaliacao = AvaliacoesCorrida::where('corrida_id', $corrida->id)
-        ->where('usuario_id', $passageiro->user_id)
+        ->where('tipo_usuario', 'passageiro')->where('avaliador_id', $passageiro->id)
         ->firstOrFail();
 
     expect($avaliacao->nota)->toBe(5)
@@ -884,7 +857,7 @@ it('mostra a avaliacao uma vez e preserva nota maxima quando o passageiro dispen
     ])->assertOk()->assertJsonPath('nota', 4)->assertJsonPath('automatica', false);
 
     expect(AvaliacoesCorrida::where('corrida_id', $corrida->id)
-        ->where('usuario_id', $passageiro->user_id)->count())->toBe(1);
+        ->where('tipo_usuario', 'passageiro')->where('avaliador_id', $passageiro->id)->count())->toBe(1);
 });
 
 it('o motorista avalia pelo primeiro nome do convidado, sem o telefone dele', function () {
@@ -898,7 +871,7 @@ it('o motorista avalia pelo primeiro nome do convidado, sem o telefone dele', fu
     $servico->transicionar($motorista, $corrida->id, 'iniciar');
     $servico->transicionar($motorista, $corrida->id, 'finalizar');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/corrida-para-avaliar')
         ->assertOk()
         ->assertJsonPath('avaliando_como', 'motorista')
@@ -916,7 +889,7 @@ it('aceita registrar_padrao=true na query, como o axios do app envia', function 
     $servico->transicionar($motorista, $corrida->id, 'iniciar');
     $servico->transicionar($motorista, $corrida->id, 'finalizar');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/corrida-para-avaliar?perfil=passageiro&registrar_padrao=true')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id);

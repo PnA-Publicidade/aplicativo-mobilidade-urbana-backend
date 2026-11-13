@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Motorista;
-use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -17,11 +16,8 @@ beforeEach(function () {
 });
 
 it('preserva numeros antigos sem sobrescrever registros preenchidos e remove a coluna', function () {
-    $vazio = Motorista::create(['user_id' => User::factory()->create()->id]);
-    $preenchido = Motorista::create([
-        'user_id' => User::factory()->create()->id,
-        'numero_registro' => '00012345678',
-    ]);
+    $vazio = Motorista::factory()->create();
+    $preenchido = Motorista::factory()->create(['numero_registro' => '00012345678']);
     DB::table('motoristas')->where('id', $vazio->id)->update(['cnh_numero' => ' 00123456789 ']);
     DB::table('motoristas')->where('id', $preenchido->id)->update(['cnh_numero' => '00987654321']);
     $vazio->delete();
@@ -34,10 +30,7 @@ it('preserva numeros antigos sem sobrescrever registros preenchidos e remove a c
 });
 
 it('rollback restaura a coluna a partir do numero de registro', function () {
-    $motorista = Motorista::create([
-        'user_id' => User::factory()->create()->id,
-        'numero_registro' => '00123456789',
-    ]);
+    $motorista = Motorista::factory()->create(['numero_registro' => '00123456789']);
     $this->migration->up();
     $this->migration->down();
 
@@ -46,7 +39,7 @@ it('rollback restaura a coluna a partir do numero de registro', function () {
 });
 
 it('recusa a remocao quando um valor antigo excede o limite sem truncar dados', function () {
-    $motorista = Motorista::create(['user_id' => User::factory()->create()->id]);
+    $motorista = Motorista::factory()->create();
     DB::table('motoristas')->where('id', $motorista->id)->update(['cnh_numero' => str_repeat('1', 21)]);
 
     expect(fn () => $this->migration->up())->toThrow(RuntimeException::class, 'mais de 20 caracteres');

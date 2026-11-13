@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\LocalSalvo;
-use App\Models\User;
+use App\Models\Passageiro;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -18,10 +18,10 @@ function dadosLocal(array $sobrescrever = []): array
     ];
 }
 
-it('salva e lista casa, trabalho e favoritos do próprio usuário', function () {
-    $usuario = User::factory()->create();
+it('salva e lista casa, trabalho e favoritos do próprio passageiro', function () {
+    $usuario = Passageiro::factory()->create();
 
-    $this->actingAs($usuario, 'jwt')->postJson('/api/locais-salvos', dadosLocal())
+    $this->actingAs($usuario, 'passageiros')->postJson('/api/locais-salvos', dadosLocal())
         ->assertCreated()
         ->assertJsonPath('tipo', 'casa')
         ->assertJsonPath('endereco', 'Rua Brasília, 2940');
@@ -42,53 +42,53 @@ it('salva e lista casa, trabalho e favoritos do próprio usuário', function () 
 });
 
 it('casa e trabalho são únicos: salvar de novo substitui o endereço', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
 
-    $this->actingAs($usuario, 'jwt')->postJson('/api/locais-salvos', dadosLocal())->assertCreated();
+    $this->actingAs($usuario, 'passageiros')->postJson('/api/locais-salvos', dadosLocal())->assertCreated();
     $this->postJson('/api/locais-salvos', dadosLocal(['endereco' => 'Rua Nova, 1']))->assertOk();
 
-    expect(LocalSalvo::where('user_id', $usuario->id)->where('tipo', 'casa')->count())->toBe(1)
-        ->and(LocalSalvo::where('user_id', $usuario->id)->value('endereco'))->toBe('Rua Nova, 1');
+    expect(LocalSalvo::where('passageiro_id', $usuario->id)->where('tipo', 'casa')->count())->toBe(1)
+        ->and(LocalSalvo::where('passageiro_id', $usuario->id)->value('endereco'))->toBe('Rua Nova, 1');
 });
 
-it('não mostra nem remove locais de outro usuário', function () {
-    $dono = User::factory()->create();
-    $outro = User::factory()->create();
+it('não mostra nem remove locais de outro passageiro', function () {
+    $dono = Passageiro::factory()->create();
+    $outro = Passageiro::factory()->create();
 
-    $local = LocalSalvo::create([...dadosLocal(), 'user_id' => $dono->id]);
+    $local = LocalSalvo::create([...dadosLocal(), 'passageiro_id' => $dono->id]);
 
-    $this->actingAs($outro, 'jwt')->getJson('/api/locais-salvos')->assertOk()->assertJsonCount(0);
+    $this->actingAs($outro, 'passageiros')->getJson('/api/locais-salvos')->assertOk()->assertJsonCount(0);
     $this->deleteJson("/api/locais-salvos/{$local->id}")->assertNotFound();
 
     expect(LocalSalvo::find($local->id))->not->toBeNull();
 });
 
-it('remove um local salvo do próprio usuário', function () {
-    $usuario = User::factory()->create();
-    $local = LocalSalvo::create([...dadosLocal(['tipo' => 'favorito', 'nome' => 'Mercado']), 'user_id' => $usuario->id]);
+it('remove um local salvo do próprio passageiro', function () {
+    $usuario = Passageiro::factory()->create();
+    $local = LocalSalvo::create([...dadosLocal(['tipo' => 'favorito', 'nome' => 'Mercado']), 'passageiro_id' => $usuario->id]);
 
-    $this->actingAs($usuario, 'jwt')->deleteJson("/api/locais-salvos/{$local->id}")->assertNoContent();
+    $this->actingAs($usuario, 'passageiros')->deleteJson("/api/locais-salvos/{$local->id}")->assertNoContent();
 
     expect(LocalSalvo::find($local->id))->toBeNull();
 });
 
 it('valida tipo, endereço e coordenadas', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais-salvos', dadosLocal(['tipo' => 'escola', 'endereco' => '', 'latitude' => 120]))
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['tipo', 'endereco', 'latitude']);
 });
 
 it('limita a quantidade de favoritos', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
 
     foreach (range(1, LocalSalvo::LIMITE_FAVORITOS) as $i) {
-        LocalSalvo::create([...dadosLocal(['tipo' => 'favorito', 'nome' => "Local $i"]), 'user_id' => $usuario->id]);
+        LocalSalvo::create([...dadosLocal(['tipo' => 'favorito', 'nome' => "Local $i"]), 'passageiro_id' => $usuario->id]);
     }
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais-salvos', dadosLocal(['tipo' => 'favorito', 'nome' => 'Mais um']))
         ->assertUnprocessable();
 });

@@ -1,22 +1,12 @@
 <?php
 
-use App\Models\User;
+use App\Models\Passageiro;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 it('não cota corrida com mais de 2 paradas', function () {
-    $id = str_replace('-', '', (string) Str::uuid());
-    $usuario = User::create([
-        'name' => 'Passageiro Paradas',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "paradas-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
+    $passageiro = Passageiro::factory()->create();
 
     $enderecos = collect(range(0, 4))->map(fn (int $ordem) => [
         'order' => $ordem,
@@ -25,7 +15,7 @@ it('não cota corrida com mais de 2 paradas', function () {
         'formattedAddress' => "Ponto {$ordem}",
     ])->all();
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson('/api/precos-corrida', ['enderecos' => $enderecos])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['enderecos' => 'A corrida pode ter no máximo 2 paradas.']);

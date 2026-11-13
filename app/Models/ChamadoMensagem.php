@@ -9,7 +9,7 @@ class ChamadoMensagem extends Model
 {
     protected $table = 'chamado_mensagens';
 
-    protected $fillable = ['chamado_id', 'autor_tipo', 'user_id', 'gestor_id', 'autor_nome', 'conteudo', 'client_message_id', 'tipo_sistema'];
+    protected $fillable = ['chamado_id', 'autor_tipo', 'gestor_id', 'autor_nome', 'conteudo', 'client_message_id', 'tipo_sistema'];
 
     public function anexos(): HasMany
     {
@@ -20,7 +20,7 @@ class ChamadoMensagem extends Model
     {
         $this->loadMissing('anexos');
 
-        return $this->only(['id', 'chamado_id', 'autor_tipo', 'user_id', 'gestor_id', 'autor_nome', 'conteudo', 'client_message_id', 'tipo_sistema'])
+        return $this->only(['id', 'chamado_id', 'autor_tipo', 'gestor_id', 'autor_nome', 'conteudo', 'client_message_id', 'tipo_sistema'])
             + ['anexos' => $this->anexos->map(fn ($anexo) => $anexo->dados($this->chamado_id))->all(), 'created_at' => $this->created_at?->toISOString(), 'updated_at' => $this->updated_at?->toISOString()];
     }
 }

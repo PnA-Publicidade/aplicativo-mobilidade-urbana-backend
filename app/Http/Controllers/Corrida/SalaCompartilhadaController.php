@@ -10,9 +10,9 @@ use App\Models\CotacaoCorrida;
 use App\Models\Passageiro;
 use App\Models\SalaCompartilhada;
 use App\Models\SalaParticipante;
-use App\Models\User;
 use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Services\Compartilhada\SalaCompartilhadaService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -78,7 +78,7 @@ class SalaCompartilhadaController extends Controller
         return $this->responder(function () use ($request) {
             $cotacao = $this->cotacao($request, (string) $request->validated('cotacao_id'));
             $sala = $this->salas->abrir(
-                $this->usuario($request),
+                $this->passageiro($request),
                 $cotacao,
                 $request->validated('tipo') === 'convite' ? 'convite' : 'publica',
                 (string) $request->validated('metodo_pagamento')
@@ -92,7 +92,7 @@ class SalaCompartilhadaController extends Controller
     {
         return $this->responder(function () use ($request, $sala) {
             $cotacao = $this->cotacao($request, (string) $request->validated('cotacao_id'));
-            $entrou = $this->salas->entrar($this->usuario($request), $sala, $cotacao, (string) $request->validated('metodo_pagamento'));
+            $entrou = $this->salas->entrar($this->passageiro($request), $sala, $cotacao, (string) $request->validated('metodo_pagamento'));
 
             return response()->json(['sala' => $this->resumo($entrou->id, $this->passageiro($request)->id)]);
         });
@@ -102,7 +102,7 @@ class SalaCompartilhadaController extends Controller
     {
         return $this->responder(function () use ($request, $codigo) {
             $cotacao = $this->cotacao($request, (string) $request->validated('cotacao_id'));
-            $entrou = $this->salas->entrarPorCodigo($this->usuario($request), $codigo, $cotacao, (string) $request->validated('metodo_pagamento'));
+            $entrou = $this->salas->entrarPorCodigo($this->passageiro($request), $codigo, $cotacao, (string) $request->validated('metodo_pagamento'));
 
             return response()->json(['sala' => $this->resumo($entrou->id, $this->passageiro($request)->id)]);
         });
@@ -121,7 +121,7 @@ class SalaCompartilhadaController extends Controller
     public function sair(Request $request, int $sala): JsonResponse
     {
         return $this->responder(function () use ($request, $sala) {
-            $this->salas->sair($this->usuario($request), $sala);
+            $this->salas->sair($this->passageiro($request), $sala);
 
             return response()->json(['sala' => null]);
         });
@@ -130,7 +130,7 @@ class SalaCompartilhadaController extends Controller
     public function pedirSozinho(Request $request, int $sala): JsonResponse
     {
         return $this->responder(fn () => response()->json(
-            $this->salas->pedirSozinho($this->usuario($request), $sala),
+            $this->salas->pedirSozinho($this->passageiro($request), $sala),
             201
         ));
     }
@@ -141,14 +141,14 @@ class SalaCompartilhadaController extends Controller
     public function seguirSozinho(Request $request, int $corrida): JsonResponse
     {
         return $this->responder(fn () => response()->json(
-            $this->grupos->seguirSozinho($this->usuario($request), $corrida)
+            $this->grupos->seguirSozinho($this->passageiro($request), $corrida)
         ));
     }
 
     private function votar(Request $request, int $sala, bool $pronto): JsonResponse
     {
         return $this->responder(function () use ($request, $sala, $pronto) {
-            $this->salas->pronto($this->usuario($request), $sala, $pronto);
+            $this->salas->pronto($this->passageiro($request), $sala, $pronto);
 
             return response()->json(['sala' => $this->resumo($sala, $this->passageiro($request)->id)]);
         });
@@ -168,7 +168,7 @@ class SalaCompartilhadaController extends Controller
     {
         $cotacao = CotacaoCorrida::find($id);
 
-        if ($cotacao === null || $cotacao->user_id !== $request->user()->id) {
+        if ($cotacao === null || $cotacao->passageiro_id !== PerfilLogado::passageiro($request)?->id) {
             throw new RuntimeException('Cotação não encontrada.', 404);
         }
 
@@ -181,15 +181,7 @@ class SalaCompartilhadaController extends Controller
 
     private function passageiro(Request $request): Passageiro
     {
-        return Passageiro::firstOrCreate(['user_id' => $request->user()->id]);
-    }
-
-    private function usuario(Request $request): User
-    {
-        $usuario = $request->user();
-        abort_unless($usuario instanceof User, 401, 'Não autenticado.');
-
-        return $usuario;
+        return PerfilLogado::passageiro($request) ?? abort(403, 'Perfil de passageiro não encontrado.');
     }
 
     /**

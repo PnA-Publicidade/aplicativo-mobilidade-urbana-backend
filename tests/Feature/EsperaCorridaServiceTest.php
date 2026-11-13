@@ -10,7 +10,6 @@ use App\Models\MotoristaVeiculo;
 use App\Models\Passageiro;
 use App\Models\StatusBusca;
 use App\Models\Tarifa;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\ContabilizarEsperaCorridaService;
 use App\Services\DespachoCorridaService;
@@ -24,34 +23,12 @@ afterEach(function () {
     Carbon::setTestNow();
 });
 
-function criarUsuarioEspera(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Espera',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 /**
  * @return array{Corrida, Motorista}
  */
 function criarCorridaEspera(int $segundosDesdeChegada, float $valorPorMinuto = 0.30): array
 {
-    $motorista = Motorista::create([
-        'user_id' => criarUsuarioEspera('motorista')->id,
-        'status' => 'ativo',
-        'numero_registro' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
     // ao fim da espera o motorista volta a ficar online, o que exige veículo
     $veiculo = Veiculo::create([
         'marca' => 'Chevrolet', 'modelo' => 'Onix', 'ano_fabricacao' => 2023, 'ano_modelo' => 2023,
@@ -60,10 +37,7 @@ function criarCorridaEspera(int $segundosDesdeChegada, float $valorPorMinuto = 0
         'cpf_cnpj_proprietario' => '12345678909', 'categoria' => 'carro', 'status' => 'aprovado', 'uf' => 'RO',
     ]);
     MotoristaVeiculo::create(['motorista_id' => $motorista->id, 'veiculo_id' => $veiculo->id]);
-    $passageiro = Passageiro::create([
-        'user_id' => criarUsuarioEspera('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    $passageiro = Passageiro::factory()->create();
     $tarifa = Tarifa::create([
         'valor_por_minuto_espera' => $valorPorMinuto,
         'taxa_plataforma_percentual' => 10,
@@ -291,15 +265,16 @@ it('aplica a taxa pela API somente ao motorista vinculado à corrida', function 
     Carbon::setTestNow('2026-09-18 12:00:00');
     [$corrida, $motorista] = criarCorridaEspera(181);
     prepararCancelamentoPorAusencia($corrida, $motorista);
-    $outroUsuario = criarUsuarioEspera('outro');
+    // quem não é motorista (o token do app do passageiro) não aplica a taxa
+    $outroPerfil = Passageiro::factory()->create();
 
-    $this->actingAs($outroUsuario, 'jwt')
+    $this->actingAs($outroPerfil, 'passageiros')
         ->postJson('/api/motorista/corridas/'.$corrida->id.'/cancelar', [
             'tipo' => 'nao_comparecimento',
         ])
         ->assertForbidden();
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/corridas/'.$corrida->id.'/cancelar', [
             'tipo' => 'nao_comparecimento',
         ])

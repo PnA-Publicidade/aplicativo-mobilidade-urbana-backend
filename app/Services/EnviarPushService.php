@@ -22,16 +22,17 @@ class EnviarPushService
         return $this->credenciais() !== null;
     }
 
-    public function temAparelho(int $userId, string $perfil): bool
+    /** @param  int  $perfilId  id em motoristas ou passageiros, conforme o perfil */
+    public function temAparelho(int $perfilId, string $perfil): bool
     {
-        return DispositivoPush::where('user_id', $userId)->where('perfil', $perfil)->exists();
+        return DispositivoPush::where('perfil', $perfil)->where('perfil_id', $perfilId)->exists();
     }
 
     /**
      * @param  array<string, string>  $dados  vão junto para o app (ex.: corrida_id)
      * @param  string|null  $agrupar  tag da notificação no Android: reenviar com a mesma tag substitui a anterior
      */
-    public function paraUsuario(int $userId, string $perfil, string $titulo, string $mensagem, array $dados = [], ?string $agrupar = null): void
+    public function paraUsuario(int $perfilId, string $perfil, string $titulo, string $mensagem, array $dados = [], ?string $agrupar = null): void
     {
         $credenciais = $this->credenciais();
 
@@ -39,7 +40,7 @@ class EnviarPushService
             return;
         }
 
-        $tokens = DispositivoPush::where('user_id', $userId)->where('perfil', $perfil)->pluck('token');
+        $tokens = DispositivoPush::where('perfil', $perfil)->where('perfil_id', $perfilId)->pluck('token');
 
         foreach ($tokens as $token) {
             $this->enviar($credenciais, (string) $token, $titulo, $mensagem, $dados, $agrupar);

@@ -6,7 +6,7 @@ use App\Contracts\GatewayPagamento;
 use App\Models\CobrancaCartao;
 use App\Models\CobrancaPix;
 use App\Models\Corrida;
-use App\Models\User;
+use App\Models\Passageiro;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
@@ -23,7 +23,7 @@ class GatewayPagamentoSimulado implements GatewayPagamento
         return true;
     }
 
-    public function criarPix(Corrida $corrida, int $centavos, User $cliente): array
+    public function criarPix(Corrida $corrida, int $centavos, Passageiro $cliente): array
     {
         $id = 'pix_simulado_'.Str::lower(Str::random(20));
         $valor = number_format($centavos / 100, 2, ',', '');

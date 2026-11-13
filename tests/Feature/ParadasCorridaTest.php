@@ -5,7 +5,6 @@ use App\Models\Corrida;
 use App\Models\CorridaDestino;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\DespachoCorridaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -13,39 +12,14 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function criarUsuarioParada(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Parada',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function criarMotoristaParada(): Motorista
 {
-    return Motorista::create([
-        'user_id' => criarUsuarioParada('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 function criarCorridaComParadas(Motorista $motorista, string $status = 'em_andamento', int $paradas = 2): Corrida
 {
-    $passageiro = Passageiro::create([
-        'user_id' => criarUsuarioParada('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    $passageiro = Passageiro::factory()->create();
     $corrida = Corrida::create([
         'codigo_corrida' => 'PARADA-'.Str::upper(Str::random(8)),
         'motorista_id' => $motorista->id,
@@ -116,11 +90,11 @@ it('confirma parada pela API apenas para o motorista da corrida', function () {
     $corrida = criarCorridaComParadas($motorista, 'em_andamento', 1);
     $outro = criarMotoristaParada();
 
-    $this->actingAs($outro->user, 'jwt')
+    $this->actingAs($outro, 'motoristas')
         ->postJson('/api/motorista/corridas/'.$corrida->id.'/confirmar-parada')
         ->assertNotFound();
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')
+    $resposta = $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/corridas/'.$corrida->id.'/confirmar-parada')
         ->assertOk();
 

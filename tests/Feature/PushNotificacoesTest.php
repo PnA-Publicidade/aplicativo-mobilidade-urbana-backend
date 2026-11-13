@@ -10,7 +10,6 @@ use App\Models\MotoristaVeiculo;
 use App\Models\Notificacao;
 use App\Models\Passageiro;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\DespachoCorridaService;
 use App\Services\EnviarPushService;
@@ -48,7 +47,7 @@ function firebaseRespondendo(int $statusDoEnvio = 200, array $respostaDoEnvio = 
 
 function motoristaOnlineParaPush(): Motorista
 {
-    $motorista = Motorista::create(['user_id' => User::factory()->create()->id, 'status' => 'ativo']);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
     $veiculo = Veiculo::create([
         'marca' => 'Chevrolet',
         'modelo' => 'Onix',
@@ -119,35 +118,48 @@ beforeEach(function () {
 });
 
 it('o app registra o aparelho e tira ao sair', function () {
-    $usuario = User::factory()->create();
-    $this->actingAs($usuario, 'jwt');
+    $passageiro = Passageiro::factory()->create();
+    $this->actingAs($passageiro, 'passageiros');
 
     $this->postJson('/api/dispositivos-push', ['token' => 'token-fcm-1', 'perfil' => 'passageiro'])->assertCreated();
     $this->postJson('/api/dispositivos-push', ['token' => 'token-fcm-1', 'perfil' => 'passageiro'])->assertCreated();
 
     expect(DispositivoPush::where('token', 'token-fcm-1')->count())->toBe(1)
-        ->and(DispositivoPush::first()->user_id)->toBe($usuario->id);
+        ->and(DispositivoPush::first())->perfil_id->toBe($passageiro->id)->perfil->toBe('passageiro');
 
     $this->deleteJson('/api/dispositivos-push', ['token' => 'token-fcm-1'])->assertNoContent();
     expect(DispositivoPush::count())->toBe(0);
 });
 
 it('o aparelho passa para a conta que entrou nele', function () {
-    $antiga = User::factory()->create();
-    $nova = User::factory()->create();
-    DispositivoPush::create(['user_id' => $antiga->id, 'perfil' => 'passageiro', 'token' => 'token-fcm-1']);
+    $antiga = Passageiro::factory()->create();
+    $nova = Motorista::factory()->create(['status' => 'ativo']);
+    DispositivoPush::create(['perfil_id' => $antiga->id, 'perfil' => 'passageiro', 'token' => 'token-fcm-1']);
 
-    $this->actingAs($nova, 'jwt')
-        ->postJson('/api/dispositivos-push', ['token' => 'token-fcm-1', 'perfil' => 'motorista'])
+    // o perfil vem do token do app, não do que o app manda
+    $this->actingAs($nova, 'motoristas')
+        ->postJson('/api/dispositivos-push', ['token' => 'token-fcm-1', 'perfil' => 'passageiro'])
         ->assertCreated();
 
-    expect(DispositivoPush::sole())->user_id->toBe($nova->id)->perfil->toBe('motorista');
+    expect(DispositivoPush::sole())->perfil_id->toBe($nova->id)->perfil->toBe('motorista');
+});
+
+it('só tira o aparelho do próprio perfil', function () {
+    $passageiro = Passageiro::factory()->create();
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'token-do-passageiro']);
+
+    $this->actingAs($motorista, 'motoristas')
+        ->deleteJson('/api/dispositivos-push', ['token' => 'token-do-passageiro'])
+        ->assertNoContent();
+
+    expect(DispositivoPush::count())->toBe(1);
 });
 
 it('recusa perfil desconhecido e exige login', function () {
     $this->postJson('/api/dispositivos-push', ['token' => 'x', 'perfil' => 'passageiro'])->assertUnauthorized();
 
-    $this->actingAs(User::factory()->create(), 'jwt')
+    $this->actingAs(Passageiro::factory()->create(), 'passageiros')
         ->postJson('/api/dispositivos-push', ['token' => 'x', 'perfil' => 'gestor'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('perfil');
@@ -157,10 +169,11 @@ it('avisa o passageiro pelo celular quando o motorista chega e quando a corrida 
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     $motorista = motoristaOnlineParaPush();
-    $passageiro = Passageiro::create(['user_id' => User::factory()->create()->id]);
+    $passageiro = Passageiro::factory()->create();
     $corrida = corridaSolicitadaParaPush($passageiro);
-    DispositivoPush::create(['user_id' => $passageiro->user_id, 'perfil' => 'passageiro', 'token' => 'token-do-passageiro']);
-    DispositivoPush::create(['user_id' => $passageiro->user_id, 'perfil' => 'motorista', 'token' => 'outro-app']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'token-do-passageiro']);
+    // um motorista com o mesmo número de id: é outra pessoa, no outro app
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'motorista', 'token' => 'outro-app']);
 
     $despacho = app(DespachoCorridaService::class);
     $despacho->aceitar($motorista, $corrida->id);
@@ -168,7 +181,7 @@ it('avisa o passageiro pelo celular quando o motorista chega e quando a corrida 
     $despacho->transicionar($motorista, $corrida->id, 'iniciar');
     app()->terminate();
 
-    expect(Notificacao::where('user_id', $passageiro->user_id)->pluck('titulo')->all())
+    expect(Notificacao::where('perfil', 'passageiro')->where('perfil_id', $passageiro->id)->pluck('titulo')->all())
         ->toBe(['Motorista a caminho', 'Seu motorista chegou', 'Corrida iniciada']);
 
     $enviados = Http::recorded(fn (PedidoHttp $pedido) => str_contains($pedido->url(), 'fcm.googleapis.com'))->values();
@@ -187,14 +200,14 @@ it('sem a conta do Firebase a notificação fica só no app', function () {
     firebaseRespondendo();
     config(['services.fcm.credenciais' => null]);
     $motorista = motoristaOnlineParaPush();
-    $passageiro = Passageiro::create(['user_id' => User::factory()->create()->id]);
+    $passageiro = Passageiro::factory()->create();
     $corrida = corridaSolicitadaParaPush($passageiro);
-    DispositivoPush::create(['user_id' => $passageiro->user_id, 'perfil' => 'passageiro', 'token' => 'token-do-passageiro']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'token-do-passageiro']);
 
     app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
     app()->terminate();
 
-    expect(Notificacao::where('user_id', $passageiro->user_id)->count())->toBe(1);
+    expect(Notificacao::where('perfil', 'passageiro')->where('perfil_id', $passageiro->id)->count())->toBe(1);
     Http::assertNothingSent();
 });
 
@@ -202,17 +215,17 @@ it('o cancelamento avisa o outro lado da corrida', function () {
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     $motorista = motoristaOnlineParaPush();
-    $passageiro = Passageiro::create(['user_id' => User::factory()->create()->id]);
+    $passageiro = Passageiro::factory()->create();
     $corrida = corridaSolicitadaParaPush($passageiro);
-    DispositivoPush::create(['user_id' => $motorista->user_id, 'perfil' => 'motorista', 'token' => 'token-do-motorista']);
+    DispositivoPush::create(['perfil_id' => $motorista->id, 'perfil' => 'motorista', 'token' => 'token-do-motorista']);
 
     $despacho = app(DespachoCorridaService::class);
     $despacho->aceitar($motorista, $corrida->id);
     $despacho->cancelar($corrida->id, 'passageiro', $passageiro->id, 'Mudei de ideia');
     app()->terminate();
 
-    expect(Notificacao::where('user_id', $motorista->user_id)->where('titulo', 'Corrida cancelada')->exists())->toBeTrue()
-        ->and(Notificacao::where('user_id', $passageiro->user_id)->where('titulo', 'Corrida cancelada')->exists())->toBeFalse();
+    expect(Notificacao::where('perfil', 'motorista')->where('perfil_id', $motorista->id)->where('titulo', 'Corrida cancelada')->exists())->toBeTrue()
+        ->and(Notificacao::where('perfil', 'passageiro')->where('perfil_id', $passageiro->id)->where('titulo', 'Corrida cancelada')->exists())->toBeFalse();
     Http::assertSent(fn (PedidoHttp $pedido) => str_contains($pedido->url(), 'fcm.googleapis.com')
         && $pedido['message']['token'] === 'token-do-motorista');
 });
@@ -220,26 +233,26 @@ it('o cancelamento avisa o outro lado da corrida', function () {
 it('esquece o aparelho que o FCM diz não existir mais', function () {
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     firebaseRespondendo(404, ['error' => ['status' => 'NOT_FOUND', 'details' => [['errorCode' => 'UNREGISTERED']]]]);
-    $usuario = User::factory()->create();
-    DispositivoPush::create(['user_id' => $usuario->id, 'perfil' => 'passageiro', 'token' => 'token-velho']);
+    $passageiro = Passageiro::factory()->create();
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'token-velho']);
 
-    app(EnviarPushService::class)->paraUsuario($usuario->id, 'passageiro', 'Teste', 'Mensagem');
+    app(EnviarPushService::class)->paraUsuario($passageiro->id, 'passageiro', 'Teste', 'Mensagem');
 
     expect(DispositivoPush::count())->toBe(0);
 });
 
 /**
- * @return array{0: Corrida, 1: User, 2: User}
+ * @return array{0: Corrida, 1: Motorista, 2: Passageiro}
  */
 function corridaComConversa(): array
 {
     $motorista = motoristaOnlineParaPush();
-    $passageiro = Passageiro::create(['user_id' => User::factory()->create(['name' => 'Ana Souza'])->id]);
+    $passageiro = Passageiro::factory()->create(['name' => 'Ana Souza']);
     $corrida = corridaSolicitadaParaPush($passageiro);
     app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
-    User::whereKey($motorista->user_id)->update(['name' => 'Carlos Lima']);
+    $motorista->update(['name' => 'Carlos Lima']);
 
-    return [$corrida->fresh(), User::find($motorista->user_id), User::find($passageiro->user_id)];
+    return [$corrida->fresh(), $motorista->fresh(), $passageiro];
 }
 
 function enviosDoChat(): Collection
@@ -252,10 +265,10 @@ it('a mensagem do motorista chega por push só no celular do passageiro', functi
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     [$corrida, $motorista, $passageiro] = corridaComConversa();
-    DispositivoPush::create(['user_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
-    DispositivoPush::create(['user_id' => $motorista->id, 'perfil' => 'motorista', 'token' => 'celular-do-carlos']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
+    DispositivoPush::create(['perfil_id' => $motorista->id, 'perfil' => 'motorista', 'token' => 'celular-do-carlos']);
 
-    $resposta = $this->actingAs($motorista, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
+    $resposta = $this->actingAs($motorista, 'motoristas')->postJson("/api/corridas/{$corrida->id}/mensagens", [
         'conteudo' => 'Cheguei! Estou no local de embarque.',
         'client_message_id' => (string) Str::uuid(),
     ])->assertCreated();
@@ -278,10 +291,10 @@ it('a resposta do passageiro chega por push no celular do motorista', function (
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     [$corrida, $motorista, $passageiro] = corridaComConversa();
-    DispositivoPush::create(['user_id' => $motorista->id, 'perfil' => 'motorista', 'token' => 'celular-do-carlos']);
-    DispositivoPush::create(['user_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
+    DispositivoPush::create(['perfil_id' => $motorista->id, 'perfil' => 'motorista', 'token' => 'celular-do-carlos']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
 
-    $this->actingAs($passageiro, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/mensagens", [
         'conteudo' => 'Já estou descendo',
         'client_message_id' => (string) Str::uuid(),
     ])->assertCreated();
@@ -295,11 +308,11 @@ it('reenviar a mesma mensagem não repete o push', function () {
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     [$corrida, $motorista, $passageiro] = corridaComConversa();
-    DispositivoPush::create(['user_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
     $uuid = (string) Str::uuid();
 
     foreach ([1, 2] as $tentativa) {
-        $this->actingAs($motorista, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
+        $this->actingAs($motorista, 'motoristas')->postJson("/api/corridas/{$corrida->id}/mensagens", [
             'conteudo' => 'Pode vir, estou te aguardando.',
             'client_message_id' => $uuid,
         ])->assertCreated();
@@ -308,28 +321,13 @@ it('reenviar a mesma mensagem não repete o push', function () {
     expect(enviosDoChat())->toHaveCount(1);
 });
 
-it('quem é motorista e passageiro na mesma conta não recebe o próprio aviso', function () {
-    firebaseRespondendo();
-    config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
-    [$corrida, $motorista] = corridaComConversa();
-    Passageiro::whereKey($corrida->passageiro_id)->update(['user_id' => $motorista->id]);
-    DispositivoPush::create(['user_id' => $motorista->id, 'perfil' => 'passageiro', 'token' => 'mesmo-celular']);
-
-    $this->actingAs($motorista, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
-        'conteudo' => 'Teste',
-        'client_message_id' => (string) Str::uuid(),
-    ]);
-
-    expect(enviosDoChat())->toHaveCount(0);
-});
-
 it('falha no Firebase não impede a mensagem de ser gravada', function () {
     firebaseRespondendo(500, ['error' => ['status' => 'INTERNAL']]);
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     [$corrida, $motorista, $passageiro] = corridaComConversa();
-    DispositivoPush::create(['user_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
 
-    $this->actingAs($motorista, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
+    $this->actingAs($motorista, 'motoristas')->postJson("/api/corridas/{$corrida->id}/mensagens", [
         'conteudo' => 'Cheguei!',
         'client_message_id' => (string) Str::uuid(),
     ])->assertCreated();
@@ -342,9 +340,9 @@ it('sem Firebase configurado o chat não manda push', function () {
     firebaseRespondendo();
     config(['services.fcm.credenciais' => null]);
     [$corrida, $motorista, $passageiro] = corridaComConversa();
-    DispositivoPush::create(['user_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
 
-    $this->actingAs($motorista, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
+    $this->actingAs($motorista, 'motoristas')->postJson("/api/corridas/{$corrida->id}/mensagens", [
         'conteudo' => 'Cheguei!',
         'client_message_id' => (string) Str::uuid(),
     ])->assertCreated();
@@ -356,10 +354,10 @@ it('corrida encerrada não aceita mensagem e não manda push', function () {
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
     [$corrida, $motorista, $passageiro] = corridaComConversa();
-    DispositivoPush::create(['user_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
+    DispositivoPush::create(['perfil_id' => $passageiro->id, 'perfil' => 'passageiro', 'token' => 'celular-da-ana']);
     $corrida->update(['status_corrida' => 'finalizada']);
 
-    $this->actingAs($motorista, 'jwt')->postJson("/api/corridas/{$corrida->id}/mensagens", [
+    $this->actingAs($motorista, 'motoristas')->postJson("/api/corridas/{$corrida->id}/mensagens", [
         'conteudo' => 'Oi',
         'client_message_id' => (string) Str::uuid(),
     ])->assertStatus(409);
@@ -370,10 +368,10 @@ it('corrida encerrada não aceita mensagem e não manda push', function () {
 it('aviso sem dados extras não manda data vazio, que o FCM recusa', function () {
     firebaseRespondendo();
     config(['services.fcm.credenciais' => credenciaisFirebaseDeTeste()]);
-    $usuario = User::factory()->create();
-    DispositivoPush::create(['user_id' => $usuario->id, 'perfil' => 'motorista', 'token' => 'token-do-motorista']);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    DispositivoPush::create(['perfil_id' => $motorista->id, 'perfil' => 'motorista', 'token' => 'token-do-motorista']);
 
-    app(EnviarPushService::class)->paraUsuario($usuario->id, 'motorista', 'Corrida finalizada', 'Você recebe R$ 10,00.');
+    app(EnviarPushService::class)->paraUsuario($motorista->id, 'motorista', 'Corrida finalizada', 'Você recebe R$ 10,00.');
 
     Http::assertSent(fn (PedidoHttp $pedido) => str_contains($pedido->url(), 'fcm.googleapis.com')
         && ! array_key_exists('data', $pedido['message']));

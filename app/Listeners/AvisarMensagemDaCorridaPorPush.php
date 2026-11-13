@@ -37,7 +37,7 @@ class AvisarMensagemDaCorridaPorPush implements ShouldQueue
 
         return $destino !== null
             && $this->push->configurado()
-            && $this->push->temAparelho($destino['user_id'], $destino['perfil']);
+            && $this->push->temAparelho($destino['perfil_id'], $destino['perfil']);
     }
 
     public function handle(CorridaMensagemEnviada $evento): void
@@ -53,7 +53,7 @@ class AvisarMensagemDaCorridaPorPush implements ShouldQueue
         $papel = $mensagem->autor_tipo === 'motorista' ? 'Motorista' : 'Passageiro';
 
         $this->push->paraUsuario(
-            $destino['user_id'],
+            $destino['perfil_id'],
             $destino['perfil'],
             $nome !== '' ? "{$nome} · {$papel}" : $papel,
             Str::limit((string) $mensagem->conteudo, 140),
@@ -68,9 +68,9 @@ class AvisarMensagemDaCorridaPorPush implements ShouldQueue
     }
 
     /**
-     * Quem recebe é sempre o outro lado da corrida, pelo users.id dele.
+     * Quem recebe é sempre o outro lado da corrida: o passageiro ou o motorista dela.
      *
-     * @return array{user_id: int, perfil: string, mensagem: CorridaMensagem}|null
+     * @return array{perfil_id: int, perfil: string, mensagem: CorridaMensagem}|null
      */
     private function destino(CorridaMensagemEnviada $evento): ?array
     {
@@ -86,17 +86,16 @@ class AvisarMensagemDaCorridaPorPush implements ShouldQueue
             return null;
         }
 
-        [$perfil, $userId] = match ($mensagem->autor_tipo) {
-            'motorista' => ['passageiro', Passageiro::whereKey($corrida->passageiro_id)->value('user_id')],
-            'passageiro' => ['motorista', Motorista::whereKey($corrida->motorista_id)->value('user_id')],
+        [$perfil, $perfilId] = match ($mensagem->autor_tipo) {
+            'motorista' => ['passageiro', $corrida->passageiro_id],
+            'passageiro' => ['motorista', $corrida->motorista_id],
             default => [null, null],
         };
 
-        // mesma conta nos dois papéis: não avisa o próprio autor
-        if ($perfil === null || $userId === null || (int) $userId === (int) $mensagem->user_id) {
+        if ($perfil === null || $perfilId === null) {
             return null;
         }
 
-        return ['user_id' => (int) $userId, 'perfil' => $perfil, 'mensagem' => $mensagem];
+        return ['perfil_id' => (int) $perfilId, 'perfil' => $perfil, 'mensagem' => $mensagem];
     }
 }

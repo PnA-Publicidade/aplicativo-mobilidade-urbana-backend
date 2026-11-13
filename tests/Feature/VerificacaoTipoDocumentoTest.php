@@ -3,7 +3,6 @@
 use App\Enums\TipoDocumentoMotorista as Tipo;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use App\Services\TextoDocumentoService;
 use App\Services\VerificacaoTipoDocumentoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -77,16 +76,16 @@ it('recusa arquivo ilegível ou sem relação com documento, mas não o verso se
 
 it('o envio de um CRLV no campo da CNH é recusado e não substitui a CNH atual', function () {
     Storage::fake('motorista_documentos_anexos');
-    $usuario = User::factory()->create();
-    $this->actingAs($usuario, 'jwt')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
-    $motorista = Motorista::where('user_id', $usuario->id)->firstOrFail();
+    $motorista = Motorista::factory()->create();
+    $this->actingAs($motorista, 'motoristas')->postJson('/api/motorista/cadastro/aprovar-dev')->assertOk();
+    $motorista->refresh();
     // CNH vencida: é quando o reenvio é liberado
     MotoristaDocumento::where('motorista_id', $motorista->id)->update(['created_at' => now()->subYears(2)]);
     $motorista->update(['cnh_expiracao' => now()->subDay()->toDateString()]);
     $antes = MotoristaDocumento::where('motorista_id', $motorista->id)->where('tipo_documento', 'cnh')->count();
 
     lendo(TEXTO_CRLV);
-    $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+    $this->actingAs($motorista->fresh(), 'motoristas')->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('crlv.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])
@@ -97,7 +96,7 @@ it('o envio de um CRLV no campo da CNH é recusado e não substitui a CNH atual'
         ->and($motorista->fresh()->status)->toBe('ativo');
 
     lendo(TEXTO_CNH);
-    $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+    $this->actingAs($motorista->fresh(), 'motoristas')->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])->assertCreated();
@@ -105,8 +104,8 @@ it('o envio de um CRLV no campo da CNH é recusado e não substitui a CNH atual'
 
 it('a mesma conferência vale para o Nada consta e para o verso da CNH', function () {
     Storage::fake('motorista_documentos_anexos');
-    $usuario = User::factory()->create();
-    $envio = fn (string $tipo, array $extra = []) => $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+    $motorista = Motorista::factory()->create();
+    $envio = fn (string $tipo, array $extra = []) => $this->actingAs($motorista->fresh(), 'motoristas')->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => $tipo,
         'arquivo' => UploadedFile::fake()->create('arquivo.pdf', 100, 'application/pdf'),
         ...$extra,
@@ -126,19 +125,18 @@ it('a mesma conferência vale para o Nada consta e para o verso da CNH', functio
 
 it('o Seguro entra sem conferência, no app e na gestão', function () {
     Storage::fake('motorista_documentos_anexos');
-    $usuario = User::factory()->create();
-    $motorista = Motorista::create(['user_id' => $usuario->id, 'status' => 'pendente']);
+    $motorista = Motorista::factory()->create();
     $arquivo = fn () => UploadedFile::fake()->create('seguro.pdf', 100, 'application/pdf');
 
     // outro documento, ou sem nenhuma leitura disponível: nada disso importa
     foreach ([TEXTO_CNH, null] as $texto) {
         lendo($texto);
-        $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        $this->actingAs($motorista->fresh(), 'motoristas')->post('/api/motorista/cadastro/documentos', [
             'tipo_documento' => 'seguro_obrigatorio', 'arquivo' => $arquivo(),
         ], ['Accept' => 'application/json'])->assertCreated();
         MotoristaDocumento::query()->update(['status' => 'reprovado']);
     }
-    $this->actingAs(User::factory()->create(), 'jwt')->post('/api/motorista-documentos', [
+    $this->withToken(tokenDeGestor())->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $motorista->id, 'tipo_documento' => 'seguro_obrigatorio', 'arquivo' => $arquivo(),
     ], ['Accept' => 'application/json'])->assertCreated();
 });
@@ -147,7 +145,7 @@ it('sem leitura disponível o envio é recusado', function () {
     Storage::fake('motorista_documentos_anexos');
     lendo(null);
 
-    $this->actingAs(User::factory()->create(), 'jwt')->post('/api/motorista/cadastro/documentos', [
+    $this->actingAs(Motorista::factory()->create(), 'motoristas')->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('qualquer.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])
@@ -187,17 +185,16 @@ it('com a leitura real, um orçamento qualquer não entra como CNH, Nada consta 
     }
     Storage::fake('motorista_documentos_anexos');
     app()->instance(TextoDocumentoService::class, new TextoDocumentoService);
-    $usuario = User::factory()->create();
-    $motorista = Motorista::create(['user_id' => $usuario->id, 'status' => 'pendente']);
+    $motorista = Motorista::factory()->create();
     $orcamento = ['PEN6 MARKETING Rua Brasilia 2930', 'Fornecedor RD GRAFICA E COMUNICACAO VISUAL', 'Cliente ALERO ASSEMBLEIA LEGISLATIVA', 'PRODUCAO E EXIBICAO OUT DOOR PORTO VELHO', 'HONORARIOS VALOR FINAL TOTAL 0,00'];
 
     foreach (['cnh', 'nada_consta', 'crlv'] as $tipo) {
-        $this->actingAs($usuario, 'jwt')->post('/api/motorista/cadastro/documentos', [
+        $this->actingAs($motorista->fresh(), 'motoristas')->post('/api/motorista/cadastro/documentos', [
             'tipo_documento' => $tipo, 'arquivo' => pdfDeTexto($orcamento),
         ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('arquivo');
     }
     // o mesmo envio feito pela gestão, em nome do motorista
-    $this->actingAs(User::factory()->create(), 'jwt')->post('/api/motorista-documentos', [
+    $this->withToken(tokenDeGestor())->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $motorista->id, 'tipo_documento' => 'cnh', 'arquivo' => pdfDeTexto($orcamento),
     ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('arquivo');
     expect(MotoristaDocumento::count())->toBe(0);

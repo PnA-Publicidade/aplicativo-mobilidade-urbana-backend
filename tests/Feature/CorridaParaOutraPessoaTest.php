@@ -4,31 +4,14 @@ use App\Models\Corrida;
 use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
-
-function usuarioConvite(string $nome): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => $nome,
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "convite-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
 
 function cotacaoConvite(Passageiro $passageiro): CotacaoCorrida
 {
     return CotacaoCorrida::create([
-        'user_id' => $passageiro->user_id,
+        'passageiro_id' => $passageiro->id,
         'distancia_km' => 5,
         'tempo_min' => 12,
         'enderecos' => [
@@ -62,7 +45,7 @@ function cotacaoConvite(Passageiro $passageiro): CotacaoCorrida
  */
 function pedirCorridaConvite(Passageiro $passageiro, array $extra = [])
 {
-    return test()->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    return test()->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => cotacaoConvite($passageiro)->id,
         'produto_codigo' => 'pop',
         'metodo_pagamento' => 'dinheiro',
@@ -72,21 +55,14 @@ function pedirCorridaConvite(Passageiro $passageiro, array $extra = [])
 
 function motoristaDaCorridaConvite(Corrida $corrida): Motorista
 {
-    $motorista = Motorista::create([
-        'user_id' => usuarioConvite('Motorista Teste')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['name' => 'Motorista Teste', 'status' => 'ativo']);
     $corrida->update(['motorista_id' => $motorista->id, 'status_corrida' => 'aceita', 'tempo_aceite' => now()]);
 
     return $motorista;
 }
 
 it('pede a corrida para outra pessoa e o motorista vê o nome e o telefone dela', function () {
-    $passageiro = Passageiro::create(['user_id' => usuarioConvite('Lucas Matheus')->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::factory()->create(['name' => 'Lucas Matheus']);
 
     $id = pedirCorridaConvite($passageiro, [
         'convidado' => ['nome' => '  Maria Souza ', 'telefone' => '(69) 99988-7766'],
@@ -98,7 +74,7 @@ it('pede a corrida para outra pessoa e o motorista vê o nome e o telefone dela'
 
     $motorista = motoristaDaCorridaConvite($corrida);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertOk()
         ->assertJsonPath('passageiro.nome', 'Maria')
@@ -107,21 +83,21 @@ it('pede a corrida para outra pessoa e o motorista vê o nome e o telefone dela'
 });
 
 it('sem convidado o motorista vê quem pediu', function () {
-    $passageiro = Passageiro::create(['user_id' => usuarioConvite('Lucas Matheus')->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::factory()->create(['name' => 'Lucas Matheus']);
 
     $id = pedirCorridaConvite($passageiro)->assertCreated()->json('id');
     $motorista = motoristaDaCorridaConvite(Corrida::findOrFail($id));
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertOk()
         ->assertJsonPath('passageiro.nome', 'Lucas')
-        ->assertJsonPath('passageiro.telefone', $passageiro->user->telefone)
+        ->assertJsonPath('passageiro.telefone', $passageiro->telefone)
         ->assertJsonPath('passageiro.solicitante', null);
 });
 
 it('recusa convidado sem nome ou com telefone inválido', function () {
-    $passageiro = Passageiro::create(['user_id' => usuarioConvite('Lucas Matheus')->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::factory()->create(['name' => 'Lucas Matheus']);
 
     pedirCorridaConvite($passageiro, ['convidado' => ['nome' => '', 'telefone' => '123']])
         ->assertUnprocessable()

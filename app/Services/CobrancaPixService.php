@@ -39,13 +39,13 @@ class CobrancaPixService
             return $existente;
         }
 
-        $usuario = $corrida->passageiro()->first()?->user;
+        $passageiro = $corrida->passageiro()->first();
 
-        if ($usuario === null) {
+        if ($passageiro === null) {
             throw new RuntimeException('Passageiro da corrida não encontrado.', 409);
         }
 
-        $dados = $this->gateway->criarPix($corrida, $centavos, $usuario);
+        $dados = $this->gateway->criarPix($corrida, $centavos, $passageiro);
 
         return CobrancaPix::create([
             'corrida_id' => $corrida->id,

@@ -7,7 +7,8 @@ use App\Http\Resources\DetalhesCorridaResource;
 use App\Models\ChamadoAjuda;
 use App\Models\Corrida;
 use App\Models\Gestor;
-use App\Models\User;
+use App\Models\Motorista;
+use App\Models\Passageiro;
 use App\Services\ChatCorridaService;
 use Illuminate\Http\Request;
 
@@ -26,10 +27,10 @@ class ChatCorridaController extends Controller
         return $dados;
     }
 
-    private function participante(Request $request, Corrida $corrida): User
+    private function participante(Request $request, Corrida $corrida): Motorista|Passageiro
     {
         $usuario = $request->user();
-        abort_unless($usuario instanceof User, 403);
+        abort_unless($usuario instanceof Motorista || $usuario instanceof Passageiro, 403);
         abort_unless($this->service->perfilParticipante($corrida, $usuario), 404, 'Corrida não encontrada para este usuário.');
 
         return $usuario;

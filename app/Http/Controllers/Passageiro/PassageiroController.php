@@ -37,15 +37,17 @@ class PassageiroController extends Controller
      */
     public function show(Passageiro $passageiro): Passageiro
     {
-        return $passageiro->load('user');
+        return $passageiro;
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Passageiro $passageiro): void
+    public function update(Request $request, Passageiro $passageiro): JsonResponse
     {
-        //
+        $passageiro->update($request->validate(CadastrarPerfilUsuarioService::regrasPessoais('passageiros', $passageiro->id)));
+
+        return response()->json(['success' => true, 'message' => 'Registro atualizado com sucesso', 'data' => $passageiro]);
     }
 
     /**
@@ -72,13 +74,11 @@ class PassageiroController extends Controller
             $termo = '%'.$busca.'%';
             $cpf = preg_match('/^[\d\s.-]+$/', $busca) ? preg_replace('/\D/', '', $busca) : $busca;
             $query->where(function (Builder $consulta) use ($termo, $cpf): void {
-                $consulta->whereHas('user', function (Builder $usuario) use ($termo, $cpf): void {
-                    $usuario->where('name', 'like', $termo)->orWhere('cpf', 'like', '%'.$cpf.'%')
-                        ->orWhere('email', 'like', $termo)->orWhere('telefone', 'like', $termo);
-                });
+                $consulta->where('name', 'like', $termo)->orWhere('cpf', 'like', '%'.$cpf.'%')
+                    ->orWhere('email', 'like', $termo)->orWhere('telefone', 'like', $termo);
             });
         }
 
-        return $query->with('user')->orderByDesc('id')->paginate(($dados['rowsPerPage'] ?? 5) ?: 50);
+        return $query->orderByDesc('id')->paginate(($dados['rowsPerPage'] ?? 5) ?: 50);
     }
 }

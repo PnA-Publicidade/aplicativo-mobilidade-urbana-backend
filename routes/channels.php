@@ -7,35 +7,34 @@ use App\Models\Motorista;
 use App\Models\Passageiro;
 use App\Models\SalaParticipante;
 use App\Models\SaldoMotorista;
-use App\Models\User;
 use App\Services\ChatCorridaService;
+use App\Services\TicketsAjudaService;
 use Illuminate\Support\Facades\Broadcast;
 
-Broadcast::channel('corrida.{corridaId}', function (User $user, int $corridaId) {
+// os apps entram com o token do motorista ou o do passageiro
+$apps = ['guards' => ['motoristas', 'passageiros']];
+
+Broadcast::channel('corrida.{corridaId}', function (Motorista|Passageiro $perfil, int $corridaId) {
     $corrida = Corrida::find($corridaId);
 
     if ($corrida === null) {
         return false;
     }
 
-    $passageiroId = Passageiro::where('user_id', $user->id)->value('id');
+    return $perfil instanceof Passageiro
+        ? (int) $corrida->passageiro_id === (int) $perfil->id
+        : (int) $corrida->motorista_id === (int) $perfil->id;
+}, $apps);
 
-    if ($passageiroId !== null && $corrida->passageiro_id === (int) $passageiroId) {
-        return true;
-    }
+Broadcast::channel('corridas-disponiveis', function (Motorista|Passageiro $perfil) {
+    return $perfil instanceof Motorista && $perfil->status === 'ativo';
+}, $apps);
 
-    $motoristaId = Motorista::where('user_id', $user->id)->value('id');
+Broadcast::channel('ajuda.ticket.{ticketId}.cliente', function (Motorista|Passageiro $perfil, int $ticketId) {
+    $ticket = ChamadoAjuda::find($ticketId);
 
-    return $motoristaId !== null && $corrida->motorista_id === (int) $motoristaId;
-});
-
-Broadcast::channel('corridas-disponiveis', function (User $user) {
-    return Motorista::where('user_id', $user->id)->where('status', 'ativo')->exists();
-});
-
-Broadcast::channel('ajuda.ticket.{ticketId}.cliente', function (User $user, int $ticketId) {
-    return ChamadoAjuda::whereKey($ticketId)->where('user_id', $user->id)->exists();
-}, ['guards' => ['jwt']]);
+    return $ticket !== null && app(TicketsAjudaService::class)->ehDoSolicitante($ticket, $perfil);
+}, $apps);
 
 Broadcast::channel('ajuda.ticket.{ticketId}.suporte', function (Gestor $gestor, int $ticketId) {
     $ticket = ChamadoAjuda::find($ticketId);
@@ -49,11 +48,11 @@ Broadcast::channel('ajuda.entrada', fn (Gestor $gestor) => $gestor->visualizaEnt
 
 Broadcast::channel('ajuda.operador.{operadorId}', fn (Gestor $gestor, int $operadorId) => $gestor->id === $operadorId && $gestor->pode('ajuda.gerenciar'), ['guards' => ['gestores']]);
 
-Broadcast::channel('corrida.{corridaId}.chat', function (User $usuario, int $corridaId) {
+Broadcast::channel('corrida.{corridaId}.chat', function (Motorista|Passageiro $perfil, int $corridaId) {
     $corrida = Corrida::find($corridaId);
 
-    return $corrida && app(ChatCorridaService::class)->perfilParticipante($corrida, $usuario) !== null;
-}, ['guards' => ['jwt']]);
+    return $corrida && app(ChatCorridaService::class)->perfilParticipante($corrida, $perfil) !== null;
+}, $apps);
 
 Broadcast::channel('corrida.{corridaId}.chat.suporte', function (Gestor $gestor, int $corridaId) {
     return app(ChatCorridaService::class)->gestorPodeConsultar($gestor, $corridaId);
@@ -63,11 +62,9 @@ Broadcast::channel('corrida.{corridaId}.chat.financeiro', function (Gestor $gest
     return $gestor->pode('financeiro.consultar') && SaldoMotorista::where('corrida_id', $corridaId)->exists();
 }, ['guards' => ['gestores']]);
 
-Broadcast::channel('sala-compartilhada.{salaId}', function (User $user, int $salaId) {
-    $passageiroId = Passageiro::where('user_id', $user->id)->value('id');
-
-    return $passageiroId !== null && SalaParticipante::where('sala_id', $salaId)
-        ->where('passageiro_id', $passageiroId)
+Broadcast::channel('sala-compartilhada.{salaId}', function (Motorista|Passageiro $perfil, int $salaId) {
+    return $perfil instanceof Passageiro && SalaParticipante::where('sala_id', $salaId)
+        ->where('passageiro_id', $perfil->id)
         ->where('status', '!=', SalaParticipante::SAIU)
         ->exists();
-}, ['guards' => ['jwt']]);
+}, $apps);
