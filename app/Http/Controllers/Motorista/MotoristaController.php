@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Motorista;
 // CODEX: 92 linhas alteradas; adiciona listagem e cadastro seguro dos veículos do motorista autenticado.
 
 use App\Http\Controllers\Controller;
+use App\Models\AvaliacoesCorrida;
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Models\ProdutosCorrida;
@@ -171,7 +172,31 @@ class MotoristaController extends Controller
             'taxa_finalizacao' => $dados['taxa_finalizacao'],
             'taxa_aceitacao' => $dados['taxa_aceitacao'],
             'situacao_taxa' => app(RestricaoTaxaService::class)->situacao($motorista->id),
+            ...$this->notaDoMotorista($motorista->id),
         ]);
+    }
+
+    /**
+     * Média das notas que os passageiros deram ao motorista (menu lateral do
+     * app). Quem ainda não foi avaliado não tem média, em vez de 0,00.
+     *
+     * @return array{nota_motorista: float|null, avaliacoes_recebidas: int}
+     */
+    private function notaDoMotorista(int $motoristaId): array
+    {
+        // tipo_usuario guarda quem deu a nota: "passageiro" são as notas ao motorista
+        $notas = AvaliacoesCorrida::query()
+            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
+            ->where('avaliacoes_corridas.tipo_usuario', 'passageiro')
+            ->where('corridas.motorista_id', $motoristaId);
+
+        $total = (clone $notas)->count();
+        $media = $total === 0 ? null : (clone $notas)->avg('avaliacoes_corridas.nota');
+
+        return [
+            'nota_motorista' => $media === null ? null : round((float) $media, 2),
+            'avaliacoes_recebidas' => $total,
+        ];
     }
 
     /**
@@ -195,6 +220,29 @@ class MotoristaController extends Controller
             'regras' => [
                 'prazo_dia' => $configuracoes->restricaoPrazoDia(),
                 'duracoes_dias' => $configuracoes->restricaoDuracoesDias(),
+            ],
+        ]);
+    }
+
+    /**
+     * Tela Taxa de Aceitação do app: taxa do mês corrente, série diária dos
+     * últimos 30 dias e histórico dos últimos 6 meses.
+     */
+    public function taxaAceitacao(Request $request, TaxasMotoristaService $taxas): JsonResponse
+    {
+        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+
+        if ($motorista === null) {
+            return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
+        }
+
+        $configuracoes = app(ConfiguracaoPlataformaService::class);
+
+        return response()->json([
+            ...$taxas->detalheAceitacao($motorista->id),
+            'regras' => [
+                'cancelamento_passageiro_segundos' => $configuracoes->cancelamentoPassageiroSegundos(),
+                'duplicada_janela_minutos' => $configuracoes->duplicadaJanelaMinutos(),
             ],
         ]);
     }

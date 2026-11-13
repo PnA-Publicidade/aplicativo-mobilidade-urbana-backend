@@ -270,6 +270,92 @@ class TaxasMotoristaService
         ];
     }
 
+    /**
+     * Dados da tela Taxa de Aceitação do motorista. A taxa vale para o mês
+     * corrente (de 1º até hoje); a série diária mostra os últimos 30 dias e o
+     * histórico traz a taxa de cada um dos últimos 6 meses.
+     *
+     * @return array{
+     *     periodo: array{de: string, ate: string},
+     *     taxa: int, aceitas: int, recusadas: int,
+     *     diario: list<array{data: string, aceitas: int, recusadas: int, taxa: int|null}>,
+     *     historico: list<array{mes: string, de: string, ate: string, taxa: int, aceitas: int, recusadas: int}>
+     * }
+     */
+    public function detalheAceitacao(int $motoristaId, ?CarbonInterface $ate = null): array
+    {
+        $ate = $ate ?? now();
+        $dias = self::JANELA_FINALIZACAO_DIAS;
+        $meses = 6;
+        $hoje = $ate->copy()->startOfDay();
+        $inicio = $hoje->copy()->startOfMonth()->subMonths($meses - 1);
+        $inicio = $inicio->lt($hoje->copy()->subDays($dias - 1)) ? $inicio : $hoje->copy()->subDays($dias - 1);
+
+        $porDia = [];
+        $linhas = DB::table('motorista_taxa_eventos')
+            ->where('motorista_id', $motoristaId)
+            ->where('taxa', self::ACEITACAO)
+            ->whereNull('desconsiderado_motivo')
+            ->where('ocorrido_em', '>=', $inicio)
+            ->where('ocorrido_em', '<=', $ate)
+            ->selectRaw('DATE(ocorrido_em) as dia, resultado, COUNT(*) as total')
+            ->groupBy('dia', 'resultado')
+            ->get();
+
+        foreach ($linhas as $linha) {
+            $porDia[$linha->dia][$linha->resultado === 'positivo' ? 'aceitas' : 'recusadas'] = (int) $linha->total;
+        }
+
+        $doDia = fn (CarbonInterface $dia): array => [
+            'aceitas' => $porDia[$dia->toDateString()]['aceitas'] ?? 0,
+            'recusadas' => $porDia[$dia->toDateString()]['recusadas'] ?? 0,
+        ];
+
+        $diario = [];
+        for ($i = $dias - 1; $i >= 0; $i--) {
+            $dia = $hoje->copy()->subDays($i);
+            $contagem = $doDia($dia);
+            $total = $contagem['aceitas'] + $contagem['recusadas'];
+            $diario[] = ['data' => $dia->toDateString()] + $contagem + [
+                'taxa' => $total === 0 ? null : $this->percentual($contagem['aceitas'], $contagem['recusadas']),
+            ];
+        }
+
+        $historico = [];
+        for ($m = 0; $m < $meses; $m++) {
+            $primeiro = $hoje->copy()->startOfMonth()->subMonths($m);
+            $ultimo = $m === 0 ? $hoje->copy() : $primeiro->copy()->endOfMonth()->startOfDay();
+            $aceitas = 0;
+            $recusadas = 0;
+
+            for ($dia = $primeiro->copy(); $dia->lte($ultimo); $dia->addDay()) {
+                $contagem = $doDia($dia);
+                $aceitas += $contagem['aceitas'];
+                $recusadas += $contagem['recusadas'];
+            }
+
+            $historico[] = [
+                'mes' => $primeiro->format('Y-m'),
+                'de' => $primeiro->toDateString(),
+                'ate' => $ultimo->toDateString(),
+                'taxa' => $this->percentual($aceitas, $recusadas),
+                'aceitas' => $aceitas,
+                'recusadas' => $recusadas,
+            ];
+        }
+
+        $atual = $this->taxas($motoristaId, $ate);
+
+        return [
+            'periodo' => ['de' => $hoje->copy()->startOfMonth()->toDateString(), 'ate' => $hoje->toDateString()],
+            'taxa' => $atual['taxa_aceitacao'],
+            'aceitas' => $atual['aceitas'],
+            'recusadas' => $atual['recusadas'],
+            'diario' => $diario,
+            'historico' => $historico,
+        ];
+    }
+
     /** Grava o retrato do dia de quem teve movimento no mês ou na janela da finalização. */
     public function fecharDia(CarbonInterface $dia): int
     {

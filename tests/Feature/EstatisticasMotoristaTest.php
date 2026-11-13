@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
@@ -90,4 +91,39 @@ it('soma os ganhos do dia e o saldo só com corridas finalizadas', function () {
         ->assertJsonPath('ganhos_do_dia', 10.5)
         ->assertJsonPath('saldo', 30.5)
         ->assertJsonPath('corridas_hoje', 2);
+});
+
+it('mostra a nota que os passageiros deram ao motorista e não inventa nota para quem não foi avaliado', function () {
+    $motorista = motoristaEstatistica();
+    $passageiro = passageiroEstatistica();
+
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+        ->assertOk()
+        ->assertJsonPath('nota_motorista', null)
+        ->assertJsonPath('avaliacoes_recebidas', 0);
+
+    $avaliar = function (string $tipo, int $nota, ?int $motoristaId) use ($passageiro) {
+        $corrida = Corrida::create([
+            'codigo_corrida' => 'NOT-'.Str::upper(Str::random(8)),
+            'motorista_id' => $motoristaId,
+            'passageiro_id' => $passageiro->id,
+            'status_corrida' => 'finalizada',
+            'tempo_solicitacao' => now(),
+            'metodo_pagamento' => 'dinheiro',
+            'status_pagamento' => 'pendente',
+        ]);
+        AvaliacoesCorrida::create(['corrida_id' => $corrida->id, 'usuario_id' => $passageiro->user_id, 'tipo_usuario' => $tipo, 'nota' => $nota]);
+    };
+
+    $avaliar('passageiro', 5, $motorista->id);
+    $avaliar('passageiro', 4, $motorista->id);
+    $avaliar('passageiro', 4, $motorista->id);
+    // nota do motorista ao passageiro e nota de outro motorista não entram
+    $avaliar('motorista', 1, $motorista->id);
+    $avaliar('passageiro', 1, motoristaEstatistica()->id);
+
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+        ->assertOk()
+        ->assertJsonPath('nota_motorista', 4.33)
+        ->assertJsonPath('avaliacoes_recebidas', 3);
 });
