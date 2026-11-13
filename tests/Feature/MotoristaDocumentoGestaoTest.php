@@ -154,3 +154,24 @@ it('desfaz dados documento e arquivo se o salvamento conjunto falhar', function 
         ->and($this->motorista->fresh()->nome)->toBe('Nome anterior')
         ->and($this->motorista->fresh()->status)->toBe('pendente');
 });
+
+it('lista na fila de aprovação só os motoristas que ainda existem', function () {
+    $documento = fn (Motorista $motorista) => MotoristaDocumento::create([
+        'motorista_id' => $motorista->id, 'tipo_documento' => 'cnh', 'ordem' => 0,
+        'name' => 'cnh.png', 'type' => 'png', 'mime_type' => 'image/png', 'size' => 10,
+        'path' => 'motorista_documentos_anexos/cnh.png',
+        'url' => 'http://localhost/motorista_documentos_anexos/cnh.png',
+        'status' => 'em_analise',
+    ]);
+    $documento($this->motorista);
+    $apagado = Motorista::factory()->create();
+    $documento($apagado);
+    $apagado->delete();
+
+    $this->getJson('/api/gestao/motorista-documentos/fila')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->motorista->id)
+        ->assertJsonPath('data.0.nome', 'Nome anterior')
+        ->assertJsonPath('totais.em_analise', ['documentos' => 1, 'motoristas' => 1]);
+});
