@@ -18,7 +18,8 @@ class CidadeFactory extends Factory
         return [
             'nome' => fake()->unique()->city(),
             'uf' => 'RO',
-            'ibge' => fake()->unique()->numberBetween(1100000, 1199999),
+            // os municípios do IBGE já vêm da migration; 99 não é código de estado, então não colide
+            'ibge' => fake()->unique()->numberBetween(9900000, 9999999),
         ];
     }
 }

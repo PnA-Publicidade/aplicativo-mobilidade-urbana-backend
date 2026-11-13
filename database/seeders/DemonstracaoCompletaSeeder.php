@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\Cidade;
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\PlataformaLucro;
@@ -21,9 +20,7 @@ class DemonstracaoCompletaSeeder extends Seeder
         }
         Event::fakeFor(fn () => DB::transaction(function () {
             $idsAnteriores = Corrida::pluck('id');
-            foreach ([['Porto Velho', 1100205], ['Ariquemes', 1100023]] as [$nome, $ibge]) {
-                Cidade::firstOrCreate(['ibge' => $ibge], ['nome' => $nome, 'uf' => 'RO']);
-            }
+            // as cidades (todos os municípios do IBGE) vêm da migration create_estados_e_carrega_cidades
             $this->callWith(PrecificacaoSeeder::class, ['preservarExistentes' => true]);
             $this->call(GestoresSeeder::class);
             $this->callWith(CadastroDesenvolvimentoSeeder::class, ['preservarExistentes' => true]);

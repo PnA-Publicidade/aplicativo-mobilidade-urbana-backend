@@ -13,8 +13,9 @@ beforeEach(function () {
 });
 
 it('mostra ao app só os banners da cidade onde o usuário está', function () {
-    $portoVelho = Cidade::factory()->create(['nome' => 'Porto Velho', 'uf' => 'RO', 'ibge' => 1100205]);
-    $ariquemes = Cidade::factory()->create(['nome' => 'Ariquemes', 'uf' => 'RO', 'ibge' => 1100023]);
+    // os municípios do IBGE já vêm da migration
+    $portoVelho = Cidade::where('ibge', 1100205)->firstOrFail();
+    $ariquemes = Cidade::where('ibge', 1100023)->firstOrFail();
     $antigo = BannerPublicidade::factory()->create(['cidade_id' => $portoVelho->id, 'titulo' => 'Antigo']);
     $novo = BannerPublicidade::factory()->create(['cidade_id' => $portoVelho->id, 'titulo' => 'Novo']);
     BannerPublicidade::factory()->create(['cidade_id' => $ariquemes->id]);
@@ -31,7 +32,7 @@ it('mostra ao app só os banners da cidade onde o usuário está', function () {
 });
 
 it('cidade fora do cadastro ou de outra UF não tem banner', function () {
-    $cidade = Cidade::factory()->create(['nome' => 'Porto Velho', 'uf' => 'RO', 'ibge' => 1100205]);
+    $cidade = Cidade::where('ibge', 1100205)->firstOrFail();
     BannerPublicidade::factory()->create(['cidade_id' => $cidade->id]);
     $this->actingAs(Passageiro::factory()->create(), 'passageiros');
 

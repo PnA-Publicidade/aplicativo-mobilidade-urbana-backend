@@ -19,15 +19,18 @@ beforeEach(function () {
 it('cadastra cidade com a sigla do estado e recusa uf ou ibge inválidos', function () {
     $this->withToken(tokenDeGestor());
 
-    $this->postJson('/api/gestao/cidades', ['nome' => ' Porto Velho ', 'uf' => 'ro', 'ibge' => 1100205])
+    // os municípios do IBGE já vêm da migration: aqui vai um código que não existe
+    $this->postJson('/api/gestao/cidades', ['nome' => ' Cidade Nova ', 'uf' => 'ro', 'ibge' => 9900001])
         ->assertCreated()
-        ->assertJsonPath('data.nome', 'Porto Velho')
-        ->assertJsonPath('data.uf', 'RO');
+        ->assertJsonPath('data.nome', 'Cidade Nova')
+        ->assertJsonPath('data.uf', 'RO')
+        ->assertJsonPath('data.uf_id', 11);
 
-    $this->postJson('/api/gestao/cidades', ['nome' => 'Outra', 'uf' => 'XX', 'ibge' => 1100023])
+    $this->postJson('/api/gestao/cidades', ['nome' => 'Outra', 'uf' => 'XX', 'ibge' => 9900002])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('uf');
 
+    // Porto Velho já está na tabela
     $this->postJson('/api/gestao/cidades', ['nome' => 'Repetida', 'uf' => 'RO', 'ibge' => 1100205])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('ibge');
@@ -35,20 +38,18 @@ it('cadastra cidade com a sigla do estado e recusa uf ou ibge inválidos', funct
 
 it('lista cidades em ordem alfabética com filtro por uf e busca', function () {
     $this->withToken(tokenDeGestor());
-    Cidade::factory()->create(['nome' => 'Porto Velho', 'uf' => 'RO']);
-    Cidade::factory()->create(['nome' => 'Ariquemes', 'uf' => 'RO']);
-    Cidade::factory()->create(['nome' => 'Rio Branco', 'uf' => 'AC', 'ibge' => 1200401]);
 
-    $this->getJson('/api/gestao/cidades?uf=ro')
+    $rondonia = $this->getJson('/api/gestao/cidades?uf=ro')
         ->assertOk()
-        ->assertJsonCount(2)
-        ->assertJsonPath('0.nome', 'Ariquemes')
-        ->assertJsonPath('1.nome', 'Porto Velho');
+        ->assertJsonCount(52)
+        ->json('*.nome');
+    expect($rondonia)->toContain('Porto Velho', 'Ariquemes')
+        ->and($rondonia[0])->toBe("Alta Floresta D'Oeste");
 
-    $this->getJson('/api/gestao/cidades?busca=branco')
+    $this->getJson('/api/gestao/cidades?uf=ac&busca=branco')
         ->assertOk()
         ->assertJsonCount(1)
-        ->assertJsonPath('0.uf', 'AC');
+        ->assertJsonPath('0.nome', 'Rio Branco');
 });
 
 it('envia o banner para o disco com nome gerado pelo servidor e devolve a url', function () {
