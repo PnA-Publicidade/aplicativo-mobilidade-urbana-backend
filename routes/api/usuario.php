@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('usuario-logado', [PerfilController::class, 'usuarioLogado']);
 Route::put('usuario-alterar-foto-perfil/{id}', [PerfilController::class, 'alterarFotoPerfil']);
 Route::delete('usuario-remover-foto-perfil/{id}', [PerfilController::class, 'removerFotoPerfil']);
+// telefone e e-mail: código primeiro, troca depois
+Route::post('usuario-alterar-contato/codigo', [PerfilController::class, 'enviarCodigoDeContato'])->middleware('throttle:5,1,codigo-contato');
+Route::put('usuario-alterar-contato', [PerfilController::class, 'alterarContato'])->middleware('throttle:10,1,alterar-contato');
 
 // casa, trabalho e favoritos do passageiro
 Route::get('locais-salvos', [LocaisSalvosController::class, 'index']);
