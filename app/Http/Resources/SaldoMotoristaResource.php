@@ -33,7 +33,7 @@ class SaldoMotoristaResource extends JsonResource
             'created_at' => $this->created_at?->toISOString(),
             'motorista' => [
                 'id' => $this->motorista_id,
-                'nome' => $motorista?->nome ?? $motorista?->user?->name ?? 'Motorista indisponível',
+                'nome' => $motorista?->nome ?? $motorista?->name ?? 'Motorista indisponível',
                 'foto' => $motorista?->foto,
             ],
             'corrida' => $this->corrida ? [

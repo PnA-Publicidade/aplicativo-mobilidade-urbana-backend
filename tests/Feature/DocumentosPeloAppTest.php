@@ -3,7 +3,6 @@
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use App\Models\MotoristaVeiculo;
-use App\Models\User;
 use App\Models\Veiculo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -13,15 +12,14 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Storage::fake('motorista_documentos_anexos');
-    $this->usuario = User::factory()->create();
-    $this->motorista = Motorista::create(['user_id' => $this->usuario->id, 'status' => 'pendente']);
+    $this->motorista = Motorista::factory()->create();
     $this->veiculo = Veiculo::create([
         'marca' => 'Chevrolet', 'modelo' => 'Onix', 'ano_fabricacao' => 2023, 'ano_modelo' => 2023,
         'cor' => 'Prata', 'placa' => 'APP1A23', 'renavam' => '12345678901',
         'cpf_cnpj_proprietario' => '12345678909', 'categoria' => 'carro', 'status' => 'aprovado', 'uf' => 'RO',
     ]);
     MotoristaVeiculo::create(['motorista_id' => $this->motorista->id, 'veiculo_id' => $this->veiculo->id]);
-    $this->actingAs($this->usuario, 'jwt');
+    $this->actingAs($this->motorista, 'motoristas');
 });
 
 it('o app envia o CRLV só com o arquivo e ele fica no veículo do motorista', function () {

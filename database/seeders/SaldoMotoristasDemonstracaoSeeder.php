@@ -10,7 +10,6 @@ use App\Models\Passageiro;
 use App\Models\ProdutosCorrida;
 use App\Models\SaldoMotorista;
 use App\Models\Saque;
-use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -29,19 +28,15 @@ class SaldoMotoristasDemonstracaoSeeder extends Seeder
             throw new RuntimeException('Cadastre um produto de corrida antes de executar a demonstração.');
         }
         $quantidade = DB::transaction(function () use ($produto) {
-            $usuario = User::firstOrCreate(['email' => 'motorista.financeiro@example.com'], [
+            $motorista = Motorista::firstOrCreate(['email' => 'motorista.financeiro@example.com'], [
                 'name' => 'Motorista financeiro de teste', 'cpf' => '16899535009',
-                'telefone' => '69999990101', 'data_nascimento' => '1990-01-15',
-                'password' => 'password', 'status' => 'ativo',
-            ]);
-            if ($usuario->cpf !== '16899535009') {
-                throw new RuntimeException('O e-mail da demonstração já pertence a outra conta.');
-            }
-            $motorista = Motorista::firstOrCreate(['user_id' => $usuario->id], [
-                'nome' => $usuario->name, 'cpf' => $usuario->cpf, 'data_nascimento' => '1990-01-15',
+                'telefone' => '69999990101', 'data_nascimento' => '1990-01-15', 'password' => 'password',
                 'numero_registro' => '98765432101', 'cnh_categoria' => 'AB',
                 'cnh_expiracao' => '2031-01-01', 'ear' => true, 'status' => 'pendente',
             ]);
+            if ($motorista->cpf !== '16899535009') {
+                throw new RuntimeException('O e-mail da demonstração já pertence a outra conta.');
+            }
             Motorista::whereKey($motorista->id)->lockForUpdate()->firstOrFail();
             $existentes = SaldoMotorista::where('motorista_id', $motorista->id)->where('detalhes->demonstracao', self::MARCADOR)->count();
             if ($existentes > 0) {
@@ -56,15 +51,14 @@ class SaldoMotoristasDemonstracaoSeeder extends Seeder
                 || Saque::where('motorista_id', $motorista->id)->exists()) {
                 throw new RuntimeException('O motorista da demonstração já possui dados fora deste exemplo.');
             }
-            $cliente = User::firstOrCreate(['email' => 'passageiro.financeiro@example.com'], [
+            $passageiro = Passageiro::firstOrCreate(['email' => 'passageiro.financeiro@example.com'], [
                 'name' => 'Passageiro financeiro de teste', 'cpf' => '71826495355',
                 'telefone' => '69999990102', 'data_nascimento' => '1992-05-20',
                 'password' => 'password', 'status' => 'ativo',
             ]);
-            if ($cliente->cpf !== '71826495355') {
+            if ($passageiro->cpf !== '71826495355') {
                 throw new RuntimeException('O e-mail do passageiro da demonstração já pertence a outra conta.');
             }
-            $passageiro = Passageiro::firstOrCreate(['user_id' => $cliente->id], ['status' => 'ativo']);
             $inicio = now()->subHours(4)->startOfMinute();
             $definicoes = [
                 ['PIX', 'pix', '16.20', '15.23', '1.03', '11.90', '2.00', '1.50', '2.80', '0.00', '2.00'],
@@ -174,7 +168,7 @@ class SaldoMotoristasDemonstracaoSeeder extends Seeder
     {
         $corridas = Corrida::where('motorista_id', $motorista->id)
             ->whereIn('codigo_corrida', ['DEMO-SALDO-001', 'DEMO-SALDO-002', 'DEMO-SALDO-003', 'DEMO-SALDO-004'])
-            ->with(['motorista.user', 'passageiro.user'])->get();
+            ->with(['motorista', 'passageiro'])->get();
         foreach ($corridas as $corrida) {
             $pontos = [
                 ['origem', 'R. Brasília, 2930 · São Cristóvão, Porto Velho', -8.7553155, -63.8974087, 0],
@@ -195,14 +189,14 @@ class SaldoMotoristasDemonstracaoSeeder extends Seeder
                 ['motorista', 'Demonstração: sim, a parada está no trajeto.'],
             ];
             foreach ($conversa as $indice => [$tipo, $conteudo]) {
-                $usuario = $tipo === 'motorista' ? $corrida->motorista->user : $corrida->passageiro->user;
+                $autor = $tipo === 'motorista' ? $corrida->motorista : $corrida->passageiro;
                 $data = $corrida->tempo_solicitacao->copy()->addSeconds(30 * ($indice + 1));
                 CorridaMensagem::unguarded(fn () => CorridaMensagem::firstOrCreate([
                     'corrida_id' => $corrida->id,
                     'client_message_id' => 'cd7a8491-0000-4000-8000-'.str_pad((string) ($indice + 1), 12, '0', STR_PAD_LEFT),
                 ], [
-                    'user_id' => $usuario->id, 'autor_tipo' => $tipo,
-                    'autor_nome' => $usuario->name, 'conteudo' => $conteudo,
+                    'autor_tipo' => $tipo,
+                    'autor_nome' => $autor->name, 'conteudo' => $conteudo,
                     'created_at' => $data, 'updated_at' => $data,
                 ]));
             }

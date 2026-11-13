@@ -9,7 +9,6 @@ use App\Models\Motorista;
 use App\Models\Passageiro;
 use App\Models\PlataformaLucro;
 use App\Models\ProdutosCorrida;
-use App\Models\User;
 use App\Services\PlataformaLucrosService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -117,13 +116,13 @@ class PlataformaLucrosMassaDemonstracaoSeeder extends Seeder
         for ($i = 1; $i <= 3; $i++) {
             $cpfMotorista = '9900000000'.$i;
             $cpfPassageiro = '9900000010'.$i;
-            $u = User::firstOrCreate(['email' => 'motorista.plataforma'.$i.'@example.com'], ['name' => 'Motorista demo plataforma '.$i, 'cpf' => $cpfMotorista, 'data_nascimento' => '1990-01-01', 'password' => 'password', 'status' => 'ativo']);
-            $p = User::firstOrCreate(['email' => 'passageiro.plataforma'.$i.'@example.com'], ['name' => 'Passageiro demo plataforma '.$i, 'cpf' => $cpfPassageiro, 'data_nascimento' => '1992-01-01', 'password' => 'password', 'status' => 'ativo']);
-            if ($u->cpf !== $cpfMotorista || $p->cpf !== $cpfPassageiro) {
+            $motorista = Motorista::firstOrCreate(['email' => 'motorista.plataforma'.$i.'@example.com'], ['name' => 'Motorista demo plataforma '.$i, 'cpf' => $cpfMotorista, 'data_nascimento' => '1990-01-01', 'password' => 'password', 'numero_registro' => '9900000000'.$i, 'cnh_categoria' => 'AB', 'cnh_expiracao' => '2031-01-01', 'ear' => true, 'status' => 'pendente']);
+            $passageiro = Passageiro::firstOrCreate(['email' => 'passageiro.plataforma'.$i.'@example.com'], ['name' => 'Passageiro demo plataforma '.$i, 'cpf' => $cpfPassageiro, 'data_nascimento' => '1992-01-01', 'password' => 'password', 'status' => 'ativo']);
+            if ($motorista->cpf !== $cpfMotorista || $passageiro->cpf !== $cpfPassageiro) {
                 throw new RuntimeException('Uma conta reservada para a demonstração já pertence a outro cadastro.');
             }
-            $motoristas[] = Motorista::firstOrCreate(['user_id' => $u->id], ['nome' => $u->name, 'cpf' => $cpfMotorista, 'numero_registro' => '9900000000'.$i, 'cnh_categoria' => 'AB', 'cnh_expiracao' => '2031-01-01', 'ear' => true, 'status' => 'pendente']);
-            $passageiros[] = Passageiro::firstOrCreate(['user_id' => $p->id], ['status' => 'ativo']);
+            $motoristas[] = $motorista;
+            $passageiros[] = $passageiro;
         }
 
         return [$motoristas, $passageiros];

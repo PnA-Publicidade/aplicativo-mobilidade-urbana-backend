@@ -387,11 +387,7 @@ class RestricaoTaxaService
             return;
         }
 
-        $userId = Motorista::whereKey($motoristaId)->value('user_id');
-
-        if ($userId !== null) {
-            app(NotificarUsuarioService::class)->executar((int) $userId, 'motorista', $titulo, $mensagem);
-        }
+        app(NotificarUsuarioService::class)->executar($motoristaId, 'motorista', $titulo, $mensagem);
     }
 
     private function semQuebrar(callable $acao): void

@@ -3,28 +3,12 @@
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\TaxasMotoristaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
-
-function tfUsuario(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' '.Str::upper(Str::random(4)),
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
 
 /** Grava `quantos` eventos de finalização de um resultado num dia, direto no livro. */
 function tfEventos(Motorista $motorista, Passageiro $passageiro, string $dia, string $resultado, int $quantos): void
@@ -51,8 +35,8 @@ afterEach(fn () => Carbon::setTestNow());
 
 it('entrega os dados da tela Taxa de Finalização: período, série diária e histórico por janela', function () {
     $this->travelTo(Carbon::parse('2026-11-12 12:00:00'));
-    $motorista = Motorista::create(['user_id' => tfUsuario('motorista')->id, 'status' => 'ativo', 'cnh_numero' => null, 'cnh_categoria' => null, 'cnh_expiracao' => null, 'ear' => null]);
-    $passageiro = Passageiro::create(['user_id' => tfUsuario('passageiro')->id, 'media_avaliacao' => null]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
 
     tfEventos($motorista, $passageiro, '2026-11-12', 'positivo', 4);
     tfEventos($motorista, $passageiro, '2026-11-11', 'positivo', 3);
@@ -61,7 +45,7 @@ it('entrega os dados da tela Taxa de Finalização: período, série diária e h
     tfEventos($motorista, $passageiro, '2026-10-20', 'negativo', 5);
     tfEventos($motorista, $passageiro, '2026-10-10', 'positivo', 10); // fora da janela de hoje
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')
+    $resposta = $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/taxa-finalizacao')
         ->assertOk()
         ->assertJsonPath('periodo.de', '2026-10-14')
@@ -92,9 +76,9 @@ it('entrega os dados da tela Taxa de Finalização: período, série diária e h
 });
 
 it('mostra a tela para a conta nova com 100% e sem corridas', function () {
-    $motorista = Motorista::create(['user_id' => tfUsuario('motorista')->id, 'status' => 'ativo', 'cnh_numero' => null, 'cnh_categoria' => null, 'cnh_expiracao' => null, 'ear' => null]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/taxa-finalizacao')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/taxa-finalizacao')
         ->assertOk()
         ->assertJsonPath('taxa', 100)
         ->assertJsonPath('finalizadas', 0)

@@ -12,6 +12,7 @@ use App\Models\Motorista;
 use App\Models\Passageiro;
 use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Services\RestricaoNotaService;
+use App\Support\PerfilLogado;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,10 +23,8 @@ use Throwable;
 class AvaliacoesCorridaController extends Controller
 {
     private const RELACOES = [
-        'motorista:id,user_id,foto',
-        'motorista.user:id,name',
-        'passageiro:id,user_id,foto',
-        'passageiro.user:id,name',
+        'motorista:id,name,foto',
+        'passageiro:id,name,foto',
         'veiculo',
         'corrida_destinos',
         'corrida_financeiro',
@@ -41,11 +40,11 @@ class AvaliacoesCorridaController extends Controller
         ]);
 
         $perfil = $filtros['perfil'] ?? null;
-        $motoristaId = $perfil === 'passageiro' ? null : Motorista::where('user_id', $request->user()->id)->value('id');
+        $motoristaId = $perfil === 'passageiro' ? null : PerfilLogado::motorista($request)?->id;
         $corrida = $this->corridasDoUsuario($request, $perfil)
             ->where('status_corrida', 'finalizada')
             ->whereDoesntHave('avaliacoes', function (Builder $consulta) use ($request) {
-                $consulta->where('usuario_id', $request->user()->id);
+                $this->doAvaliador($consulta, $request);
             })
             // na compartilhada o motorista avalia só no fim, em telas seguidas;
             // o passageiro avalia ao descer, mesmo com o grupo ainda viajando
@@ -68,13 +67,13 @@ class AvaliacoesCorridaController extends Controller
 
         // compartilhada: o motorista avalia um passageiro por vez e vê o total
         if ($papel === 'motorista' && $corrida->sala_compartilhada_id !== null) {
-            $corrida->setAttribute('compartilhada', $this->resumoDoGrupo($corrida, (int) $request->user()->id));
+            $corrida->setAttribute('compartilhada', $this->resumoDoGrupo($corrida, (int) $corrida->motorista_id));
         }
 
         if ($request->boolean('registrar_padrao') && $papel === 'passageiro') {
             $avaliacao = AvaliacoesCorrida::firstOrCreate(
-                ['corrida_id' => $corrida->id, 'usuario_id' => $request->user()->id],
-                ['tipo_usuario' => $papel, 'nota' => 5, 'comentario' => null, 'automatica' => true]
+                ['corrida_id' => $corrida->id, 'tipo_usuario' => $papel, 'avaliador_id' => PerfilLogado::de($request)->id],
+                ['nota' => 5, 'comentario' => null, 'automatica' => true]
             );
 
             if (! $avaliacao->wasRecentlyCreated) {
@@ -82,9 +81,9 @@ class AvaliacoesCorridaController extends Controller
             }
         }
 
-        foreach ([$corrida->motorista?->user, $corrida->passageiro?->user] as $usuario) {
-            if ($usuario !== null) {
-                $usuario->setAttribute('name', $this->primeiroNome((string) $usuario->name));
+        foreach ([$corrida->motorista, $corrida->passageiro] as $perfil) {
+            if ($perfil !== null) {
+                $perfil->setAttribute('name', $this->primeiroNome((string) $perfil->name));
             }
         }
 
@@ -104,13 +103,14 @@ class AvaliacoesCorridaController extends Controller
     /**
      * @return array{passageiros: int, posicao: int, valor_total_motorista: float}
      */
-    private function resumoDoGrupo(Corrida $corrida, int $userId): array
+    private function resumoDoGrupo(Corrida $corrida, int $motoristaId): array
     {
         $doGrupo = Corrida::where('sala_compartilhada_id', $corrida->sala_compartilhada_id)
             ->where('motorista_id', $corrida->motorista_id)
             ->where('status_corrida', 'finalizada')
             ->pluck('id');
-        $avaliadas = AvaliacoesCorrida::whereIn('corrida_id', $doGrupo)->where('usuario_id', $userId)->count();
+        $avaliadas = AvaliacoesCorrida::whereIn('corrida_id', $doGrupo)
+            ->where('tipo_usuario', 'motorista')->where('avaliador_id', $motoristaId)->count();
         $resumo = app(GrupoCompartilhadoService::class)->resumoDaCorrida($corrida, true);
 
         return [
@@ -153,7 +153,7 @@ class AvaliacoesCorridaController extends Controller
         }
 
         $avaliacaoExistente = AvaliacoesCorrida::where('corrida_id', $corrida->id)
-            ->where('usuario_id', $request->user()->id)
+            ->where(fn (Builder $consulta) => $this->doAvaliador($consulta, $request))
             ->first();
 
         if ($avaliacaoExistente !== null && ! $avaliacaoExistente->automatica) {
@@ -178,7 +178,7 @@ class AvaliacoesCorridaController extends Controller
 
         $avaliacao = AvaliacoesCorrida::create([
             'corrida_id' => $corrida->id,
-            'usuario_id' => $request->user()->id,
+            'avaliador_id' => PerfilLogado::de($request)->id,
             'tipo_usuario' => $papel,
             'nota' => $dados['nota'],
             'comentario' => $dados['comentario'] ?? null,
@@ -209,14 +209,25 @@ class AvaliacoesCorridaController extends Controller
     }
 
     /**
+     * A avaliação de quem está logado: o tipo diz em qual tabela está o avaliador.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $consulta
+     */
+    private function doAvaliador(Builder $consulta, Request $request): void
+    {
+        $perfil = PerfilLogado::de($request);
+        $consulta->where('tipo_usuario', $perfil->perfilDoApp())->where('avaliador_id', $perfil->id);
+    }
+
+    /**
      * @return Builder<Corrida>
      */
     private function corridasDoUsuario(Request $request, ?string $perfil = null): Builder
     {
-        $usuarioId = $request->user()->id;
-
-        $passageiroId = Passageiro::where('user_id', $usuarioId)->value('id');
-        $motoristaId = Motorista::where('user_id', $usuarioId)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
+        $motoristaId = PerfilLogado::motorista($request)?->id;
 
         return Corrida::query()->where(function (Builder $consulta) use ($passageiroId, $motoristaId, $perfil) {
             $consulta->whereRaw('1 = 0');
@@ -233,15 +244,13 @@ class AvaliacoesCorridaController extends Controller
 
     private function papelNaCorrida(Request $request, Corrida $corrida): ?string
     {
-        $usuarioId = $request->user()->id;
-
-        $motoristaId = Motorista::where('user_id', $usuarioId)->value('id');
+        $motoristaId = PerfilLogado::motorista($request)?->id;
 
         if ($motoristaId !== null && $corrida->motorista_id === (int) $motoristaId) {
             return 'motorista';
         }
 
-        $passageiroId = Passageiro::where('user_id', $usuarioId)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         if ($passageiroId !== null && $corrida->passageiro_id === (int) $passageiroId) {
             return 'passageiro';

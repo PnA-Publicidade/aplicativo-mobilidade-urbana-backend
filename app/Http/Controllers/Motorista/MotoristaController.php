@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Motorista;
 
+use App\Http\Controllers\Controller;
 // CODEX: 92 linhas alteradas; adiciona listagem e cadastro seguro dos veículos do motorista autenticado.
 
-use App\Http\Controllers\Controller;
 use App\Models\AvaliacoesCorrida;
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
@@ -18,6 +18,7 @@ use App\Services\ConfiguracaoPlataformaService;
 use App\Services\DocumentosMotoristaService;
 use App\Services\RestricaoTaxaService;
 use App\Services\TaxasMotoristaService;
+use App\Support\PerfilLogado;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -32,7 +33,7 @@ class MotoristaController extends Controller
      */
     public function meusVeiculos(Request $request): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -67,7 +68,7 @@ class MotoristaController extends Controller
     public function selecionarMeuVeiculo(Request $request): JsonResponse
     {
         $dados = $request->validate(['veiculo_id' => 'required|integer|exists:veiculos,id']);
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
         abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
         $service = app(CompartilhamentoVeiculoService::class);
         try {
@@ -88,7 +89,7 @@ class MotoristaController extends Controller
 
     public function removerMeuVeiculo(Request $request, int $veiculo): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
         abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
         $service = app(CompartilhamentoVeiculoService::class);
         try {
@@ -116,7 +117,7 @@ class MotoristaController extends Controller
      */
     public function ganhos(Request $request, CarteiraMotoristaService $carteira): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -153,7 +154,7 @@ class MotoristaController extends Controller
      */
     public function estatisticas(Request $request, TaxasMotoristaService $taxas): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -205,7 +206,7 @@ class MotoristaController extends Controller
      */
     public function taxaFinalizacao(Request $request, TaxasMotoristaService $taxas): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -230,7 +231,7 @@ class MotoristaController extends Controller
      */
     public function taxaAceitacao(Request $request, TaxasMotoristaService $taxas): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -292,7 +293,7 @@ class MotoristaController extends Controller
             'cpf_cnpj_proprietario.regex' => 'Informe um CPF (11 números) ou CNPJ (14 números).',
         ]);
 
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -337,8 +338,7 @@ class MotoristaController extends Controller
         ]);
 
         $busca = trim($dados['search'] ?? '');
-        // arquivar arquiva só o usuário: sem este filtro o motorista viria com user nulo
-        $query = Motorista::with('user')->whereHas('user');
+        $query = Motorista::query();
 
         if ($busca !== '') {
             $termo = '%'.$busca.'%';
@@ -346,12 +346,9 @@ class MotoristaController extends Controller
             $termoCpf = '%'.($cpf !== '' ? $cpf : $busca).'%';
 
             $query->where(function (Builder $consulta) use ($termo, $termoCpf): void {
-                $consulta->where('nome', 'like', $termo)
+                $consulta->where('name', 'like', $termo)
                     ->orWhere('cpf', 'like', $termoCpf)
-                    ->orWhereHas('user', function (Builder $usuario) use ($termo, $termoCpf): void {
-                        $usuario->where('name', 'like', $termo)
-                            ->orWhere('cpf', 'like', $termoCpf);
-                    });
+                    ->orWhere('email', 'like', $termo);
             });
         }
 
@@ -377,7 +374,7 @@ class MotoristaController extends Controller
      */
     public function show(int $motoristaid): Motorista
     {
-        return Motorista::with('user')->findOrFail($motoristaid);
+        return Motorista::findOrFail($motoristaid);
     }
 
     /**
@@ -393,6 +390,7 @@ class MotoristaController extends Controller
             'cnh_expiracao' => 'sometimes|required|date',
             'ear' => 'sometimes|required|boolean',
             'observacao' => 'sometimes|nullable|string|max:5000',
+            ...CadastrarPerfilUsuarioService::regrasPessoais('motoristas', $motorista->id),
         ]);
 
         $motorista->update($dados);
@@ -420,7 +418,7 @@ class MotoristaController extends Controller
         ]);
 
         $motoristaVeiculo = DB::transaction(function () use ($dados): MotoristaVeiculo {
-            $motorista = Motorista::whereHas('user')->lockForUpdate()->findOrFail($dados['motorista_id']);
+            $motorista = Motorista::lockForUpdate()->findOrFail($dados['motorista_id']);
             Veiculo::lockForUpdate()->findOrFail($dados['veiculo_id']);
             $vinculo = app(CompartilhamentoVeiculoService::class)->vincular($motorista, Veiculo::findOrFail($dados['veiculo_id']));
             app(AtualizarSituacaoMotoristaService::class)->executar($motorista);

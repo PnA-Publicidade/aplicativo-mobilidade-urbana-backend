@@ -2,7 +2,6 @@
 
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 
@@ -10,8 +9,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Storage::fake('motorista_documentos_anexos');
-    $this->usuario = User::factory()->create();
-    $motorista = Motorista::create(['user_id' => $this->usuario->id, 'status' => 'pendente']);
+    $this->motorista = $motorista = Motorista::factory()->create();
     Storage::disk('motorista_documentos_anexos')->put('frente.png', 'Conteudo da frente');
     // o verso é um registro próprio, com o nome da frente mais _verso
     Storage::disk('motorista_documentos_anexos')->put('frente_verso.png', 'Conteudo do verso');
@@ -33,8 +31,8 @@ beforeEach(function () {
 
 it('baixa o lado solicitado com nome e conteudo corretos em qualquer status', function ($status, $lado) {
     $this->documento->update(['status' => $status]);
-    $response = $this->actingAs($this->usuario, 'jwt')
-        ->get('/api/motorista-documentos/'.$this->documento->id.'/download?lado='.$lado);
+    $response = $this->withToken(tokenDeGestor())
+        ->get('/api/gestao/motorista-documentos/'.$this->documento->id.'/download?lado='.$lado);
     $response->assertOk()->assertDownload($lado.'.png')->assertHeader('Content-Type', 'image/png');
     expect($response->streamedContent())->toBe($lado === 'frente' ? 'Conteudo da frente' : 'Conteudo do verso');
 })->with(['em_analise', 'aprovado', 'reprovado'])->with(['frente', 'verso']);
@@ -46,22 +44,22 @@ it('baixa PDF sem verso e retorna 404 ao pedir o verso ausente', function () {
         'path' => 'motorista_documentos_anexos/cnh.pdf',
     ]);
     $this->verso->delete();
-    $response = $this->actingAs($this->usuario, 'jwt')
-        ->get('/api/motorista-documentos/'.$this->documento->id.'/download');
+    $response = $this->withToken(tokenDeGestor())
+        ->get('/api/gestao/motorista-documentos/'.$this->documento->id.'/download');
     $response->assertOk()->assertDownload('cnh.pdf')->assertHeader('Content-Type', 'application/pdf');
     expect($response->streamedContent())->toBe('%PDF-1.7');
-    $this->getJson('/api/motorista-documentos/'.$this->documento->id.'/download?lado=verso')->assertNotFound();
+    $this->getJson('/api/gestao/motorista-documentos/'.$this->documento->id.'/download?lado=verso')->assertNotFound();
 });
 
 it('exige autenticacao para baixar anexos', function () {
-    $this->getJson('/api/motorista-documentos/'.$this->documento->id.'/download')->assertUnauthorized();
+    $this->getJson('/api/gestao/motorista-documentos/'.$this->documento->id.'/download')->assertUnauthorized();
 });
 
 it('valida lado e recusa arquivos ausentes ou fora do diretorio de anexos', function () {
-    $this->actingAs($this->usuario, 'jwt');
-    $url = '/api/motorista-documentos/'.$this->documento->id.'/download';
+    $this->withToken(tokenDeGestor());
+    $url = '/api/gestao/motorista-documentos/'.$this->documento->id.'/download';
     $this->getJson($url.'?lado=outro')->assertUnprocessable()->assertJsonValidationErrors('lado');
-    $this->getJson('/api/motorista-documentos/999999/download')->assertNotFound();
+    $this->getJson('/api/gestao/motorista-documentos/999999/download')->assertNotFound();
     Storage::disk('motorista_documentos_anexos')->delete('frente.png');
     $this->getJson($url)->assertNotFound();
     $this->documento->update(['path' => 'motorista_documentos_anexos/../outro.pdf']);

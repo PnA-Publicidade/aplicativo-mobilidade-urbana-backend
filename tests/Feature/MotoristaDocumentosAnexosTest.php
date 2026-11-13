@@ -2,7 +2,6 @@
 
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -15,9 +14,9 @@ beforeEach(function () {
     Storage::fake('motorista_documentos_anexos');
     Storage::fake('local');
     config(['app.url' => 'http://localhost']);
-    $this->operador = User::factory()->create();
-    $this->motorista = Motorista::create(['user_id' => User::factory()->create()->id, 'status' => 'pendente']);
-    $this->actingAs($this->operador, 'jwt');
+    // quem opera é a gestão
+    $this->motorista = Motorista::factory()->create();
+    $this->withToken(tokenDeGestor());
 });
 
 it('usa a tabela de anexos com url e sem a observacao da analise', function () {
@@ -48,7 +47,7 @@ it('preserva os registros e paths existentes na renomeacao e permite rollback da
 
 it('salva url completa com o host da requisicao local e o path relativo ao public', function () {
     $this->app['env'] = 'local';
-    $response = $this->post('http://gestao.local:9000/api/motorista-documentos', [
+    $response = $this->post('http://gestao.local:9000/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])->assertCreated();
@@ -62,7 +61,7 @@ it('salva url completa com o host da requisicao local e o path relativo ao publi
 
 it('usa a URL configurada do backend fora do ambiente local', function () {
     config(['app.url' => 'https://backend.exemplo.test']);
-    $response = $this->post('/api/motorista-documentos', [
+    $response = $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'crlv',
         'arquivo' => UploadedFile::fake()->create('crlv.pdf', 100, 'application/pdf'),
         ...informacoesDoDocumento('crlv'),
@@ -71,19 +70,19 @@ it('usa a URL configurada do backend fora do ambiente local', function () {
 });
 
 it('remove apenas o arquivo do anexo escolhido no novo armazenamento', function () {
-    $response = $this->post('/api/motorista-documentos', [
+    $response = $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id, 'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])->assertCreated();
     Storage::disk('motorista_documentos_anexos')->put('outro.pdf', 'outro arquivo');
-    $this->deleteJson('/api/motorista-documentos/'.$response->json('data.id'))->assertOk();
+    $this->deleteJson('/api/gestao/motorista-documentos/'.$response->json('data.id'))->assertOk();
     Storage::disk('motorista_documentos_anexos')->assertMissing(basename($response->json('data.path')));
     Storage::disk('motorista_documentos_anexos')->assertExists('outro.pdf');
     $this->assertDatabaseMissing('motorista_documentos_anexos', ['id' => $response->json('data.id')]);
 });
 
 it('permite ao motorista excluir seu anexo pelo cadastro', function () {
-    $this->actingAs(User::findOrFail($this->motorista->user_id), 'jwt');
+    $this->actingAs($this->motorista->fresh(), 'motoristas');
     $this->post('/api/motorista/cadastro/documentos', [
         'tipo_documento' => 'cnh', 'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
     ], ['Accept' => 'application/json'])->assertCreated();
@@ -100,7 +99,7 @@ it('ainda exclui arquivos anteriores que estavam no storage privado', function (
         'name' => 'legado.pdf', 'type' => 'pdf', 'mime_type' => 'application/pdf',
         'size' => 10, 'path' => 'motorista_documentos/legado.pdf', 'status' => 'em_analise',
     ]);
-    $this->deleteJson('/api/motorista-documentos/'.$documento->id)->assertOk();
+    $this->deleteJson('/api/gestao/motorista-documentos/'.$documento->id)->assertOk();
     Storage::disk('local')->assertMissing('motorista_documentos/legado.pdf');
 });
 
@@ -110,7 +109,7 @@ it('reprova o anexo sem exigir ou gravar observacao da analise', function () {
         'name' => 'cnh.pdf', 'type' => 'pdf', 'mime_type' => 'application/pdf',
         'size' => 10, 'path' => 'motorista_documentos_anexos/cnh.pdf', 'status' => 'em_analise',
     ]);
-    $this->putJson('/api/mudar-status-documento/'.$documento->id, ['status' => 'reprovado', 'motivo_reprovacao' => 'ilegivel'])->assertOk();
+    $this->putJson('/api/gestao/mudar-status-documento/'.$documento->id, ['status' => 'reprovado', 'motivo_reprovacao' => 'ilegivel'])->assertOk();
     expect($documento->fresh()->status)->toBe('reprovado')
         ->and($documento->fresh()->getAttributes())->not->toHaveKey('observacao')
         ->and($this->motorista->fresh()->status)->toBe('pendente');

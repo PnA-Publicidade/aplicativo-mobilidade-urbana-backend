@@ -1,7 +1,8 @@
 <?php
 
 use App\Models\Gestor;
-use App\Models\User;
+use App\Models\Motorista;
+use App\Models\Passageiro;
 
 return [
 
@@ -18,7 +19,7 @@ return [
 
     'defaults' => [
         'guard' => env('AUTH_GUARD', 'web'),
-        'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
+        'passwords' => env('AUTH_PASSWORD_BROKER', 'gestores'),
     ],
 
     /*
@@ -39,17 +40,23 @@ return [
     */
 
     'guards' => [
+        // não há login por sessão: as contas são gestores, motoristas e passageiros (JWT)
         'web' => [
             'driver' => 'session',
-            'provider' => 'users',
-        ],
-        'jwt' => [
-            'driver' => 'jwt',
-            'provider' => 'users',
+            'provider' => 'gestores',
         ],
         'gestores' => [
             'driver' => 'jwt',
             'provider' => 'gestores',
+        ],
+        // login próprio de cada app: o token de um não vale no outro (lock_subject)
+        'motoristas' => [
+            'driver' => 'jwt',
+            'provider' => 'motoristas',
+        ],
+        'passageiros' => [
+            'driver' => 'jwt',
+            'provider' => 'passageiros',
         ],
     ],
 
@@ -75,15 +82,14 @@ return [
             'driver' => 'eloquent',
             'model' => Gestor::class,
         ],
-        'users' => [
+        'motoristas' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', User::class),
+            'model' => Motorista::class,
         ],
-
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        'passageiros' => [
+            'driver' => 'eloquent',
+            'model' => Passageiro::class,
+        ],
     ],
 
     /*
@@ -106,8 +112,8 @@ return [
     */
 
     'passwords' => [
-        'users' => [
-            'provider' => 'users',
+        'gestores' => [
+            'provider' => 'gestores',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
             'expire' => 60,
             'throttle' => 60,

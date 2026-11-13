@@ -7,7 +7,6 @@ use App\Models\Motorista;
 use App\Models\Notificacao;
 use App\Models\Passageiro;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Services\ConfiguracaoPlataformaService;
 use App\Services\RestricaoNotaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,36 +15,14 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function rnUsuario(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' '.Str::upper(Str::random(4)),
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function rnMotorista(): Motorista
 {
-    return Motorista::create([
-        'user_id' => rnUsuario('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 function rnPassageiro(): Passageiro
 {
-    return Passageiro::create(['user_id' => rnUsuario('passageiro')->id, 'media_avaliacao' => null]);
+    return Passageiro::factory()->create();
 }
 
 /** Corrida finalizada entre os dois, ainda sem avaliação. */
@@ -69,7 +46,7 @@ function rnNotaDoMotorista(Motorista $motorista, int $nota, int $vezes = 1): voi
         $passageiro = rnPassageiro();
         AvaliacoesCorrida::create([
             'corrida_id' => rnCorrida($motorista, $passageiro)->id,
-            'usuario_id' => $passageiro->user_id,
+            'avaliador_id' => $passageiro->id,
             'tipo_usuario' => 'passageiro',
             'nota' => $nota,
         ]);
@@ -83,7 +60,7 @@ function rnNotaDoPassageiro(Passageiro $passageiro, int $nota, int $vezes = 1): 
         $motorista = rnMotorista();
         AvaliacoesCorrida::create([
             'corrida_id' => rnCorrida($motorista, $passageiro)->id,
-            'usuario_id' => $motorista->user_id,
+            'avaliador_id' => $motorista->id,
             'tipo_usuario' => 'motorista',
             'nota' => $nota,
         ]);
@@ -132,7 +109,7 @@ it('Atenção só avisa: alerta sem prazo e sem penalidade', function () {
     expect($alerta->faixa)->toBe('atencao')
         ->and($alerta->prazo_ate)->toBeNull()
         ->and((float) $alerta->nota_no_inicio)->toBe(4.7);
-    expect(Notificacao::where('user_id', $motorista->user_id)->count())->toBe(1);
+    expect(Notificacao::where('perfil', 'motorista')->where('perfil_id', $motorista->id)->count())->toBe(1);
 
     // sem prazo, o processamento nunca transforma Atenção em penalidade
     expect($servico->processarPrazos(now()->addYear()))->toBe(0)
@@ -220,7 +197,7 @@ it('modo sombra registra a restrição como simulada, sem bloquear nem avisar', 
 
     expect((bool) DB::table('restricoes_por_nota')->value('simulada'))->toBeTrue();
     $servico->exigirMotoristaSemRestricao($motorista);
-    expect(Notificacao::where('user_id', $motorista->user_id)->count())->toBe(0)
+    expect(Notificacao::where('perfil', 'motorista')->where('perfil_id', $motorista->id)->count())->toBe(0)
         ->and($servico->situacao('motorista', $motorista->id)['estado'])->toBe('em_dia');
 });
 
@@ -237,7 +214,7 @@ it('passageiro: Alto risco leva à suspensão e a reincidência ao bloqueio perm
 
     $servico = app(RestricaoNotaService::class);
     $servico->avaliar('passageiro', $passageiro->id);
-    expect(Notificacao::where('user_id', $passageiro->user_id)->where('perfil', 'passageiro')->count())->toBe(1);
+    expect(Notificacao::where('perfil_id', $passageiro->id)->where('perfil', 'passageiro')->count())->toBe(1);
 
     // 1ª e 2ª vezes: suspensão de 7 dias; passado o período a nota segue baixa e o ciclo recomeça
     $dia = 8;
@@ -285,7 +262,7 @@ it('avaliar uma corrida pela API reavalia a nota de quem foi avaliado', function
     $motorista = rnMotorista();
     $corrida = rnCorrida($motorista, $passageiro);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/avaliacoes-corridas', ['corrida_id' => $corrida->id, 'nota' => 4])
         ->assertCreated();
 
@@ -301,7 +278,7 @@ it('a situação por nota aparece no perfil do motorista e no usuário logado do
     rnNotaDoMotorista($motorista, 4, 10);
     app(RestricaoNotaService::class)->avaliar('motorista', $motorista->id);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()
         ->assertJsonPath('situacao_nota.estado', 'alerta')
         ->assertJsonPath('situacao_nota.faixa', 'alto_risco');
@@ -309,7 +286,7 @@ it('a situação por nota aparece no perfil do motorista e no usuário logado do
     $passageiro = rnPassageiro();
     app(RestricaoNotaService::class)->aplicarManual('passageiro', $passageiro->id, null, 'Reincidência grave', null);
 
-    $this->actingAs($passageiro->user, 'jwt')->getJson('/api/usuario-logado?perfil=passageiro')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/usuario-logado')
         ->assertOk()
         ->assertJsonPath('situacao_nota.estado', 'restrito')
         ->assertJsonPath('situacao_nota.bloqueio_permanente', true);

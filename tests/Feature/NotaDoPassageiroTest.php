@@ -2,33 +2,17 @@
 
 use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
+use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function notaUsuario(string $prefixo): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => "Teste $prefixo",
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$prefixo-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 it('o usuário logado traz a nota que os motoristas deram ao passageiro', function () {
-    $usuario = notaUsuario('passageiro');
-    $passageiro = Passageiro::create(['user_id' => $usuario->id]);
+    $passageiro = Passageiro::factory()->create();
 
-    $this->actingAs($usuario, 'jwt')->getJson('/api/usuario-logado')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/usuario-logado')
         ->assertOk()
         // toda conta nova começa com a nota base 5,0 e como novo usuário
         ->assertJsonPath('nota_passageiro', 5)
@@ -43,14 +27,14 @@ it('o usuário logado traz a nota que os motoristas deram ao passageiro', functi
         ]);
         AvaliacoesCorrida::create([
             'corrida_id' => $corrida->id,
-            'usuario_id' => notaUsuario('motorista')->id,
+            'avaliador_id' => Motorista::factory()->create()->id,
             'tipo_usuario' => 'motorista',
             'nota' => $nota,
         ]);
         // a nota que o passageiro deu ao motorista não entra
         AvaliacoesCorrida::create([
             'corrida_id' => $corrida->id,
-            'usuario_id' => $usuario->id,
+            'avaliador_id' => $passageiro->id,
             'tipo_usuario' => 'passageiro',
             'nota' => 1,
         ]);
@@ -64,7 +48,7 @@ it('o usuário logado traz a nota que os motoristas deram ao passageiro', functi
     ]);
 
     // a primeira avaliação real troca a nota base pela média; com poucas corridas ainda é novo
-    $this->actingAs($usuario, 'jwt')->getJson('/api/usuario-logado')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/usuario-logado')
         ->assertOk()
         ->assertJsonPath('nota_passageiro', 4.5)
         ->assertJsonPath('corridas_passageiro', 2)
@@ -73,7 +57,7 @@ it('o usuário logado traz a nota que os motoristas deram ao passageiro', functi
 
     config(['avaliacoes.corridas_para_deixar_de_ser_novo' => 2]);
 
-    $this->actingAs($usuario, 'jwt')->getJson('/api/usuario-logado')
+    $this->actingAs($passageiro, 'passageiros')->getJson('/api/usuario-logado')
         ->assertOk()
         ->assertJsonPath('nota_passageiro', 4.5)
         ->assertJsonPath('passageiro_novo', false);

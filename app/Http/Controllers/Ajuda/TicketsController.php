@@ -12,9 +12,11 @@ use App\Models\ChamadoAjuda;
 use App\Models\ChamadoMensagem;
 use App\Models\ChamadoMensagemAnexo;
 use App\Models\Gestor;
-use App\Models\User;
+use App\Models\Motorista;
+use App\Models\Passageiro;
 use App\Services\TicketsAjudaService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -23,7 +25,7 @@ class TicketsController extends Controller
 {
     public function __construct(private TicketsAjudaService $service) {}
 
-    private function acesso(Request $request, ?ChamadoAjuda $ticket = null): User|Gestor
+    private function acesso(Request $request, ?ChamadoAjuda $ticket = null): Motorista|Passageiro|Gestor
     {
         $actor = $request->user();
         if ($actor instanceof Gestor) {
@@ -32,9 +34,9 @@ class TicketsController extends Controller
                 abort_unless($actor->podeAcessarTicket($ticket), 404);
             }
         } else {
-            abort_unless($actor instanceof User, 403);
+            abort_unless($actor instanceof Motorista || $actor instanceof Passageiro, 403);
             if ($ticket) {
-                abort_unless($ticket->user_id === $actor->id, 404);
+                abort_unless($this->service->ehDoSolicitante($ticket, $actor), 404);
             }
         }
 
@@ -52,8 +54,8 @@ class TicketsController extends Controller
             'fila' => 'nullable|in:todos,entrada,meus',
         ]);
         $query = ChamadoAjuda::with(['solicitante', 'responsavel', 'corrida']);
-        if ($actor instanceof User) {
-            $query->where('user_id', $actor->id);
+        if (! $actor instanceof Gestor) {
+            $query->where('solicitante_tipo', $actor->perfilDoApp())->where('solicitante_id', $actor->id);
         }
         if ($actor instanceof Gestor) {
             $query->comNaoLidas($actor->id);
@@ -134,27 +136,31 @@ class TicketsController extends Controller
     {
         abort_unless($this->acesso($request) instanceof Gestor, 403);
         $dados = $request->validate(['search' => 'nullable|string|max:100', 'page' => 'nullable|integer|min:1']);
-        $query = User::with(['passageiro', 'motorista'])->where(fn ($q) => $q->whereHas('passageiro')->orWhereHas('motorista'));
-        if ($search = trim($dados['search'] ?? '')) {
-            $query->where(fn ($q) => $q->where('name', 'like', '%'.$search.'%')->orWhere('cpf', 'like', '%'.$search.'%'));
-        }
-        $page = $query->orderBy('name')->paginate(20);
-        $page->setCollection($page->getCollection()->map(fn (User $user) => $user->only(['id', 'name', 'cpf']) + ['perfis' => array_values(array_filter([$user->passageiro ? 'passageiro' : null, $user->motorista ? 'motorista' : null]))]));
+        $search = trim($dados['search'] ?? '');
+        $buscar = fn (string $modelo) => $modelo::query()
+            ->when($search !== '', fn ($q) => $q->where(fn ($f) => $f->where('name', 'like', '%'.$search.'%')->orWhere('cpf', 'like', '%'.$search.'%')))
+            ->get(['id', 'name', 'cpf'])
+            ->map(fn (Motorista|Passageiro $perfil) => $perfil->only(['id', 'name', 'cpf']) + ['tipo' => $perfil->perfilDoApp()]);
+        $perfis = $buscar(Passageiro::class)->concat($buscar(Motorista::class))
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)->values();
+        $pagina = (int) ($dados['page'] ?? 1);
 
-        return response()->json($page);
+        return response()->json(new LengthAwarePaginator($perfis->forPage($pagina, 20)->values(), $perfis->count(), 20, $pagina));
     }
 
     public function store(Request $request)
     {
         $actor = $this->acesso($request);
         $dados = $request->validate([
-            'user_id' => $actor instanceof Gestor ? 'required|integer' : 'prohibited',
+            'solicitante_id' => $actor instanceof Gestor ? 'required|integer' : 'prohibited',
             'solicitante_tipo' => $actor instanceof Gestor ? 'required|in:passageiro,motorista' : 'nullable|in:passageiro,motorista',
             'motivo' => ['required', Rule::in(ChamadosAjudaController::MOTIVOS)],
             'descricao' => 'required|string|min:10|max:1000', 'corrida_id' => 'nullable|integer|min:1',
         ]);
-        $user = $actor instanceof Gestor ? User::findOrFail($dados['user_id']) : $actor;
-        $ticket = $this->service->criar($user, $dados, $actor instanceof Gestor ? $actor : null);
+        $solicitante = $actor instanceof Gestor
+            ? ($dados['solicitante_tipo'] === 'motorista' ? Motorista::findOrFail((int) $dados['solicitante_id']) : Passageiro::findOrFail((int) $dados['solicitante_id']))
+            : $actor;
+        $ticket = $this->service->criar($solicitante, $dados, $actor instanceof Gestor ? $actor : null);
 
         return (new TicketResource($ticket->load(['solicitante', 'responsavel', 'corrida'])))->response()->setStatusCode(201);
     }
@@ -197,7 +203,7 @@ class TicketsController extends Controller
             'conteudo' => 'nullable|string|max:4000', 'client_message_id' => 'required|uuid',
             'imagens' => 'sometimes|array|max:3',
             'imagens.*' => 'required|file|image|mimes:jpg,jpeg,png,webp|max:5120|dimensions:max_width=12000,max_height=12000',
-            'autor_tipo' => 'prohibited', 'user_id' => 'prohibited', 'gestor_id' => 'prohibited',
+            'autor_tipo' => 'prohibited', 'gestor_id' => 'prohibited',
         ]);
         $texto = trim($dados['conteudo'] ?? '');
         $imagens = array_values($request->file('imagens', []));

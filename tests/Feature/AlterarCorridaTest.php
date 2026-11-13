@@ -9,7 +9,6 @@ use App\Models\Motorista;
 use App\Models\Passageiro;
 use App\Models\ProdutosCorrida;
 use App\Models\Tarifa;
-use App\Models\User;
 use App\Services\EstimarRotaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -32,21 +31,6 @@ afterEach(function () {
     Carbon::setTestNow();
 });
 
-function criarUsuarioAlteracao(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Alteração',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 /**
  * @return array{Corrida, Passageiro, Motorista}
  */
@@ -55,18 +39,8 @@ function criarCorridaAlteravel(
     string $pagamento = 'dinheiro',
     string $estrategia = 'normal',
 ): array {
-    $motorista = Motorista::create([
-        'user_id' => criarUsuarioAlteracao('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
-    $passageiro = Passageiro::create([
-        'user_id' => criarUsuarioAlteracao('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['name' => 'Motorista Alteração', 'status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create(['name' => 'Passageiro Alteração']);
     $produto = ProdutosCorrida::firstOrCreate(
         ['codigo' => $estrategia === 'negociada' ? 'negocia' : 'pop'],
         [
@@ -140,7 +114,7 @@ it('troca o pagamento uma única vez e avisa a corrida', function () {
     Event::fake([CorridaAtualizada::class]);
     [$corrida, $passageiro] = criarCorridaAlteravel('aceita', 'dinheiro');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/pagamento", ['metodo_pagamento' => 'pix'])
         ->assertOk()
         ->assertJsonPath('metodo_pagamento', 'pix')
@@ -149,7 +123,7 @@ it('troca o pagamento uma única vez e avisa a corrida', function () {
 
     Event::assertDispatched(CorridaAtualizada::class);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/pagamento", ['metodo_pagamento' => 'cartao'])
         ->assertStatus(409)
         ->assertJsonPath('message', 'O pagamento só pode ser trocado uma vez por corrida.');
@@ -158,13 +132,13 @@ it('troca o pagamento uma única vez e avisa a corrida', function () {
 it('durante a viagem só troca entre pix e cartão', function () {
     [$emDinheiro, $passageiro] = criarCorridaAlteravel('em_andamento', 'dinheiro');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$emDinheiro->id}/pagamento", ['metodo_pagamento' => 'pix'])
         ->assertStatus(409);
 
     [$emPix, $outroPassageiro] = criarCorridaAlteravel('em_andamento', 'pix');
 
-    $this->actingAs($outroPassageiro->user, 'jwt')
+    $this->actingAs($outroPassageiro, 'passageiros')
         ->postJson("/api/corridas/{$emPix->id}/pagamento", ['metodo_pagamento' => 'cartao'])
         ->assertOk()
         ->assertJsonPath('metodo_pagamento', 'cartao');
@@ -174,11 +148,11 @@ it('não troca o pagamento de corrida encerrada nem de outro passageiro', functi
     [$finalizada, $passageiro] = criarCorridaAlteravel('finalizada', 'dinheiro');
     [$alheia] = criarCorridaAlteravel('aceita', 'dinheiro');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$finalizada->id}/pagamento", ['metodo_pagamento' => 'pix'])
         ->assertStatus(409);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$alheia->id}/pagamento", ['metodo_pagamento' => 'pix'])
         ->assertNotFound();
 });
@@ -187,7 +161,7 @@ it('não permite alterar o trajeto depois que a corrida termina', function () us
     foreach (['finalizada', 'cancelada'] as $status) {
         [$corrida, $passageiro] = criarCorridaAlteravel($status);
 
-        $this->actingAs($passageiro->user, 'jwt')
+        $this->actingAs($passageiro, 'passageiros')
             ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
             ->assertStatus(409)
             ->assertJsonPath('message', 'A corrida já terminou e o trajeto não pode mais ser alterado.');
@@ -199,7 +173,7 @@ it('não permite alterar o trajeto depois que a corrida termina', function () us
 it('antes do aceite altera o destino imediatamente e recalcula a oferta', function () use ($novoDestino) {
     [$corrida, $passageiro] = criarCorridaAlteravel('em_busca');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'aplicada');
@@ -236,7 +210,7 @@ it('antes do aceite o novo trajeto reprecifica cada categoria aceita no pedido',
         ]);
     }
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->assertOk();
 
@@ -258,7 +232,7 @@ it('edita o itinerário completo com paradas antes de encontrar motorista', func
         ['endereco' => 'Destino editado, 200', 'latitude' => -8.71, 'longitude' => -63.87],
     ];
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [
             ...$itinerario[2],
             'itinerario' => $itinerario,
@@ -297,17 +271,17 @@ it('na viagem o novo trajeto mantém a parada já feita como concluída', functi
         ['endereco' => 'Destino depois, 9', 'latitude' => -8.71, 'longitude' => -63.87],
     ];
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [...$itinerario[3], 'itinerario' => $itinerario])
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'pendente')
         ->json('alteracao_destino');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertJsonPath('alteracao_destino.paradas', ['Parada feita', 'Destino antigo', 'Destino depois, 9']);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertOk();
 
@@ -337,7 +311,7 @@ it('não deixa tirar nem reordenar a parada já feita para baratear a viagem', f
     $destino = ['endereco' => 'Destino antigo', 'latitude' => -8.74, 'longitude' => -63.90];
 
     foreach ([[$embarque, $destino], [$embarque, $outra, $feita, $destino]] as $itinerario) {
-        $this->actingAs($passageiro->user, 'jwt')
+        $this->actingAs($passageiro, 'passageiros')
             ->postJson("/api/corridas/{$corrida->id}/destino", [...end($itinerario), 'itinerario' => $itinerario])
             ->assertStatus(422)
             ->assertJsonPath('message', 'As paradas já feitas continuam no trajeto, na mesma ordem.');
@@ -360,7 +334,7 @@ it('não passa do limite de paradas pedindo uma de cada vez', function () use ($
         ]);
     }
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [...$novoDestino, 'tipo' => 'parada'])
         ->assertStatus(422)
         ->assertJsonPath('message', 'A corrida pode ter no máximo 2 paradas.');
@@ -377,7 +351,7 @@ it('não aceita trajeto editado com mais de 2 paradas', function () {
         ['endereco' => 'Destino, 1', 'latitude' => -8.72, 'longitude' => -63.90],
     ];
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [...$itinerario[4], 'itinerario' => $itinerario])
         ->assertUnprocessable()
         ->assertJsonPath('message', 'A corrida pode ter no máximo 2 paradas.');
@@ -412,7 +386,7 @@ it('a parada já feita conta no limite de paradas da corrida', function () {
         ['endereco' => 'Destino antigo', 'latitude' => -8.74, 'longitude' => -63.90],
     ];
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [...$itinerario[4], 'itinerario' => $itinerario])
         ->assertUnprocessable()
         ->assertJsonPath('message', 'A corrida pode ter no máximo 2 paradas.');
@@ -422,12 +396,12 @@ it('limita quantas vezes o trajeto pode ser alterado na mesma corrida', function
     [$corrida, $passageiro] = criarCorridaAlteravel('aceita');
 
     foreach (range(1, 6) as $vez) {
-        $this->actingAs($passageiro->user, 'jwt')
+        $this->actingAs($passageiro, 'passageiros')
             ->postJson("/api/corridas/{$corrida->id}/destino", [...$novoDestino, 'latitude' => -8.70 + $vez / 1000])
             ->assertOk();
     }
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->assertStatus(429)
         ->assertJsonPath('message', 'O trajeto desta corrida já foi alterado muitas vezes.');
@@ -451,12 +425,12 @@ it('parada feita com coordenada na borda do arredondamento continua concluída',
         ['endereco' => 'Destino depois, 9', 'latitude' => -8.71, 'longitude' => -63.87],
     ];
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [...$itinerario[2], 'itinerario' => $itinerario])
         ->assertOk()
         ->json('alteracao_destino');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertOk();
 
@@ -479,14 +453,14 @@ it('parada feita depois do pedido e tirada do trajeto impede o aceite', function
         ['endereco' => 'Destino antigo', 'latitude' => -8.74, 'longitude' => -63.90],
     ];
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [...$itinerario[1], 'itinerario' => $itinerario])
         ->assertOk()
         ->json('alteracao_destino');
 
     $parada->update(['concluida_em' => now()]);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertStatus(409)
         ->assertJsonPath('message', 'O trajeto mudou desde o pedido. O passageiro precisa editar de novo.');
@@ -499,7 +473,7 @@ it('depois do aceite o novo destino espera a aprovação do motorista', function
     Event::fake([CorridaAtualizada::class]);
     [$corrida, $passageiro, $motorista] = criarCorridaAlteravel('aceita');
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'pendente')
@@ -509,13 +483,13 @@ it('depois do aceite o novo destino espera a aprovação do motorista', function
 
     expect($corrida->corrida_destinos()->where('tipo', 'destino')->value('endereco'))->toBe('Destino antigo');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertOk()
         ->assertJsonPath('alteracao_destino.id', $pedido['id'])
         ->assertJsonPath('alteracao_destino.valor_motorista', 23.70);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'aceita');
@@ -528,11 +502,11 @@ it('depois do aceite o novo destino espera a aprovação do motorista', function
 it('motorista pode recusar o novo destino', function () use ($novoDestino) {
     [$corrida, $passageiro, $motorista] = criarCorridaAlteravel('em_andamento');
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->json('alteracao_destino');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/recusar")
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'recusada');
@@ -540,7 +514,7 @@ it('motorista pode recusar o novo destino', function () use ($novoDestino) {
     expect($corrida->corrida_destinos()->where('tipo', 'destino')->value('endereco'))->toBe('Destino antigo')
         ->and((float) $corrida->corrida_financeiro()->value('valor_pago_passageiro'))->toBe(13.40);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/minha-corrida-atual?perfil=passageiro')
         ->assertJsonPath('alteracao_destino.status', 'recusada');
 });
@@ -549,13 +523,13 @@ it('pedido sem resposta expira em dois minutos', function () use ($novoDestino) 
     Carbon::setTestNow('2026-09-30 12:00:00');
     [$corrida, $passageiro, $motorista] = criarCorridaAlteravel('em_andamento');
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->json('alteracao_destino');
 
     Carbon::setTestNow('2026-09-30 12:02:01');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertStatus(409);
 
@@ -566,12 +540,12 @@ it('pedido sem resposta expira em dois minutos', function () use ($novoDestino) 
 it('em categoria negociada o trajeto não muda durante a viagem', function () use ($novoDestino) {
     [$corrida, $passageiro] = criarCorridaAlteravel('em_andamento', 'dinheiro', 'negociada');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/minha-corrida-atual?perfil=passageiro')
         ->assertJsonPath('corrida.destino_alteravel', false)
         ->assertJsonPath('corrida.pagamento_alteravel', true);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->assertStatus(409);
 
@@ -581,16 +555,16 @@ it('em categoria negociada o trajeto não muda durante a viagem', function () us
 it('passageiro desiste do pedido de novo destino', function () use ($novoDestino) {
     [$corrida, $passageiro, $motorista] = criarCorridaAlteravel('em_andamento');
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino)
         ->json('alteracao_destino');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->deleteJson("/api/corridas/{$corrida->id}/destino")
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'cancelada');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertStatus(409);
 });
@@ -598,7 +572,7 @@ it('passageiro desiste do pedido de novo destino', function () use ($novoDestino
 it('adiciona uma parada antes do destino somente depois do aceite do motorista', function () use ($novoDestino) {
     [$corrida, $passageiro, $motorista] = criarCorridaAlteravel('em_andamento');
 
-    $pedido = $this->actingAs($passageiro->user, 'jwt')
+    $pedido = $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", $novoDestino + ['tipo' => 'parada'])
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'pendente')
@@ -607,7 +581,7 @@ it('adiciona uma parada antes do destino somente depois do aceite do motorista',
 
     expect($corrida->corrida_destinos()->where('tipo', 'parada')->count())->toBe(0);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$corrida->id}/destino/{$pedido['id']}/aceitar")
         ->assertOk()
         ->assertJsonPath('alteracao_destino.status', 'aceita')

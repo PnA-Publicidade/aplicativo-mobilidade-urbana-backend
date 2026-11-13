@@ -31,13 +31,12 @@ class TaxasMotoristasController extends Controller
         ]);
 
         $minima = $this->configuracoes->taxaFinalizacaoMinima();
-        $consulta = Motorista::with('user')->orderBy('nome')->orderBy('id');
+        $consulta = Motorista::query()->orderBy('name')->orderBy('id');
 
         if ($busca = trim($dados['search'] ?? '')) {
             $cpf = preg_replace('/\D/', '', $busca);
-            $consulta->where(fn ($q) => $q->where('nome', 'like', '%'.$busca.'%')
-                ->orWhere('cpf', 'like', '%'.($cpf !== '' ? $cpf : $busca).'%')
-                ->orWhereHas('user', fn ($u) => $u->where('name', 'like', '%'.$busca.'%')));
+            $consulta->where(fn ($q) => $q->where('name', 'like', '%'.$busca.'%')
+                ->orWhere('cpf', 'like', '%'.($cpf !== '' ? $cpf : $busca).'%'));
         }
 
         if ($request->boolean('abaixo_minimo')) {
@@ -115,7 +114,7 @@ class TaxasMotoristasController extends Controller
 
         return [
             'id' => $motorista->id,
-            'nome' => $motorista->nome ?? $motorista->user?->name,
+            'nome' => $motorista->nome,
             'foto' => $motorista->foto,
             ...$taxas,
             'taxa_finalizacao_minima' => $minima,

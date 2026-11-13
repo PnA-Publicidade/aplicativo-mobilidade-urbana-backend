@@ -6,7 +6,6 @@ use App\Models\Motorista;
 use App\Models\Notificacao;
 use App\Models\Passageiro;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Services\ConfiguracaoPlataformaService;
 use App\Services\DespachoCorridaService;
 use App\Services\RestricaoTaxaService;
@@ -18,38 +17,16 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function rtUsuario(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' '.Str::upper(Str::random(4)),
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function rtMotorista(): Motorista
 {
-    return Motorista::create([
-        'user_id' => rtUsuario('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 /** Grava eventos de finalização direto no livro, sem acionar a avaliação. */
 function rtEventos(Motorista $motorista, int $positivos, int $negativos): void
 {
     static $passageiro = null;
-    $passageiro = Passageiro::find($passageiro?->id) ?? Passageiro::create(['user_id' => rtUsuario('passageiro')->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::find($passageiro?->id) ?? Passageiro::factory()->create();
     $taxas = app(TaxasMotoristaService::class);
 
     foreach (range(1, $positivos + $negativos) as $i) {
@@ -158,7 +135,7 @@ it('abre o alerta sozinho quando o motorista cancela e a taxa cruza a mínima', 
 
     $corrida = fn () => Corrida::create([
         'codigo_corrida' => 'RT-'.Str::upper(Str::random(8)),
-        'passageiro_id' => Passageiro::create(['user_id' => rtUsuario('passageiro')->id, 'media_avaliacao' => null])->id,
+        'passageiro_id' => Passageiro::factory()->create()->id,
         'status_corrida' => 'cancelada',
         'tempo_solicitacao' => now(),
         'metodo_pagamento' => 'dinheiro',
@@ -191,7 +168,7 @@ it('em modo sombra a restrição é só registrada: não bloqueia nem avisa', fu
         ->and($restricao->origem)->toBe('automatica')
         ->and(rtAlerta($motorista)->status)->toBe('convertida')
         ->and($servico->restricaoAtiva($motorista->id))->toBeNull()
-        ->and(Notificacao::where('user_id', $motorista->user_id)->count())->toBe(0);
+        ->and(Notificacao::where('perfil', 'motorista')->where('perfil_id', $motorista->id)->count())->toBe(0);
 
     $servico->exigirSemRestricao($motorista); // não lança
 });
@@ -205,7 +182,7 @@ it('com as restrições ligadas bloqueia o motorista, derruba o online e avisa',
 
     rtEventos($motorista, 4, 6);
     $servico->avaliar($motorista->id);
-    expect(Notificacao::where('user_id', $motorista->user_id)->count())->toBe(1);
+    expect(Notificacao::where('perfil', 'motorista')->where('perfil_id', $motorista->id)->count())->toBe(1);
 
     $this->travelTo(Carbon::parse('2026-11-15 00:10:00'));
     $servico->processarPrazos();
@@ -213,7 +190,7 @@ it('com as restrições ligadas bloqueia o motorista, derruba o online e avisa',
     expect(DB::table('motorista_restricoes')->value('simulada'))->toBe(0)
         ->and($servico->restricaoAtiva($motorista->id))->not->toBeNull()
         ->and(StatusBusca::where('motorista_id', $motorista->id)->value('disponivel'))->toBeFalse()
-        ->and(Notificacao::where('user_id', $motorista->user_id)->count())->toBe(2)
+        ->and(Notificacao::where('perfil', 'motorista')->where('perfil_id', $motorista->id)->count())->toBe(2)
         ->and(fn () => $servico->exigirSemRestricao($motorista))->toThrow(RuntimeException::class, 'restrição de corridas');
 
     // ficar online (e o retorno automático depois de uma corrida) passa por aqui
@@ -303,17 +280,17 @@ it('mostra a situação para o app só com as restrições ligadas', function ()
     rtEventos($motorista, 4, 6);
     app(RestricaoTaxaService::class)->avaliar($motorista->id);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/estatisticas')
         ->assertOk()->assertJsonPath('situacao_taxa.estado', 'em_dia');
 
     rtLigar();
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('situacao_taxa.estado', 'alerta')
         ->assertJsonPath('situacao_taxa.faltam_corridas', 10);
 
     app(RestricaoTaxaService::class)->aplicarManual($motorista->id, 3, 'Teste de restrição', null);
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/estatisticas')
         ->assertOk()->assertJsonPath('situacao_taxa.estado', 'restrito');
 });
 

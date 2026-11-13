@@ -18,7 +18,6 @@ use App\Http\Controllers\Gestao\VeiculoUsuariosController;
 use App\Http\Controllers\Gestor\GestorController;
 use App\Http\Controllers\Motorista\MotoristaController;
 use App\Http\Controllers\Motorista\MotoristaDocumentoController;
-use App\Http\Controllers\Usuario\UsuarioController;
 use App\Http\Controllers\Veiculo\MarcaVeiculoController;
 use App\Http\Controllers\Veiculo\ModeloVeiculoController;
 use Illuminate\Http\Request;
@@ -86,13 +85,6 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::get('gestores/arquivados', [GestorController::class, 'arquivados']);
             Route::post('gestores/{gestor}/restaurar', [GestorController::class, 'restaurar'])->whereNumber('gestor');
             Route::apiResource('gestores', GestorController::class)->parameters(['gestores' => 'gestor']);
-            Route::apiResource('users', UsuarioController::class)->only(['index', 'store', 'show', 'update']);
-            Route::delete('usuario-remover-foto-perfil/{id}', [UsuarioController::class, 'removerFotoPerfil']);
-            Route::post('usuario-arquivar', [UsuarioController::class, 'usuarioArquivar']);
-            Route::post('usuario-deletar', [UsuarioController::class, 'usuarioDeletar']);
-            Route::post('usuario-restaurar', [UsuarioController::class, 'usuarioRestaurar']);
-            Route::get('usuarios-arquivados', [UsuarioController::class, 'usuariosArquivados']);
-            Route::put('usuario-alterar-foto-perfil/{id}', [UsuarioController::class, 'alterarFotoPerfil']);
 
             Route::get('motorista-veiculos/{motoristaId}', [MotoristaController::class, 'motoristaVeiculos']);
             Route::apiResource('motoristas', MotoristaController::class);

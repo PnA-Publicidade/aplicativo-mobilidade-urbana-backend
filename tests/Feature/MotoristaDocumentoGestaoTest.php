@@ -2,31 +2,27 @@
 
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use App\Services\AtualizarSituacaoMotoristaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Storage::fake('motorista_documentos_anexos');
-    $this->operador = User::factory()->create();
-    $this->usuario = User::factory()->create();
-    $this->motorista = Motorista::create([
-        'user_id' => $this->usuario->id,
-        'nome' => 'Nome anterior',
+    // quem opera é a gestão
+    $this->motorista = Motorista::factory()->create([
+        'name' => 'Nome anterior',
         'observacao' => 'A',
         'numero_registro' => '00012345678',
         'status' => 'pendente',
     ]);
-    $this->actingAs($this->operador, 'jwt');
+    $this->withToken(tokenDeGestor());
 });
 
-it('salva os campos da CNH e o PDF no motorista indicado sem alterar seu usuario', function () {
-    $nomeUsuario = $this->usuario->name;
-    expect($this->motorista->id)->not->toBe($this->usuario->id);
+it('salva os campos da CNH e o PDF no motorista indicado', function () {
     $cnh = [
         'nome' => 'Nome conforme a CNH',
         'cpf' => '01149897295',
@@ -40,7 +36,7 @@ it('salva os campos da CNH e o PDF no motorista indicado sem alterar seu usuario
         'observacao' => "EAR\nA, B",
     ];
 
-    $response = $this->post('/api/motorista-documentos', [
+    $response = $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
@@ -51,7 +47,12 @@ it('salva os campos da CNH e o PDF no motorista indicado sem alterar seu usuario
         ->assertJsonPath('data.status', 'em_analise')
         ->assertJsonPath('situacao_motorista', 'pendente');
 
-    $this->assertDatabaseHas('motoristas', ['id' => $this->motorista->id, ...$cnh, 'ear' => 1]);
+    $this->assertDatabaseHas('motoristas', [
+        'id' => $this->motorista->id,
+        ...Arr::except($cnh, 'nome'),
+        'name' => $cnh['nome'],
+        'ear' => 1,
+    ]);
     foreach ($cnh as $campo => $valor) {
         if ($campo !== 'ear') {
             $response->assertJsonPath("motorista.{$campo}", $valor);
@@ -61,12 +62,11 @@ it('salva os campos da CNH e o PDF no motorista indicado sem alterar seu usuario
     expect($response->json('data.url'))->toBe('http://localhost/'.$response->json('data.path'));
     $response->assertJsonMissingPath('data.observacao');
     expect(MotoristaDocumento::count())->toBe(1)
-        ->and($this->usuario->fresh()->name)->toBe($nomeUsuario)
         ->and(MotoristaDocumento::first()->getAttributes())->not->toHaveKey('observacao');
 });
 
 it('mantem os dados existentes quando a CNH chega sem campos adicionais', function () {
-    $this->post('/api/motorista-documentos', [
+    $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
@@ -79,7 +79,7 @@ it('mantem os dados existentes quando a CNH chega sem campos adicionais', functi
 
 it('permite limpar campos opcionais e salvar EAR como nao', function () {
     $this->motorista->update(['ear' => true]);
-    $this->post('/api/motorista-documentos', [
+    $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
@@ -88,8 +88,8 @@ it('permite limpar campos opcionais e salvar EAR como nao', function () {
 
     $this->assertDatabaseHas('motoristas', [
         'id' => $this->motorista->id,
-        // sem o nome da CNH, fica o do usuário: o motorista nunca fica sem nome
-        'nome' => $this->usuario->name,
+        // sem o nome da CNH, fica o do cadastro: o motorista nunca fica sem nome
+        'name' => 'Nome anterior',
         'numero_registro' => null,
         'data_emissao' => null,
         'ear' => 0,
@@ -99,7 +99,7 @@ it('permite limpar campos opcionais e salvar EAR como nao', function () {
 
 it('envia outros documentos sem modificar os campos da CNH', function () {
     // o seguro não tem campos próprios; CRLV e Nada Consta exigem os dados do documento
-    $this->post('/api/motorista-documentos', [
+    $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'seguro_obrigatorio',
         'arquivo' => UploadedFile::fake()->create('seguro.pdf', 100, 'application/pdf'),
@@ -111,7 +111,7 @@ it('envia outros documentos sem modificar os campos da CNH', function () {
 });
 
 it('recusa campos invalidos antes de salvar o arquivo ou alterar o motorista', function ($tipo, $cnh, $campo) {
-    $this->post('/api/motorista-documentos', [
+    $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => $tipo,
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),
@@ -142,7 +142,7 @@ it('desfaz dados documento e arquivo se o salvamento conjunto falhar', function 
         ->andThrow(new RuntimeException('Falha ao atualizar situacao'));
     $this->withoutExceptionHandling();
 
-    expect(fn () => $this->post('/api/motorista-documentos', [
+    expect(fn () => $this->post('/api/gestao/motorista-documentos', [
         'motorista_id' => $this->motorista->id,
         'tipo_documento' => 'cnh',
         'arquivo' => UploadedFile::fake()->create('cnh.pdf', 100, 'application/pdf'),

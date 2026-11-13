@@ -3,26 +3,13 @@
 use App\Models\Corrida;
 use App\Models\Gestor;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 function gestaoCorridaPassageiro(string $nome): Passageiro
 {
-    $id = str_replace('-', '', (string) Str::uuid());
-    $usuario = User::create([
-        'name' => $nome,
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "gestao-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-
-    return Passageiro::create(['user_id' => $usuario->id]);
+    return Passageiro::factory()->create(['name' => $nome]);
 }
 
 function gestaoCorrida(Passageiro $passageiro, string $codigo): Corrida
@@ -65,7 +52,7 @@ it('o painel lista todas as corridas, não só as da conta com o mesmo id do ges
         ->assertJsonPath('total', 2)
         ->assertJsonPath('data.0.codigo_corrida', 'GEST-BRUNO')
         ->assertJsonPath('data.0.motorista', null)
-        ->assertJsonPath('data.0.passageiro.user.name', 'Bruno Reis');
+        ->assertJsonPath('data.0.passageiro.name', 'Bruno Reis');
 });
 
 it('o painel busca corridas pelo código ou pelo nome do passageiro', function () {

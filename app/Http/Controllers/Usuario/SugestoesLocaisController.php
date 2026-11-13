@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Usuario;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSugestaoLocalRequest;
 use App\Models\SugestaoLocal;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 
 class SugestoesLocaisController extends Controller
@@ -13,7 +14,7 @@ class SugestoesLocaisController extends Controller
     {
         $sugestao = SugestaoLocal::create([
             ...$request->validated(),
-            'user_id' => $request->user()->id,
+            'passageiro_id' => (PerfilLogado::passageiro($request) ?? abort(403, 'Sugestões de lugar são do passageiro.'))->id,
         ]);
 
         return response()->json(['data' => $sugestao->fresh()], 201);

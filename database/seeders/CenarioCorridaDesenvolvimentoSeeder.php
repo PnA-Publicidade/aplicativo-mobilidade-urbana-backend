@@ -8,7 +8,6 @@ use App\Models\MotoristaDocumento;
 use App\Models\MotoristaVeiculo;
 use App\Models\Passageiro;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Models\Veiculo;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -22,21 +21,15 @@ class CenarioCorridaDesenvolvimentoSeeder extends Seeder
     public function run(): void
     {
         DB::transaction(function () {
-            $usuarioMotorista = User::updateOrCreate(
+            // o motorista e o passageiro têm conta própria em cada app
+            $motorista = Motorista::updateOrCreate(
                 ['email' => 'motorista.codex@example.test'],
                 [
                     'name' => 'Motorista Teste',
                     'telefone' => self::TELEFONE_MOTORISTA,
                     'cpf' => '52998224725',
                     'data_nascimento' => '1990-01-01',
-                    'status' => 'ativo',
                     'password' => 'desenvolvimento',
-                ]
-            );
-
-            $motorista = Motorista::updateOrCreate(
-                ['user_id' => $usuarioMotorista->id],
-                [
                     'foto' => null,
                     'status' => 'aprovado',
                     'numero_registro' => '99999999999',
@@ -92,7 +85,7 @@ class CenarioCorridaDesenvolvimentoSeeder extends Seeder
                 ]
             );
 
-            $usuarioPassageiro = User::updateOrCreate(
+            Passageiro::updateOrCreate(
                 ['email' => 'passageiro.codex@example.test'],
                 [
                     'name' => 'Passageiro Teste',
@@ -101,12 +94,9 @@ class CenarioCorridaDesenvolvimentoSeeder extends Seeder
                     'data_nascimento' => '1990-01-01',
                     'status' => 'ativo',
                     'password' => 'desenvolvimento',
+                    'foto' => null,
+                    'media_avaliacao' => null,
                 ]
-            );
-
-            Passageiro::updateOrCreate(
-                ['user_id' => $usuarioPassageiro->id],
-                ['foto' => null, 'media_avaliacao' => null]
             );
         });
 

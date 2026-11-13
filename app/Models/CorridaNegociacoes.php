@@ -11,7 +11,6 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $corrida_id
- * @property int $usuario_id
  * @property int|null $motorista_id
  * @property int|null $veiculo_id
  * @property string $tipo_usuario
@@ -27,7 +26,6 @@ class CorridaNegociacoes extends Model
 {
     protected $fillable = [
         'corrida_id',
-        'usuario_id',
         'motorista_id',
         'veiculo_id',
         'tipo_usuario',

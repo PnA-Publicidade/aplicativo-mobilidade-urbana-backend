@@ -9,7 +9,6 @@ use App\Models\Passageiro;
 use App\Models\ProdutosCorrida;
 use App\Models\SaldoMotorista;
 use App\Models\Saque;
-use App\Models\User;
 use App\Services\PlataformaLucrosService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
@@ -27,11 +26,10 @@ class GanhosMotoristasDemonstracaoSeeder extends Seeder
             throw new RuntimeException('Demonstração de ganhos permitida somente em local ou testing.');
         }
         Event::fakeFor(fn () => DB::transaction(function () {
-            $user = User::firstOrCreate(['email' => 'motorista.ganhos@example.com'], ['name' => 'Motorista de demonstração de ganhos', 'cpf' => '99000000201', 'telefone' => '69999990201', 'data_nascimento' => '1990-01-01', 'password' => 'password', 'status' => 'ativo']);
-            if ($user->cpf !== '99000000201') {
+            $motorista = Motorista::firstOrCreate(['email' => 'motorista.ganhos@example.com'], ['name' => 'Motorista de demonstração de ganhos', 'cpf' => '99000000201', 'telefone' => '69999990201', 'data_nascimento' => '1990-01-01', 'password' => 'password', 'numero_registro' => '99000000201', 'cnh_categoria' => 'AB', 'cnh_expiracao' => '2031-01-01', 'ear' => true, 'status' => 'pendente']);
+            if ($motorista->cpf !== '99000000201') {
                 throw new RuntimeException('A conta reservada para demonstrar ganhos já pertence a outro cadastro.');
             }
-            $motorista = Motorista::firstOrCreate(['user_id' => $user->id], ['nome' => $user->name, 'cpf' => $user->cpf, 'numero_registro' => '99000000201', 'cnh_categoria' => 'AB', 'cnh_expiracao' => '2031-01-01', 'ear' => true, 'status' => 'pendente']);
             Motorista::whereKey($motorista->id)->lockForUpdate()->firstOrFail();
             if (SaldoMotorista::where('motorista_id', $motorista->id)->where('detalhes->demonstracao', self::MARCADOR)->exists()) {
                 return; // Preserva datas, saldos e alterações feitas durante a demonstração.
@@ -39,11 +37,10 @@ class GanhosMotoristasDemonstracaoSeeder extends Seeder
             if (Corrida::where('motorista_id', $motorista->id)->exists() || SaldoMotorista::where('motorista_id', $motorista->id)->exists() || Saque::where('motorista_id', $motorista->id)->exists()) {
                 throw new RuntimeException('O motorista reservado já possui dados fora desta demonstração.');
             }
-            $cliente = User::firstOrCreate(['email' => 'passageiro.ganhos@example.com'], ['name' => 'Passageiro de demonstração de ganhos', 'cpf' => '99000000202', 'telefone' => '69999990202', 'data_nascimento' => '1992-01-01', 'password' => 'password', 'status' => 'ativo']);
-            if ($cliente->cpf !== '99000000202') {
+            $passageiro = Passageiro::firstOrCreate(['email' => 'passageiro.ganhos@example.com'], ['name' => 'Passageiro de demonstração de ganhos', 'cpf' => '99000000202', 'telefone' => '69999990202', 'data_nascimento' => '1992-01-01', 'password' => 'password', 'status' => 'ativo']);
+            if ($passageiro->cpf !== '99000000202') {
                 throw new RuntimeException('A conta do passageiro de ganhos já pertence a outro cadastro.');
             }
-            $passageiro = Passageiro::firstOrCreate(['user_id' => $cliente->id], ['status' => 'ativo']);
             $produtos = [
                 'corrida' => ProdutosCorrida::where('codigo', 'pop')->firstOrFail(),
                 'entrega' => ProdutosCorrida::firstOrCreate(['codigo' => 'demo_entrega'], ['nome' => 'Entrega · Demonstração', 'estrategia_precificacao' => 'entrega', 'tipo_veiculo' => 'carro', 'grupo' => 'entrega', 'ordem' => 90]),

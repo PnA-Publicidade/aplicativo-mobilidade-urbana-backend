@@ -150,8 +150,8 @@ class DespachoCorridaService
 
         $veiculo = $this->veiculoEmUso($motorista, $status);
 
-        // quem também é passageiro não recebe a própria corrida
-        $meuPassageiroId = Passageiro::where('user_id', $motorista->user_id)->value('id');
+        // quem também é passageiro (mesmo CPF) não recebe a própria corrida
+        $meuPassageiroId = filled($motorista->cpf) ? Passageiro::where('cpf', $motorista->cpf)->value('id') : null;
 
         $corridas = Corrida::where('status_corrida', 'solicitada')
             ->whereNull('motorista_id')
@@ -298,14 +298,10 @@ class DespachoCorridaService
      */
     private function notificarPassageiro(Corrida $corrida, string $titulo, string $mensagem): void
     {
-        $userId = Passageiro::whereKey($corrida->passageiro_id)->value('user_id');
-
-        if ($userId !== null) {
-            $this->notificarUsuario->executar((int) $userId, 'passageiro', $titulo, $mensagem, [
-                'corrida_id' => (string) $corrida->id,
-                'status' => (string) $corrida->status_corrida,
-            ]);
-        }
+        $this->notificarUsuario->executar((int) $corrida->passageiro_id, 'passageiro', $titulo, $mensagem, [
+            'corrida_id' => (string) $corrida->id,
+            'status' => (string) $corrida->status_corrida,
+        ]);
     }
 
     private function carroDaCorrida(Corrida $corrida): string
@@ -356,7 +352,8 @@ class DespachoCorridaService
      */
     public function validarMotoristaParaCorrida(Motorista $motorista, Corrida $corrida): array
     {
-        if ($corrida->passageiro()->value('user_id') === $motorista->user_id) {
+        // a mesma pessoa nos dois apps: o CPF do passageiro é o do motorista
+        if (filled($motorista->cpf) && $corrida->passageiro()->value('cpf') === $motorista->cpf) {
             throw new RuntimeException('Você não pode atender a sua própria corrida.', 409);
         }
 
@@ -507,7 +504,7 @@ class DespachoCorridaService
                     app(CompartilhamentoVeiculoService::class)->retomarDisponibilidade((int) $motorista->id);
                 }
 
-                $this->notificarFinalizacao($corrida, $motorista->user_id, ! $grupoSegue);
+                $this->notificarFinalizacao($corrida, $motorista->id, ! $grupoSegue);
             }
 
             Avisar::semQuebrar(new CorridaAtualizada($corrida->id, $regra['para']));
@@ -559,7 +556,7 @@ class DespachoCorridaService
         });
     }
 
-    private function notificarFinalizacao(Corrida $corrida, int $userIdMotorista, bool $avisarMotorista = true): void
+    private function notificarFinalizacao(Corrida $corrida, int $motoristaId, bool $avisarMotorista = true): void
     {
         $corrida->loadMissing(['corrida_financeiro', 'passageiro']);
         $ganho = number_format((float) $corrida->corrida_financeiro?->valor_liquido_motorista, 2, ',', '.');
@@ -571,14 +568,12 @@ class DespachoCorridaService
         }
 
         if ($avisarMotorista) {
-            $this->notificarUsuario->executar($userIdMotorista, 'motorista', 'Corrida finalizada', $corrida->sala_compartilhada_id !== null
+            $this->notificarUsuario->executar($motoristaId, 'motorista', 'Corrida finalizada', $corrida->sala_compartilhada_id !== null
                 ? "Viagem compartilhada concluída. Você recebe R$ {$ganho}."
                 : "Você recebe R$ {$ganho} por esta corrida.");
         }
 
-        if ($corrida->passageiro?->user_id !== null) {
-            $this->notificarUsuario->executar($corrida->passageiro->user_id, 'passageiro', 'Viagem concluída', "Valor da corrida: R$ {$pago}.");
-        }
+        $this->notificarUsuario->executar((int) $corrida->passageiro_id, 'passageiro', 'Viagem concluída', "Valor da corrida: R$ {$pago}.");
     }
 
     public function cancelar(int $corridaId, string $quem, ?int $donoId, ?string $motivo, ?string $tipo = null, ?float $taxaConfirmada = null): Corrida
@@ -699,9 +694,8 @@ class DespachoCorridaService
                     : 'Sua corrida foi cancelada. Você pode pedir de novo pelo app.');
             }
 
-            $motoristaUserId = $motoristaId !== null ? Motorista::whereKey($motoristaId)->value('user_id') : null;
-            if ($quem !== 'motorista' && $motoristaUserId !== null) {
-                $this->notificarUsuario->executar((int) $motoristaUserId, 'motorista', 'Corrida cancelada', match (true) {
+            if ($quem !== 'motorista' && $motoristaId !== null) {
+                $this->notificarUsuario->executar((int) $motoristaId, 'motorista', 'Corrida cancelada', match (true) {
                     $grupoSegue => 'Um passageiro do grupo saiu. Siga para a próxima parada.',
                     $quem === 'passageiro' => 'O passageiro cancelou a corrida. Você voltou a receber chamadas.',
                     default => 'A corrida foi cancelada. Você voltou a receber chamadas.',

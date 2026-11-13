@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Corrida;
 use App\Http\Controllers\Controller;
 use App\Models\Passageiro;
 use App\Services\AumentarOfertaNegociaService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -20,7 +21,7 @@ class AumentarOfertaNegociaController extends Controller
             'valor_oferecido' => 'required|numeric|min:0.01|max:100000',
         ]);
 
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         if ($passageiroId === null) {
             return response()->json(['message' => 'Corrida não encontrada.'], 404);

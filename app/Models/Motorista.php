@@ -2,16 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ContaDoApp;
 use Database\Factories\MotoristaFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 
 #[Fillable([
-    'user_id',
     'foto',
     'nome',
     'cpf',
@@ -28,16 +29,19 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'compartilhada_suspensa_ate',
 ])]
 
-class Motorista extends Model
+class Motorista extends Authenticatable implements JWTSubject
 {
+    // login próprio, como o do gestor (ver ContaDoApp)
+    use ContaDoApp;
+
     /** @use HasFactory<MotoristaFactory> */
     use HasFactory;
 
     use SoftDeletes;
 
-    /**
-     * @return array<string, string>
-     */
+    // a coluna nome virou name; quem ainda lê nome no JSON continua recebendo
+    protected $appends = ['nome'];
+
     protected static function booted(): void
     {
         // aprovado uma vez, não volta para o cadastro: um problema depois vira ação na home
@@ -45,13 +49,31 @@ class Motorista extends Model
             if ($motorista->status === 'ativo' && $motorista->liberado_em === null) {
                 $motorista->liberado_em = now();
             }
-            // pelo app ele só preenche o usuário: o motorista guarda o nome e o CPF de lá
-            if (blank($motorista->nome) || blank($motorista->cpf)) {
-                $usuario = User::whereKey($motorista->user_id)->first(['name', 'cpf']);
-                $motorista->nome = filled($motorista->nome) ? $motorista->nome : $usuario?->name;
-                $motorista->cpf = filled($motorista->cpf) ? $motorista->cpf : $usuario?->cpf;
+            // a CNH sem o nome ou o CPF lidos não apaga os do cadastro: o motorista nunca fica sem eles
+            foreach (['name', 'cpf'] as $campo) {
+                if (blank($motorista->getAttribute($campo)) && filled($motorista->getOriginal($campo))) {
+                    $motorista->setAttribute($campo, $motorista->getOriginal($campo));
+                }
             }
         });
+    }
+
+    public function perfilDoApp(): string
+    {
+        return 'motorista';
+    }
+
+    /**
+     * O nome da CNH, ou o do cadastro enquanto ela não é lida: é a coluna name.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function nome(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->attributes['name'] ?? null,
+            set: fn (?string $valor) => ['name' => $valor],
+        );
     }
 
     protected function casts(): array
@@ -64,14 +86,6 @@ class Motorista extends Model
             'aceita_compartilhada' => 'boolean',
             'compartilhada_suspensa_ate' => 'datetime',
         ];
-    }
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
     }
 
     /**

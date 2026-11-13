@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Usuario;
 
 use App\Http\Controllers\Controller;
 use App\Models\DispositivoPush;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,16 +15,17 @@ class DispositivosPushController extends Controller
     {
         $dados = $request->validate([
             'token' => 'required|string|max:512',
-            'perfil' => 'required|in:passageiro,motorista',
+            'perfil' => 'sometimes|in:passageiro,motorista',
             'plataforma' => 'sometimes|in:android,ios',
         ]);
 
         // o token é do aparelho: se outra conta entrou nele, passa a ser desta
+        $perfil = PerfilLogado::de($request);
         DispositivoPush::updateOrCreate(
             ['token' => $dados['token']],
             [
-                'user_id' => $request->user()->id,
-                'perfil' => $dados['perfil'],
+                'perfil' => $perfil->perfilDoApp(),
+                'perfil_id' => $perfil->id,
                 'plataforma' => $dados['plataforma'] ?? 'android',
             ],
         );
@@ -36,7 +38,8 @@ class DispositivosPushController extends Controller
         $dados = $request->validate(['token' => 'required|string|max:512']);
 
         DispositivoPush::where('token', $dados['token'])
-            ->where('user_id', $request->user()->id)
+            ->where('perfil', PerfilLogado::de($request)->perfilDoApp())
+            ->where('perfil_id', PerfilLogado::de($request)->id)
             ->delete();
 
         return response()->json(null, 204);

@@ -13,15 +13,14 @@ class GanhosMotoristasController extends Controller
     public function motoristas(Request $request)
     {
         $dados = $request->validate(['search' => 'nullable|string|max:100', 'page' => 'nullable|integer|min:1']);
-        $query = Motorista::withTrashed()->with(['user' => fn ($q) => $q->withTrashed()]);
+        $query = Motorista::withTrashed();
         if ($search = trim($dados['search'] ?? '')) {
             $cpf = preg_replace('/\D/', '', $search);
-            $query->where(fn ($q) => $q->where('nome', 'like', '%'.$search.'%')
-                ->orWhere('cpf', 'like', '%'.($cpf !== '' ? $cpf : $search).'%')
-                ->orWhereHas('user', fn ($u) => $u->withTrashed()->where('name', 'like', '%'.$search.'%')));
+            $query->where(fn ($q) => $q->where('name', 'like', '%'.$search.'%')
+                ->orWhere('cpf', 'like', '%'.($cpf !== '' ? $cpf : $search).'%'));
         }
-        $pagina = $query->orderBy('nome')->orderBy('id')->paginate(20);
-        $pagina->setCollection($pagina->getCollection()->map(fn ($m) => ['id' => $m->id, 'nome' => $m->nome ?? $m->user?->name, 'foto' => $m->foto]));
+        $pagina = $query->orderBy('name')->orderBy('id')->paginate(20);
+        $pagina->setCollection($pagina->getCollection()->map(fn ($m) => ['id' => $m->id, 'nome' => $m->name, 'foto' => $m->foto]));
 
         return response()->json($pagina);
     }
@@ -65,6 +64,6 @@ class GanhosMotoristasController extends Controller
             'tipo_servico' => ['required', Rule::in(['todos', 'corrida', 'entrega'])],
         ]);
 
-        return [Motorista::withTrashed()->with(['user' => fn ($q) => $q->withTrashed()])->findOrFail($dados['motorista_id']), $dados];
+        return [Motorista::withTrashed()->findOrFail($dados['motorista_id']), $dados];
     }
 }

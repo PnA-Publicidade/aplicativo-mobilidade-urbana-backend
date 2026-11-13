@@ -9,7 +9,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
-use App\Models\User;
 use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
 use App\Services\CrlvVeiculoService;
@@ -18,6 +17,7 @@ use App\Services\InformacoesDocumentoMotoristaService;
 use App\Services\LeituraCrlvService;
 use App\Services\SolicitacaoVeiculoService;
 use App\Services\VerificacaoTipoDocumentoService;
+use App\Support\PerfilLogado;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,21 +72,20 @@ class MotoristaDocumentoController extends Controller
                 $termo = '%'.$busca.'%';
                 $cpf = preg_match('/^[\d\s.-]+$/', $busca) ? preg_replace('/\D/', '', $busca) : '';
                 $termoCpf = '%'.($cpf !== '' ? $cpf : $busca).'%';
-                $query->where(fn ($q) => $q->where('nome', 'like', $termo)->orWhere('cpf', 'like', $termoCpf)
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', $termo)->orWhere('cpf', 'like', $termoCpf)));
+                $query->where(fn ($q) => $q->where('name', 'like', $termo)->orWhere('cpf', 'like', $termoCpf));
             })
-            ->with(['user', 'documentos' => fn ($query) => $filtroDocumentos($query)->with('veiculo')->orderBy('id')])
+            ->with(['documentos' => fn ($query) => $filtroDocumentos($query)->with('veiculo')->orderBy('id')])
             ->orderBy('pendente_desde')->orderBy('id');
 
         $pagina = $consulta->paginate($dados['per_page'] ?? 10);
         $pagina->getCollection()->transform(fn (Motorista $motorista): array => [
             'id' => $motorista->id,
-            'nome' => $motorista->user?->name ?? $motorista->nome,
-            'cpf' => $motorista->user?->cpf ?? $motorista->cpf,
+            'nome' => $motorista->nome,
+            'cpf' => $motorista->cpf,
             'foto' => $motorista->foto,
             'status' => $motorista->status,
             'pendente_desde' => $motorista->pendente_desde,
-            'user' => $motorista->user?->only(['id', 'name', 'cpf', 'foto', 'foto_thumbnail']),
+            'user' => $motorista->only(['id', 'name', 'cpf', 'foto']),
             'documentos' => $motorista->documentos->map(fn (MotoristaDocumento $documento): array => [
                 'id' => $documento->id,
                 'tipo_documento' => $documento->tipo_documento->value,
@@ -356,9 +355,8 @@ class MotoristaDocumentoController extends Controller
             abort_unless($request->user() instanceof Gestor && $request->user()->pode('documentos.analisar'), 403);
         }
 
-        // IDs de gestores e usuários pertencem a tabelas diferentes.
-        $motoristaDoUsuario = $request->user() instanceof User
-            ? Motorista::where('user_id', $request->user()->id)->value('id') : null;
+        // IDs de gestores e motoristas pertencem a tabelas diferentes.
+        $motoristaDoUsuario = PerfilLogado::motorista($request)?->id;
         if ($motoristaDoUsuario !== null && $motoristaDoUsuario === $motoristaDocumento->motorista_id) {
             return response()->json(['message' => 'Você não pode alterar o status dos seus próprios documentos.'], 403);
         }

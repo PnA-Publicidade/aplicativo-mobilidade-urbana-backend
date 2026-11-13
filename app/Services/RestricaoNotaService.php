@@ -448,13 +448,7 @@ class RestricaoNotaService
             return;
         }
 
-        $userId = $perfil === self::MOTORISTA
-            ? Motorista::whereKey($perfilId)->value('user_id')
-            : Passageiro::whereKey($perfilId)->value('user_id');
-
-        if ($userId !== null) {
-            app(NotificarUsuarioService::class)->executar((int) $userId, $perfil === self::MOTORISTA ? 'motorista' : 'passageiro', $titulo, $mensagem);
-        }
+        app(NotificarUsuarioService::class)->executar($perfilId, $perfil === self::MOTORISTA ? 'motorista' : 'passageiro', $titulo, $mensagem);
     }
 
     private function semQuebrar(callable $acao): void

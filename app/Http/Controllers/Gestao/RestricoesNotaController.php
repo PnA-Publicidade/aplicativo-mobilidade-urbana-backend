@@ -29,12 +29,11 @@ class RestricoesNotaController extends Controller
 
         $aba = $dados['aba'] ?? 'alertas';
         $tabela = $aba === 'alertas' ? 'alertas_por_nota' : 'restricoes_por_nota';
-        $nome = 'COALESCE(motoristas.nome, users.name)';
+        $nome = 'COALESCE(motoristas.name, passageiros.name)';
 
         $consulta = DB::table("$tabela as t")
             ->leftJoin('motoristas', fn ($j) => $j->on('motoristas.id', '=', 't.perfil_id')->where('t.perfil', 'motorista'))
             ->leftJoin('passageiros', fn ($j) => $j->on('passageiros.id', '=', 't.perfil_id')->where('t.perfil', 'passageiro'))
-            ->leftJoin('users', fn ($j) => $j->on('users.id', '=', DB::raw("CASE WHEN t.perfil = 'motorista' THEN motoristas.user_id ELSE passageiros.user_id END")))
             ->when($dados['perfil'] ?? null, fn ($q, $perfil) => $q->where('t.perfil', $perfil));
 
         if ($aba === 'alertas') {

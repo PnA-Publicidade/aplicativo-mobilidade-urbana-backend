@@ -25,21 +25,15 @@ class VeiculoUsuariosController extends Controller
         $cpf = preg_replace('/\D/', '', $busca);
 
         $motoristas = Motorista::query()
-            ->select(['id', 'user_id', 'foto', 'status'])
+            ->select(['id', 'name', 'cpf', 'foto', 'status'])
             ->when($request->boolean('somente_vinculados'), fn ($query) => $query
                 ->whereIn('id', MotoristaVeiculo::select('motorista_id')->where('veiculo_id', $veiculoId)))
             ->addSelect(['vinculado' => MotoristaVeiculo::selectRaw('1')
                 ->whereColumn('motorista_id', 'motoristas.id')
                 ->where('veiculo_id', $veiculoId)->limit(1)])
-            ->whereHas('user', function ($query) use ($busca, $cpf): void {
-                if ($busca !== '') {
-                    $query->where(function ($query) use ($busca, $cpf): void {
-                        $query->where('name', 'like', '%'.$busca.'%')
-                            ->orWhere('cpf', 'like', '%'.($cpf !== '' ? $cpf : $busca).'%');
-                    });
-                }
-            })
-            ->with('user:id,name,cpf')
+            ->when($busca !== '', fn ($query) => $query->where(fn ($query) => $query
+                ->where('name', 'like', '%'.$busca.'%')
+                ->orWhere('cpf', 'like', '%'.($cpf !== '' ? $cpf : $busca).'%')))
             ->orderBy('id')
             ->paginate($dados['rowsPerPage'] ?? 15);
 

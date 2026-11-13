@@ -2,32 +2,17 @@
 
 use App\Models\Corrida;
 use App\Models\CorridaDestino;
+use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function usuarioDaBusca(): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => 'Passageiro Busca',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "busca-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function passageiroDaBusca(): Passageiro
 {
-    return Passageiro::create(['user_id' => usuarioDaBusca()->id, 'media_avaliacao' => null]);
+    return Passageiro::factory()->create(['name' => 'Passageiro Busca']);
 }
 
 function corridaAte(Passageiro $passageiro, string $nome, float $latitude, float $longitude, ?string $quando = null, string $status = 'finalizada'): void
@@ -67,7 +52,7 @@ it('mostra os destinos mais pedidos por passageiros diferentes perto de quem bus
     $passageiros->each(fn (Passageiro $p) => corridaAte($p, 'Outra cidade', -10.0000, -64.0000));
     $passageiros->each(fn (Passageiro $p) => corridaAte($p, 'Lugar antigo', -8.7500, -63.8800, now()->subDays(60)->toDateTimeString()));
 
-    $resposta = $this->actingAs(usuarioDaBusca(), 'jwt')
+    $resposta = $this->actingAs(passageiroDaBusca(), 'passageiros')
         ->getJson('/api/locais/populares?latitude=-8.7600&longitude=-63.9000')
         ->assertOk();
 
@@ -83,23 +68,23 @@ it('só conta corridas finalizadas, para pedidos cancelados não inventarem luga
         $passageiros->each(fn (Passageiro $p) => corridaAte($p, 'Ligue 0800 golpe', -8.7520, -63.8800, null, $status));
     }
 
-    $this->actingAs(usuarioDaBusca(), 'jwt')
+    $this->actingAs(passageiroDaBusca(), 'passageiros')
         ->getJson('/api/locais/populares?latitude=-8.7600&longitude=-63.9000')
         ->assertOk()
         ->assertJsonCount(0, 'data');
 });
 
 it('pede a posição de quem busca', function () {
-    $this->actingAs(usuarioDaBusca(), 'jwt')
+    $this->actingAs(passageiroDaBusca(), 'passageiros')
         ->getJson('/api/locais/populares')
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['latitude', 'longitude']);
 });
 
 it('guarda a sugestão de local de quem está logado', function () {
-    $usuario = usuarioDaBusca();
+    $usuario = passageiroDaBusca();
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais/sugestoes', [
             'tipo' => 'novo_local',
             'nome' => 'Padaria do Bairro',
@@ -112,27 +97,32 @@ it('guarda a sugestão de local de quem está logado', function () {
         ->assertJsonPath('data.tipo', 'novo_local')
         ->assertJsonPath('data.status', 'recebida');
 
-    expect(DB::table('sugestoes_locais')->where('user_id', $usuario->id)->count())->toBe(1);
+    expect(DB::table('sugestoes_locais')->where('passageiro_id', $usuario->id)->count())->toBe(1);
+
+    // a sugestão de lugar é do app do passageiro
+    $this->actingAs(Motorista::factory()->create(['status' => 'ativo']), 'motoristas')
+        ->postJson('/api/locais/sugestoes', ['tipo' => 'comentario', 'descricao' => 'A busca poderia mostrar mais lojas.'])
+        ->assertForbidden();
 });
 
 it('exige o que cada tipo de sugestão precisa', function () {
-    $usuario = usuarioDaBusca();
+    $usuario = passageiroDaBusca();
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais/sugestoes', ['tipo' => 'novo_local', 'descricao' => 'curto'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['nome', 'endereco', 'descricao']);
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais/sugestoes', ['tipo' => 'alteracao_local', 'descricao' => 'O número da casa está errado.'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['endereco']);
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais/sugestoes', ['tipo' => 'comentario', 'descricao' => 'A busca poderia mostrar mais lojas.'])
         ->assertCreated();
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->postJson('/api/locais/sugestoes', ['tipo' => 'outro', 'descricao' => 'Tipo que não existe.'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['tipo']);

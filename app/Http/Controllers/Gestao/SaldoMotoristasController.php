@@ -27,7 +27,7 @@ class SaldoMotoristasController extends Controller
             'per_page' => 'nullable|integer|min:1|max:50',
         ]);
         $query = SaldoMotorista::query()->with([
-            'motorista.user' => fn ($q) => $q->withTrashed(),
+            'motorista' => fn ($q) => $q->withTrashed(),
             'corrida:id,codigo_corrida,produto_id,metodo_pagamento',
             'corrida.produto:id,nome',
         ]);
@@ -72,16 +72,14 @@ class SaldoMotoristasController extends Controller
     {
         $cpf = preg_replace('/\D/', '', $search);
         $cpf = strlen($cpf) === 11 ? $cpf : $search;
-        $query->where('nome', 'like', '%'.$search.'%')
-            ->orWhere('cpf', 'like', '%'.$cpf.'%')
-            ->orWhereHas('user', fn (Builder $u) => $u->withTrashed()->where(fn (Builder $f) => $f
-                ->where('name', 'like', '%'.$search.'%')->orWhere('cpf', 'like', '%'.$cpf.'%')));
+        $query->where('name', 'like', '%'.$search.'%')
+            ->orWhere('cpf', 'like', '%'.$cpf.'%');
     }
 
     public function show(int $movimentacao): SaldoMotoristaResource
     {
         $registro = SaldoMotorista::with([
-            'motorista.user' => fn ($q) => $q->withTrashed(),
+            'motorista' => fn ($q) => $q->withTrashed(),
             'corrida.produto', 'corrida.corrida_financeiro',
         ])->findOrFail($movimentacao);
 

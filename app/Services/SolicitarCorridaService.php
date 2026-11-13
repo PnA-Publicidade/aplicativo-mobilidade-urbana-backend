@@ -9,7 +9,6 @@ use App\Models\CorridaFinanceiro;
 use App\Models\CorridaOpcao;
 use App\Models\CotacaoCorrida;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\Compartilhada\SalaCompartilhadaService;
 use App\Support\Avisar;
 use Illuminate\Support\Facades\DB;
@@ -39,7 +38,7 @@ class SolicitarCorridaService
      * @param  bool  $aceiteAutomatico  no Negocia, escolhe sozinho o primeiro motorista que aceitar a oferta
      */
     public function executar(
-        User $usuario,
+        Passageiro $passageiro,
         CotacaoCorrida $cotacao,
         array $produtosCodigos,
         ?string $metodoPagamento = null,
@@ -62,7 +61,6 @@ class SolicitarCorridaService
             $categorias = [$categoria];
         }
 
-        $passageiro = Passageiro::firstOrCreate(['user_id' => $usuario->id]);
         $pagamento = app(PagamentoCorridaService::class);
 
         // suspensão ou bloqueio por nota baixa: nenhum pedido novo

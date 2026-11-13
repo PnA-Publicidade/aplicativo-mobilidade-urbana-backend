@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Usuario;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notificacao;
+use App\Support\PerfilLogado;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,20 +31,16 @@ class NotificacoesController extends Controller
     }
 
     /**
-     * ?perfil=passageiro (ou motorista): só as daquele app. As antigas, sem
-     * perfil, aparecem nos dois.
+     * As notificações do perfil do token (motorista ou passageiro). O ?perfil=
+     * que os apps ainda mandam é o mesmo do token e não muda nada.
      *
      * @return Builder<Notificacao>
      */
     private function doUsuario(Request $request): Builder
     {
-        $perfil = $request->validate([
-            'perfil' => 'sometimes|string|in:passageiro,motorista',
-        ])['perfil'] ?? null;
+        $request->validate(['perfil' => 'sometimes|string|in:passageiro,motorista']);
+        $perfil = PerfilLogado::de($request);
 
-        return Notificacao::where('user_id', $request->user()->id)
-            ->when($perfil !== null, fn (Builder $consulta) => $consulta->where(
-                fn (Builder $doPerfil) => $doPerfil->where('perfil', $perfil)->orWhereNull('perfil')
-            ));
+        return Notificacao::where('perfil', $perfil->perfilDoApp())->where('perfil_id', $perfil->id);
     }
 }

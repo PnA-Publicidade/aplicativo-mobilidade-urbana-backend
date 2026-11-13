@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Gestor;
+use App\Services\TextoDocumentoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 /*
@@ -19,9 +22,9 @@ pest()->extend(TestCase::class)
     ->beforeEach(function () {
         // Os testes enviam arquivos de mentira: a leitura devolve um texto com a cara
         // do documento pedido. Os testes de conferência trocam esta leitura.
-        app()->instance(App\Services\TextoDocumentoService::class, new class extends App\Services\TextoDocumentoService
+        app()->instance(TextoDocumentoService::class, new class extends TextoDocumentoService
         {
-            public function extrair(Illuminate\Http\UploadedFile $arquivo, bool $imagem = false): ?string
+            public function extrair(UploadedFile $arquivo, bool $imagem = false): ?string
             {
                 return match (request()->input('tipo_documento')) {
                     'cnh' => 'CARTEIRA NACIONAL DE HABILITACAO NOME FILIACAO VALIDADE REGISTRO',
@@ -60,9 +63,29 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+// nos testes o app é o mesmo entre os pedidos: o guard e o JWT guardam o token anterior
+// (e as claims extras, como a perfil=gestao do token de gestor)
+function novoPedido(): void
 {
-    // ..
+    app('auth')->forgetGuards();
+    app('tymon.jwt')->unsetToken()->claims([]);
+}
+
+/**
+ * Token real de um gestor: a gestão confere o JWT (claim perfil=gestao), não
+ * basta actingAs. O perfil de acesso decide as permissões (PermissoesGestaoService).
+ */
+function tokenDeGestor(string $perfil = 'admin'): string
+{
+    $gestor = Gestor::forceCreate([
+        'name' => 'Gestor '.$perfil, 'email' => fake()->unique()->safeEmail(),
+        'cpf' => fake()->unique()->numerify('###########'), 'data_nascimento' => '1985-01-01',
+        'password' => 'senha-de-teste', 'perfil_acesso' => $perfil,
+    ]);
+    $token = auth('gestores')->claims(['perfil' => 'gestao'])->login($gestor);
+    novoPedido();
+
+    return $token;
 }
 
 /**

@@ -38,7 +38,7 @@ class GanhosMotoristaService
         $anual = $filtros['periodo'] === 'anual';
         $relacoes = ['produto:id,nome,estrategia_precificacao', 'corrida_financeiro'];
         if (! $anual) {
-            $relacoes = [...$relacoes, 'passageiro.user:id,name', 'corrida_destinos'];
+            $relacoes = [...$relacoes, 'passageiro:id,name', 'corrida_destinos'];
         }
         $corridas = Corrida::where('motorista_id', $motorista->id)->where('status_corrida', 'finalizada')
             ->where('status_pagamento', 'pago')->where('tempo_final', '>=', $inicio->utc())->where('tempo_final', '<', $fim->utc())
@@ -90,7 +90,7 @@ class GanhosMotoristaService
             $solicitacoes[] = [
                 'id' => $corrida->id, 'codigo_corrida' => $corrida->codigo_corrida, 'data' => $data,
                 'tipo_servico' => $servico, 'produto' => $corrida->produto?->nome,
-                'passageiro' => $corrida->passageiro?->user?->name ?? $corrida->convidado_nome ?? 'Não informado',
+                'passageiro' => $corrida->passageiro?->name ?? $corrida->convidado_nome ?? 'Não informado',
                 'trajeto' => $corrida->corrida_destinos->sortBy('ordem')->values()->map(fn ($p) => $p->endereco ?: $p->nome_local)->all(),
                 'metodo_pagamento' => $corrida->metodo_pagamento,
                 'valor_pago_passageiro' => $financeiro->valor_pago_passageiro,
@@ -190,7 +190,7 @@ class GanhosMotoristaService
         }
 
         return [
-            'motorista' => ['id' => $motorista->id, 'nome' => $motorista->nome ?? $motorista->user?->name, 'foto' => $motorista->foto],
+            'motorista' => ['id' => $motorista->id, 'nome' => $motorista->name, 'foto' => $motorista->foto],
             'periodo' => ['inicio' => $inicio->toDateString(), 'fim' => $fim->subDay()->toDateString(), 'granularidade' => $filtros['periodo'], 'timezone' => config('ganhos.timezone'), 'tipo_servico' => $tipo],
             'totais' => $this->formatar($total),
             'produtividade' => ['ganho_por_solicitacao' => $total['quantidade_solicitacoes'] ? $this->decimal((int) round($total['total_ganhos'] / $total['quantidade_solicitacoes'])) : null,

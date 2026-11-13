@@ -8,7 +8,6 @@ use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use App\Models\MotoristaVeiculo;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\AtualizarSituacaoMotoristaService;
@@ -26,8 +25,9 @@ class CadastroDesenvolvimentoSeeder extends Seeder
     {
         $this->preservarExistentes = $preservarExistentes;
         DB::transaction(function (): void {
-            $usuarioMotorista = $this->usuario('Motorista de teste', 'motorista@example.com', '11144477735', '69999990001');
-            $usuarioPassageiro = $this->usuario('Passageiro de teste', 'passageiro@example.com', '12345678909', '69999990002');
+            // cada app tem a própria conta, como o gestor
+            [$busca, $conta] = $this->conta('Passageiro de teste', 'passageiro@example.com', '12345678909', '69999990002');
+            Passageiro::firstOrCreate($busca, [...$conta, 'status' => 'ativo']);
 
             $gestor = Gestor::firstOrCreate(['email' => 'admin@example.com'] + ($this->preservarExistentes ? [] : ['cpf' => '52998224725']), [
                 'name' => 'Gestor de teste', 'telefone' => '69999990003',
@@ -36,25 +36,26 @@ class CadastroDesenvolvimentoSeeder extends Seeder
             if ($gestor->wasRecentlyCreated) {
                 $gestor->forceFill(['perfil_acesso' => 'admin'])->save();
             }
-            Passageiro::firstOrCreate(['user_id' => $usuarioPassageiro->id], ['status' => 'ativo']);
 
-            $cnh = [
-                'nome' => $usuarioMotorista->name, 'cpf' => $usuarioMotorista->cpf,
-                'data_nascimento' => $usuarioMotorista->data_nascimento,
+            $habilitacao = [
                 'numero_registro' => '12345678901', 'cnh_categoria' => 'AB',
                 'primeira_habilitacao' => '2012-11-25', 'data_emissao' => now()->toDateString(),
                 'cnh_expiracao' => now()->addYears(5)->toDateString(),
                 'ear' => true, 'observacao' => 'EAR',
             ];
-            $motorista = Motorista::firstOrCreate(['user_id' => $usuarioMotorista->id], [
-                ...$cnh, 'status' => 'pendente',
-            ]);
+            [$busca, $conta] = $this->conta('Motorista de teste', 'motorista@example.com', '11144477735', '69999990001');
+            $motorista = Motorista::firstOrCreate($busca, [...$conta, ...$habilitacao, 'status' => 'pendente']);
+            $cnh = [
+                'nome' => $motorista->name, 'cpf' => $motorista->cpf,
+                'data_nascimento' => $motorista->data_nascimento?->toDateString(),
+                ...$habilitacao,
+            ];
 
             $crlv = [
                 'placa' => 'AAA0A01', 'renavam' => '12345678901', 'chassi' => '9BWZZZ377VT004251',
                 'numero_crv' => '12345678901', 'codigo_seguranca' => '98765432100',
                 'exercicio' => now()->year, 'data_emissao' => now()->toDateString(),
-                'nome_proprietario' => $usuarioMotorista->name, 'cpf_cnpj_proprietario' => $usuarioMotorista->cpf,
+                'nome_proprietario' => $motorista->name, 'cpf_cnpj_proprietario' => $motorista->cpf,
                 'marca_modelo' => 'VOLKSWAGEN/GOL', 'cor' => 'PRETA',
                 'ano_fabricacao' => 2024, 'ano_modelo' => 2024,
                 'categoria' => 'PARTICULAR', 'categoria_veiculo' => 'carro', 'uf' => 'RO',
@@ -73,8 +74,8 @@ class CadastroDesenvolvimentoSeeder extends Seeder
 
             $nadaConsta = [
                 'numero_certidao' => 'TESTE-0001', 'orgao_emissor' => 'Emissor fictício para testes',
-                'nome' => $usuarioMotorista->name, 'cpf' => $usuarioMotorista->cpf,
-                'data_nascimento' => $usuarioMotorista->data_nascimento,
+                'nome' => $cnh['nome'], 'cpf' => $cnh['cpf'],
+                'data_nascimento' => $cnh['data_nascimento'],
                 'nome_pai' => 'Pai de teste', 'nome_mae' => 'Mãe de teste',
                 'data_emissao' => now()->toDateString(), 'hora_emissao' => now()->format('H:i'),
                 'data_validade' => now()->addDays(90)->toDateString(),
@@ -93,12 +94,17 @@ class CadastroDesenvolvimentoSeeder extends Seeder
         });
     }
 
-    private function usuario(string $nome, string $email, string $cpf, string $telefone): User
+    /**
+     * Como procurar a conta de teste e os dados dela, iguais nos dois apps.
+     *
+     * @return array{0: array<string, string>, 1: array<string, string>}
+     */
+    private function conta(string $nome, string $email, string $cpf, string $telefone): array
     {
-        return User::firstOrCreate(['email' => $email] + ($this->preservarExistentes ? [] : ['cpf' => $cpf]), [
-            'name' => $nome, 'telefone' => $telefone, 'data_nascimento' => '1992-11-21',
-            'status' => 'ativo', 'password' => 'password',
-        ]);
+        return [
+            ['email' => $email] + ($this->preservarExistentes ? [] : ['cpf' => $cpf]),
+            ['name' => $nome, 'cpf' => $cpf, 'telefone' => $telefone, 'data_nascimento' => '1992-11-21', 'password' => 'password'],
+        ];
     }
 
     private function documento(Motorista $motorista, TipoDocumentoMotorista $tipo, ?array $informacoes, ?Veiculo $veiculo = null): void

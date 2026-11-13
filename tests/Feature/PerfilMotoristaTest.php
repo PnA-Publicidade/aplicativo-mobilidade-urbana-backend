@@ -6,7 +6,6 @@ use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\ConfiguracaoPlataformaService;
 use App\Services\ReputacaoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,37 +13,15 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function pmUsuario(string $papel, string $nome = 'Fulano de Tal'): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => $nome,
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function pmMotorista(string $nome = 'Motorista Teste'): Motorista
 {
-    return Motorista::create([
-        'user_id' => pmUsuario('motorista', $nome)->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo', 'name' => $nome]);
 }
 
 /** Corrida finalizada do motorista, com a avaliação que o passageiro deu a ele. */
 function pmAvaliada(Motorista $motorista, int $nota, array $extra = [], string $nomePassageiro = 'Amanda Souza'): Corrida
 {
-    $passageiro = Passageiro::create(['user_id' => pmUsuario('passageiro', $nomePassageiro)->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::factory()->create(['name' => $nomePassageiro]);
     $corrida = Corrida::create([
         'codigo_corrida' => 'PM-'.Str::upper(Str::random(8)),
         'passageiro_id' => $passageiro->id,
@@ -56,7 +33,7 @@ function pmAvaliada(Motorista $motorista, int $nota, array $extra = [], string $
     ]);
     AvaliacoesCorrida::create([
         'corrida_id' => $corrida->id,
-        'usuario_id' => $passageiro->user_id,
+        'avaliador_id' => $passageiro->id,
         'tipo_usuario' => 'passageiro',
         'nota' => $nota,
         ...$extra,
@@ -68,7 +45,7 @@ function pmAvaliada(Motorista $motorista, int $nota, array $extra = [], string $
 it('toda conta nova começa com a nota base 5,0, como novo usuário e sem avaliações', function () {
     $motorista = pmMotorista();
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()
         ->assertJsonPath('nome', 'Motorista Teste')
         ->assertJsonPath('nota', 5)
@@ -91,7 +68,7 @@ it('depois das primeiras avaliações reais a nota passa a ser a média delas, s
     // o 5 que o passageiro recebe sozinho quando não avalia não é avaliação real
     pmAvaliada($motorista, 5, ['automatica' => true]);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()
         ->assertJsonPath('nota', 4)
         ->assertJsonPath('nota_base', false)
@@ -130,7 +107,7 @@ it('conta os elogios e lista só os comentários de nota 4 ou 5, com o primeiro 
     pmAvaliada($motorista, 5, ['comentario' => '']);
     pmAvaliada($motorista, 5, ['comentario' => 'Nota automática nunca aparece', 'automatica' => true]);
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')->assertOk();
+    $resposta = $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')->assertOk();
 
     $elogios = collect($resposta->json('elogios'))->keyBy('chave');
     expect($elogios['pontual']['quantidade'])->toBe(2)
@@ -154,13 +131,13 @@ it('lista todas as notas de agradecimento com paginação', function () {
         pmAvaliada($motorista, 5, ['comentario' => "Comentário $i"]);
     }
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/notas-agradecimento')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/notas-agradecimento')
         ->assertOk()
         ->assertJsonPath('total', 22)
         ->assertJsonPath('per_page', 20)
         ->assertJsonCount(20, 'data');
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/notas-agradecimento?page=2')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/notas-agradecimento?page=2')
         ->assertOk()->assertJsonCount(2, 'data');
 });
 
@@ -180,7 +157,7 @@ it('dá selos pelo maior nível alcançado e mostra as verificações pelos docu
         ]);
     }
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')->assertOk();
+    $resposta = $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')->assertOk();
 
     // 10 corridas e 10 cinco estrelas: só o selo de 5 estrelas (nível 10); corridas começa em 100
     expect(collect($resposta->json('selos'))->pluck('chave')->all())->toBe(['cinco_estrelas_10']);
@@ -191,26 +168,26 @@ it('dá selos pelo maior nível alcançado e mostra as verificações pelos docu
 
 it('aceita elogios ao avaliar o motorista e recusa chaves desconhecidas', function () {
     $motorista = pmMotorista();
-    $passageiro = Passageiro::create(['user_id' => pmUsuario('passageiro')->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::factory()->create();
     $corrida = Corrida::create([
         'codigo_corrida' => 'PM-'.Str::upper(Str::random(8)), 'passageiro_id' => $passageiro->id, 'motorista_id' => $motorista->id,
         'status_corrida' => 'finalizada', 'tempo_solicitacao' => now(), 'metodo_pagamento' => 'dinheiro', 'status_pagamento' => 'pago',
     ]);
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson('/api/avaliacoes-corridas', [
+    $this->actingAs($passageiro, 'passageiros')->postJson('/api/avaliacoes-corridas', [
         'corrida_id' => $corrida->id, 'nota' => 5, 'elogios' => ['inexistente'],
     ])->assertUnprocessable();
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson('/api/avaliacoes-corridas', [
+    $this->actingAs($passageiro, 'passageiros')->postJson('/api/avaliacoes-corridas', [
         'corrida_id' => $corrida->id, 'nota' => 5, 'comentario' => 'Top', 'elogios' => ['pontual', 'pontual', 'educado'],
     ])->assertCreated()->assertJsonPath('elogios', ['pontual', 'educado']);
 
     // o motorista não elogia o passageiro: o campo é ignorado
-    $this->actingAs($motorista->user, 'jwt')->postJson('/api/avaliacoes-corridas', [
+    $this->actingAs($motorista, 'motoristas')->postJson('/api/avaliacoes-corridas', [
         'corrida_id' => $corrida->id, 'nota' => 4, 'elogios' => ['pontual'],
     ])->assertCreated()->assertJsonPath('elogios', null);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()->assertJsonPath('elogios.3.chave', 'pontual')->assertJsonPath('elogios.3.quantidade', 1);
 });
 
@@ -231,7 +208,7 @@ it('a nota é a média das últimas avaliações, na quantidade definida na gest
 
     app(ConfiguracaoPlataformaService::class)->definir('avaliacoes_media_ultimas', 3);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()
         ->assertJsonPath('janela_da_media', 3)
         ->assertJsonPath('nota', 5)
@@ -278,7 +255,7 @@ it('o perfil traz a faixa da nota e os limites definidos na gestão', function (
     $motorista = pmMotorista();
 
     // conta nova: nota base 5,0 é Excelente
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()
         ->assertJsonPath('faixa', ['chave' => 'excelente', 'titulo' => 'Excelente'])
         ->assertJsonPath('faixas.excelente_acima', 4.85)
@@ -287,13 +264,13 @@ it('o perfil traz a faixa da nota e os limites definidos na gestão', function (
     pmAvaliada($motorista, 4);
     pmAvaliada($motorista, 4);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()->assertJsonPath('nota', 4)->assertJsonPath('faixa.chave', 'alto_risco');
 
     // a gestão muda os limites: 4,0 passa a ser Atenção
     app(ConfiguracaoPlataformaService::class)->definirFaixas(4.9, 3.5);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
         ->assertOk()->assertJsonPath('faixa.chave', 'atencao')->assertJsonPath('faixas.alto_risco_abaixo', 3.5);
 });
 

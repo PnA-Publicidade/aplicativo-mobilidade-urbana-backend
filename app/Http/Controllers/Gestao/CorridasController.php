@@ -16,10 +16,8 @@ class CorridasController extends Controller
 {
     private const RELACOES = [
         'produto:id,nome',
-        'motorista:id,user_id,foto',
-        'motorista.user:id,name',
-        'passageiro:id,user_id,foto',
-        'passageiro.user:id,name',
+        'motorista:id,name,foto',
+        'passageiro:id,name,foto',
         'veiculo:id,modelo,cor,placa',
         'corrida_destinos:id,corrida_id,tipo,ordem,endereco',
         'corrida_financeiro',
@@ -43,8 +41,8 @@ class CorridasController extends Controller
             ->when($busca !== '', fn (Builder $consulta) => $consulta->where(fn (Builder $filtro) => $filtro
                 ->where('codigo_corrida', 'like', "%{$busca}%")
                 ->orWhere('id', ctype_digit($busca) ? (int) $busca : 0)
-                ->orWhereHas('passageiro.user', fn (Builder $usuario) => $usuario->where('name', 'like', "%{$busca}%"))
-                ->orWhereHas('motorista.user', fn (Builder $usuario) => $usuario->where('name', 'like', "%{$busca}%"))))
+                ->orWhereHas('passageiro', fn (Builder $passageiro) => $passageiro->where('name', 'like', "%{$busca}%"))
+                ->orWhereHas('motorista', fn (Builder $motorista) => $motorista->where('name', 'like', "%{$busca}%"))))
             ->orderByDesc('id')
             ->paginate($porPagina);
     }

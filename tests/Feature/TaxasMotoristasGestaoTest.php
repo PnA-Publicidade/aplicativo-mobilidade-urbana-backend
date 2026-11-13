@@ -4,7 +4,6 @@ use App\Models\Corrida;
 use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\ConfiguracaoPlataformaService;
 use App\Services\TaxasMotoristaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,36 +12,14 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function gtUsuario(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' '.Str::upper(Str::random(4)),
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function gtMotorista(): Motorista
 {
-    return Motorista::create([
-        'user_id' => gtUsuario('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 function gtCorrida(): Corrida
 {
-    $passageiro = Passageiro::create(['user_id' => gtUsuario('passageiro')->id, 'media_avaliacao' => null]);
+    $passageiro = Passageiro::factory()->create();
 
     return Corrida::create([
         'codigo_corrida' => 'GT-'.Str::upper(Str::random(8)),

@@ -7,6 +7,7 @@ use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Models\Veiculo;
+use App\Support\PerfilLogado;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -117,7 +118,7 @@ class VeiculosController extends Controller
 
         // ninguém aprova elétrico ou táxi no próprio veículo
         $decideCategoria = array_key_exists('eletrico', $dados) || array_key_exists('taxi', $dados);
-        $motoristaDoUsuario = Motorista::where('user_id', $request->user()->id)->value('id');
+        $motoristaDoUsuario = PerfilLogado::motorista($request)?->id;
 
         if ($decideCategoria && $motoristaDoUsuario !== null && MotoristaVeiculo::where('motorista_id', $motoristaDoUsuario)
             ->where('veiculo_id', $veiculo->id)

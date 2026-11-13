@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Usuario;
 use App\Http\Controllers\Controller;
 use App\Models\ChamadoAjuda;
 use App\Services\TicketsAjudaService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,7 +23,7 @@ class ChamadosAjudaController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        return response()->json(['data' => ChamadoAjuda::where('user_id', $request->user()->id)->latest('id')->limit(50)->get()->map(fn ($ticket) => $this->legado($ticket))]);
+        return response()->json(['data' => ChamadoAjuda::where('solicitante_tipo', PerfilLogado::de($request)->perfilDoApp())->where('solicitante_id', PerfilLogado::de($request)->id)->latest('id')->limit(50)->get()->map(fn ($ticket) => $this->legado($ticket))]);
     }
 
     public function store(Request $request, TicketsAjudaService $service): JsonResponse
@@ -33,6 +34,6 @@ class ChamadosAjudaController extends Controller
             'solicitante_tipo' => 'nullable|in:passageiro,motorista',
         ]);
 
-        return response()->json(['data' => $this->legado($service->criar($request->user(), $dados))], 201);
+        return response()->json(['data' => $this->legado($service->criar(PerfilLogado::de($request), $dados))], 201);
     }
 }

@@ -7,8 +7,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
- * @property string|null $perfil passageiro ou motorista (nulo: antiga, aparece nos dois)
+ * @property string $perfil passageiro ou motorista
+ * @property int $perfil_id id em motoristas ou passageiros, conforme o perfil
  * @property string $titulo
  * @property string $mensagem
  * @property Carbon|null $lida_em
@@ -17,7 +17,7 @@ class Notificacao extends Model
 {
     protected $table = 'notificacoes';
 
-    protected $fillable = ['user_id', 'perfil', 'titulo', 'mensagem', 'lida_em'];
+    protected $fillable = ['perfil', 'perfil_id', 'titulo', 'mensagem', 'lida_em'];
 
     /**
      * @return array<string, string>

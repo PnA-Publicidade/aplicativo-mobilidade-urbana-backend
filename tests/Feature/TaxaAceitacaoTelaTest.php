@@ -3,28 +3,12 @@
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\TaxasMotoristaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
-
-function taUsuario(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' '.Str::upper(Str::random(4)),
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
 
 /** Grava `quantos` eventos de aceitação de um resultado num dia, direto no livro. */
 function taEventos(Motorista $motorista, Passageiro $passageiro, string $dia, string $resultado, int $quantos, ?string $negociacao = null): void
@@ -52,8 +36,8 @@ afterEach(fn () => Carbon::setTestNow());
 
 it('entrega os dados da tela Taxa de Aceitação: mês corrente, série diária e histórico mensal', function () {
     $this->travelTo(Carbon::parse('2026-11-13 12:00:00'));
-    $motorista = Motorista::create(['user_id' => taUsuario('motorista')->id, 'status' => 'ativo', 'cnh_numero' => null, 'cnh_categoria' => null, 'cnh_expiracao' => null, 'ear' => null]);
-    $passageiro = Passageiro::create(['user_id' => taUsuario('passageiro')->id, 'media_avaliacao' => null]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
 
     taEventos($motorista, $passageiro, '2026-11-12', 'positivo', 3);
     taEventos($motorista, $passageiro, '2026-11-12', 'negativo', 1);
@@ -65,7 +49,7 @@ it('entrega os dados da tela Taxa de Aceitação: mês corrente, série diária 
     taEventos($motorista, $passageiro, '2026-10-20', 'negativo', 5);
     taEventos($motorista, $passageiro, '2026-09-10', 'positivo', 4);
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')
+    $resposta = $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/taxa-aceitacao')
         ->assertOk()
         ->assertJsonPath('periodo.de', '2026-11-01')
@@ -95,9 +79,9 @@ it('entrega os dados da tela Taxa de Aceitação: mês corrente, série diária 
 });
 
 it('mostra a tela para a conta nova com 100% e sem chamadas', function () {
-    $motorista = Motorista::create(['user_id' => taUsuario('motorista')->id, 'status' => 'ativo', 'cnh_numero' => null, 'cnh_categoria' => null, 'cnh_expiracao' => null, 'ear' => null]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/taxa-aceitacao')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/taxa-aceitacao')
         ->assertOk()
         ->assertJsonPath('taxa', 100)
         ->assertJsonPath('aceitas', 0)

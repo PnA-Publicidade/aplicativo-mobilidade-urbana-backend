@@ -3,7 +3,6 @@
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\TaxasMotoristaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -11,39 +10,14 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function usuarioParaTaxas(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Taxas',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function motoristaParaTaxas(): Motorista
 {
-    return Motorista::create([
-        'user_id' => usuarioParaTaxas('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 function passageiroParaTaxas(): Passageiro
 {
-    return Passageiro::create([
-        'user_id' => usuarioParaTaxas('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    return Passageiro::factory()->create();
 }
 
 function corridaParaTaxas(Passageiro $passageiro, array $extra = []): Corrida
@@ -66,7 +40,7 @@ function taxasDe(Motorista $motorista): array
 it('começa em 100% nas duas taxas para a conta nova', function () {
     $motorista = motoristaParaTaxas();
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('taxa_aceitacao', 100)
@@ -91,7 +65,7 @@ it('recalcula a finalização com finalizadas, cancelamentos do motorista e desi
     // desistir de uma corrida em grupo depois de aceitar também pesa
     $taxas->registrarDesistenciaDeGrupo(corridaParaTaxas($passageiro)->id, $motorista->id);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('corridas_finalizadas', 3)
@@ -108,13 +82,13 @@ it('conta como recusa a chamada recusada na tela e a que ficou sem resposta', fu
     $semResposta = corridaParaTaxas(passageiroParaTaxas());
 
     foreach ([$aceita, $recusada, $semResposta] as $corrida) {
-        $this->actingAs($motorista->user, 'jwt')
+        $this->actingAs($motorista, 'motoristas')
             ->postJson("/api/motorista/corridas/{$corrida->id}/tocou")
             ->assertNoContent();
     }
 
     $taxas->registrarAceite($aceita, $motorista->id);
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson("/api/motorista/corridas/{$recusada->id}/recusar")
         ->assertNoContent();
 
@@ -143,7 +117,7 @@ it('não conta recusa de corrida que outro motorista já pegou nem chamada que n
     $nuncaTocou = corridaParaTaxas(passageiroParaTaxas());
     DB::table('ofertas_motorista')->insert(['motorista_id' => $motorista->id, 'corrida_id' => $nuncaTocou->id, 'ofertada_em' => now()->subHour()]);
 
-    $this->actingAs($motorista->user, 'jwt')->postJson("/api/motorista/corridas/{$pegaPorOutro->id}/recusar")->assertNoContent();
+    $this->actingAs($motorista, 'motoristas')->postJson("/api/motorista/corridas/{$pegaPorOutro->id}/recusar")->assertNoContent();
 
     expect(app(TaxasMotoristaService::class)->fecharChamadasSemResposta())->toBe(0)
         ->and(DB::table('motorista_taxa_eventos')->count())->toBe(0)

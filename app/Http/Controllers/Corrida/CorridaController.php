@@ -10,7 +10,6 @@ use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
 use App\Models\SalaCompartilhada;
-use App\Models\User;
 use App\Services\AjustarPontoEmbarqueService;
 use App\Services\AlterarCorridaService;
 use App\Services\AumentarOfertaNegociaService;
@@ -28,6 +27,7 @@ use App\Services\ReputacaoService;
 use App\Services\ResolverTarifaService;
 use App\Services\SimularCorridaNegociadaService;
 use App\Services\SolicitarCorridaService;
+use App\Support\PerfilLogado;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -145,10 +145,8 @@ class CorridaController extends Controller
         $pagina = $this->doUsuario($request)
             ->with([
                 'produto:id,nome',
-                'motorista:id,user_id,foto',
-                'motorista.user:id,name',
-                'passageiro:id,user_id,foto',
-                'passageiro.user:id,name',
+                'motorista:id,name,foto',
+                'passageiro:id,name,foto',
                 'veiculo:id,modelo,cor,placa',
                 'corrida_destinos:id,corrida_id,tipo,ordem,endereco',
                 'corrida_financeiro:id,corrida_id,valor_pago_passageiro,tarifa_base,taxa_cancelamento,taxa_plataforma_valor,taxa_plataforma_percentual,valor_motorista,valor_liquido_motorista,metodo_pagamento',
@@ -163,7 +161,7 @@ class CorridaController extends Controller
 
     public function previsaoCancelamento(Request $request, int $corrida): JsonResponse
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         $registro = $passageiroId === null ? null : Corrida::whereKey($corrida)
             ->where('passageiro_id', $passageiroId)
@@ -183,7 +181,7 @@ class CorridaController extends Controller
             'taxa_confirmada' => 'nullable|numeric|min:0',
         ]);
 
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         try {
             $cancelada = $this->despachoCorridaService->cancelar(
@@ -256,7 +254,7 @@ class CorridaController extends Controller
      */
     private function alterarComoPassageiro(Request $request, int $corrida, AlterarCorridaService $alterarCorrida, callable $alterar): JsonResponse
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         if ($passageiroId === null) {
             return response()->json(['message' => 'Corrida não encontrada.'], 404);
@@ -284,10 +282,8 @@ class CorridaController extends Controller
         ]);
 
         $relacoes = [
-            'motorista:id,user_id,foto',
-            'motorista.user:id,name,telefone',
-            'passageiro:id,user_id,foto',
-            'passageiro.user:id,name',
+            'motorista:id,name,telefone,foto',
+            'passageiro:id,name,foto',
             'veiculo',
             'corrida_destinos',
             'corrida_financeiro',
@@ -308,7 +304,7 @@ class CorridaController extends Controller
             ]);
         }
 
-        $motoristaId = Motorista::where('user_id', $request->user()->id)->value('id');
+        $motoristaId = PerfilLogado::motorista($request)?->id;
         $grupo = app(GrupoCompartilhadoService::class);
         $comoMotorista = $motoristaId !== null && $corrida->motorista_id === (int) $motoristaId;
 
@@ -389,7 +385,7 @@ class CorridaController extends Controller
      */
     private function salaCompartilhadaAtual(Request $request): ?array
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         if ($passageiroId === null) {
             return null;
@@ -447,25 +443,24 @@ class CorridaController extends Controller
      */
     private function motoristaParaOPassageiro(Corrida $corrida, Request $request): ?array
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
 
         if ($passageiroId === null || $corrida->passageiro_id !== $passageiroId) {
             return null;
         }
 
         $motorista = $corrida->motorista;
-        $usuario = $motorista?->user;
 
-        if ($motorista === null || $usuario === null) {
+        if ($motorista === null) {
             return null;
         }
 
         // nota base 5,0 até a primeira avaliação real; "novo" enquanto tem poucas corridas
         $reputacao = app(ReputacaoService::class)->doMotorista($motorista->id);
-        $telefone = $usuario->telefone;
+        $telefone = Motorista::whereKey($motorista->id)->value('telefone');
 
         return [
-            'nome' => $this->primeiroNome((string) $usuario->name),
+            'nome' => $this->primeiroNome((string) $motorista->name),
             'foto' => $motorista->foto,
             'telefone' => is_string($telefone) ? $telefone : null,
             'nota' => $reputacao['nota'],
@@ -481,28 +476,27 @@ class CorridaController extends Controller
      */
     private function passageiroParaOMotorista(Corrida $corrida, Request $request): ?array
     {
-        $motoristaId = Motorista::where('user_id', $request->user()->id)->value('id');
+        $motoristaId = PerfilLogado::motorista($request)?->id;
 
         if ($motoristaId === null || $corrida->motorista_id !== $motoristaId) {
             return null;
         }
 
         $passageiro = $corrida->passageiro;
-        $usuario = $passageiro?->user;
 
-        if ($passageiro === null || $usuario === null) {
+        if ($passageiro === null) {
             return null;
         }
 
         $reputacao = app(ReputacaoService::class)->doPassageiro($passageiro->id);
-        $telefone = $passageiro->user()->value('telefone');
+        $telefone = Passageiro::whereKey($passageiro->id)->value('telefone');
         $convidado = $corrida->convidado_nome !== null;
         $fotoLiberada = ! $convidado
             && in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
 
         return [
-            'nome' => $this->primeiroNome((string) ($convidado ? $corrida->convidado_nome : $usuario->name)),
-            'solicitante' => $convidado ? $this->primeiroNome((string) $usuario->name) : null,
+            'nome' => $this->primeiroNome((string) ($convidado ? $corrida->convidado_nome : $passageiro->name)),
+            'solicitante' => $convidado ? $this->primeiroNome((string) $passageiro->name) : null,
             'foto' => $fotoLiberada ? $passageiro->foto : null,
             'foto_oculta' => ! $fotoLiberada,
             'telefone' => $convidado
@@ -516,9 +510,9 @@ class CorridaController extends Controller
 
     private function reduzirNomes(Corrida $corrida): void
     {
-        foreach ([$corrida->motorista?->user, $corrida->passageiro?->user] as $usuario) {
-            if ($usuario !== null) {
-                $usuario->setAttribute('name', $this->primeiroNome((string) $usuario->name));
+        foreach ([$corrida->motorista, $corrida->passageiro] as $perfil) {
+            if ($perfil !== null) {
+                $perfil->setAttribute('name', $this->primeiroNome((string) $perfil->name));
             }
         }
     }
@@ -533,10 +527,8 @@ class CorridaController extends Controller
      */
     private function doUsuario(Request $request, ?string $perfil = null): Builder
     {
-        $usuarioId = $request->user()->id;
-
-        $passageiroId = Passageiro::where('user_id', $usuarioId)->value('id');
-        $motoristaId = Motorista::where('user_id', $usuarioId)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
+        $motoristaId = PerfilLogado::motorista($request)?->id;
 
         return Corrida::query()->where(function (Builder $consulta) use ($passageiroId, $motoristaId, $perfil) {
             $consulta->whereRaw('1 = 0');
@@ -585,7 +577,9 @@ class CorridaController extends Controller
 
         $cotacao = CotacaoCorrida::find((string) $dados['cotacao_id']);
 
-        if ($cotacao === null || $cotacao->user_id !== $request->user()->id) {
+        $passageiro = PerfilLogado::passageiro($request);
+
+        if ($cotacao === null || $passageiro === null || $cotacao->passageiro_id !== $passageiro->id) {
             return response()->json(['message' => 'Cotação não encontrada.'], 404);
         }
 
@@ -593,12 +587,9 @@ class CorridaController extends Controller
             return response()->json(['message' => 'Cotação expirada. Refaça a consulta de preços.'], 410);
         }
 
-        $usuario = $request->user();
-        abort_unless($usuario instanceof User, 401, 'Não autenticado.');
-
         try {
             $corrida = $this->solicitarCorridaService->executar(
-                usuario: $usuario,
+                passageiro: $passageiro,
                 cotacao: $cotacao,
                 produtosCodigos: array_values(array_map('strval', $dados['produtos_codigos'] ?? [$dados['produto_codigo']])),
                 metodoPagamento: $dados['metodo_pagamento'] ?? null,
@@ -623,10 +614,8 @@ class CorridaController extends Controller
         $encontrada = $this->doUsuario($request)
             ->whereKey($corrida)
             ->with([
-                'motorista:id,user_id,foto',
-                'motorista.user:id,name',
-                'passageiro:id,user_id,foto',
-                'passageiro.user:id,name',
+                'motorista:id,name,foto',
+                'passageiro:id,name,foto',
                 'veiculo',
                 'corrida_destinos',
                 'corrida_financeiro',
@@ -964,7 +953,8 @@ class CorridaController extends Controller
             ->values();
 
         $cotacao = CotacaoCorrida::create([
-            'user_id' => $request->user()->id,
+            // só o app do passageiro pede cotação
+            'passageiro_id' => (PerfilLogado::passageiro($request) ?? abort(403, 'Só o passageiro pede cotação.'))->id,
             'cidade_id' => isset($dados['cidade_id']) ? (int) $dados['cidade_id'] : null,
             'distancia_km' => $distanciaKm,
             'tempo_min' => $tempoMin,
@@ -987,7 +977,7 @@ class CorridaController extends Controller
     {
         $registro = CotacaoCorrida::find($cotacao);
 
-        if ($registro === null || $registro->user_id !== $request->user()->id) {
+        if ($registro === null || $registro->passageiro_id !== PerfilLogado::passageiro($request)?->id) {
             return response()->json(['message' => 'Cotação não encontrada.'], 404);
         }
 

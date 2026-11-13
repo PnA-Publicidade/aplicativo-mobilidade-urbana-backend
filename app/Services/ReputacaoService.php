@@ -181,13 +181,12 @@ class ReputacaoService
     {
         $pagina = $this->avaliacoesReaisDoMotorista($motoristaId)
             ->join('passageiros', 'passageiros.id', '=', 'corridas.passageiro_id')
-            ->leftJoin('users', 'users.id', '=', 'passageiros.user_id')
             ->where('avaliacoes_corridas.nota', '>=', self::NOTA_MINIMA_DO_AGRADECIMENTO)
             ->whereNotNull('avaliacoes_corridas.comentario')
             ->where('avaliacoes_corridas.comentario', '!=', '')
             ->orderByDesc('avaliacoes_corridas.created_at')
             ->orderByDesc('avaliacoes_corridas.id')
-            ->select(['avaliacoes_corridas.id', 'avaliacoes_corridas.nota', 'avaliacoes_corridas.comentario', 'avaliacoes_corridas.elogios', 'avaliacoes_corridas.created_at', 'users.name as autor'])
+            ->select(['avaliacoes_corridas.id', 'avaliacoes_corridas.nota', 'avaliacoes_corridas.comentario', 'avaliacoes_corridas.elogios', 'avaliacoes_corridas.created_at', 'passageiros.name as autor'])
             ->paginate($porPagina);
 
         $titulos = collect(ElogioMotorista::cases())->mapWithKeys(fn (ElogioMotorista $e) => [$e->value => $e->titulo()]);

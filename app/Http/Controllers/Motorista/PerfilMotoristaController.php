@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Motorista;
 
 use App\Http\Controllers\Controller;
-use App\Models\Motorista;
 use App\Services\ReputacaoService;
 use App\Services\RestricaoNotaService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -19,7 +19,7 @@ class PerfilMotoristaController extends Controller
 
     public function mostrar(Request $request): JsonResponse
     {
-        $motorista = Motorista::with('user:id,name')->where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
@@ -32,7 +32,7 @@ class PerfilMotoristaController extends Controller
         $notas = $this->reputacao->notasDeAgradecimento($motorista->id, self::NOTAS_NO_RESUMO);
 
         return response()->json([
-            'nome' => $motorista->nome ?? $motorista->user?->name,
+            'nome' => $motorista->nome,
             'foto' => $motorista->foto,
             ...$resumo,
             'corridas_para_deixar_de_ser_novo' => ReputacaoService::corridasParaDeixarDeSerNovo(),
@@ -57,7 +57,7 @@ class PerfilMotoristaController extends Controller
     /** Lista completa das notas de agradecimento (tela Ver tudo). */
     public function notasDeAgradecimento(Request $request): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);

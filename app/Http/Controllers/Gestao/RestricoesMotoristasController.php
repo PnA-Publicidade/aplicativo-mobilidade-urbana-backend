@@ -26,19 +26,17 @@ class RestricoesMotoristasController extends Controller
         ]);
 
         $aba = $dados['aba'] ?? 'alertas';
-        $nome = 'COALESCE(motoristas.nome, users.name)';
+        $nome = 'motoristas.name';
 
         if ($aba === 'alertas') {
             $consulta = DB::table('motorista_alertas_taxa as a')
                 ->join('motoristas', 'motoristas.id', '=', 'a.motorista_id')
-                ->leftJoin('users', 'users.id', '=', 'motoristas.user_id')
                 ->where('a.status', 'aberto')
                 ->orderBy('a.prazo_ate')
                 ->select(['a.id', 'a.motorista_id', DB::raw("$nome as nome"), 'a.taxa_no_inicio', 'a.corridas_na_janela', 'a.prazo_ate', 'a.created_at']);
         } else {
             $consulta = DB::table('motorista_restricoes as r')
                 ->join('motoristas', 'motoristas.id', '=', 'r.motorista_id')
-                ->leftJoin('users', 'users.id', '=', 'motoristas.user_id')
                 ->when($aba === 'restritos', fn ($q) => $q->where('r.status', 'ativa')->orderBy('r.fim'))
                 ->when($aba === 'historico', fn ($q) => $q->where('r.status', '!=', 'ativa')->orderByDesc('r.fim'))
                 ->select([

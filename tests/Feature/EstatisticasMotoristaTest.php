@@ -4,61 +4,25 @@ use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function usuarioEstatistica(string $papel): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Estatística',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function motoristaEstatistica(): Motorista
 {
-    return Motorista::create([
-        'user_id' => usuarioEstatistica('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    return Motorista::factory()->create(['status' => 'ativo']);
 }
 
 function passageiroEstatistica(): Passageiro
 {
-    return Passageiro::create([
-        'user_id' => usuarioEstatistica('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    return Passageiro::factory()->create();
 }
 
 it('soma os ganhos do dia e o saldo só com corridas finalizadas', function () {
-    $motorista = Motorista::create([
-        'user_id' => usuarioEstatistica('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
-    $passageiro = Passageiro::create([
-        'user_id' => usuarioEstatistica('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
 
     $criar = function (string $status, ?string $quando, float $liquido, string $pagamento = 'pago') use ($motorista, $passageiro) {
         $corrida = Corrida::create([
@@ -85,7 +49,7 @@ it('soma os ganhos do dia e o saldo só com corridas finalizadas', function () {
     // pagamento ainda não confirmado: não é ganho nem saldo, mas foi feita hoje
     $criar('finalizada', now()->toDateTimeString(), 7.00, 'em_aberto');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/ganhos')
         ->assertOk()
         ->assertJsonPath('ganhos_do_dia', 10.5)
@@ -97,7 +61,7 @@ it('mostra a nota que os passageiros deram ao motorista e não inventa nota para
     $motorista = motoristaEstatistica();
     $passageiro = passageiroEstatistica();
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('nota_motorista', null)
         ->assertJsonPath('avaliacoes_recebidas', 0);
@@ -112,7 +76,7 @@ it('mostra a nota que os passageiros deram ao motorista e não inventa nota para
             'metodo_pagamento' => 'dinheiro',
             'status_pagamento' => 'pendente',
         ]);
-        AvaliacoesCorrida::create(['corrida_id' => $corrida->id, 'usuario_id' => $passageiro->user_id, 'tipo_usuario' => $tipo, 'nota' => $nota]);
+        AvaliacoesCorrida::create(['corrida_id' => $corrida->id, 'avaliador_id' => $passageiro->id, 'tipo_usuario' => $tipo, 'nota' => $nota]);
     };
 
     $avaliar('passageiro', 5, $motorista->id);
@@ -122,7 +86,7 @@ it('mostra a nota que os passageiros deram ao motorista e não inventa nota para
     $avaliar('motorista', 1, $motorista->id);
     $avaliar('passageiro', 1, motoristaEstatistica()->id);
 
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/estatisticas')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/estatisticas')
         ->assertOk()
         ->assertJsonPath('nota_motorista', 4.33)
         ->assertJsonPath('avaliacoes_recebidas', 3);
