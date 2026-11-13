@@ -4,12 +4,10 @@ namespace App\Http\Controllers\Usuario;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\CadastroUsuarioRequest;
-use App\Models\AvaliacoesCorrida;
-use App\Models\Corrida;
 use App\Models\Passageiro;
 use App\Models\User;
 use App\Services\PerfilUsuarioService;
-use App\Support\Reputacao;
+use App\Services\ReputacaoService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -71,19 +69,14 @@ class UsuarioController extends Controller
 
         // nota que os motoristas deram ao passageiro (o menu do app mostra)
         $passageiroId = Passageiro::where('user_id', $user->id)->value('id');
-        $nota = $passageiroId === null ? null : AvaliacoesCorrida::query()
-            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
-            ->where('avaliacoes_corridas.tipo_usuario', 'motorista')
-            ->where('corridas.passageiro_id', $passageiroId)
-            ->avg('avaliacoes_corridas.nota');
-        // o perfil do passageiro mostra quantas corridas ele já fez
-        $corridas = $passageiroId === null ? 0 : Corrida::where('passageiro_id', $passageiroId)
-            ->where('status_corrida', 'finalizada')
-            ->count();
+        // nota base 5,0 até a primeira avaliação real; "novo" enquanto tem poucas corridas
+        $reputacao = $passageiroId === null ? null : app(ReputacaoService::class)->doPassageiro((int) $passageiroId);
         $dados = $perfis->dados($user, $perfil, $registroPerfil);
-        $dados['nota_passageiro'] = Reputacao::media($nota, $corridas);
-        $dados['corridas_passageiro'] = $corridas;
-        $dados['minimo_corridas_para_nota'] = Reputacao::minimoDeCorridas();
+        $dados['nota_passageiro'] = $reputacao['nota'] ?? ReputacaoService::notaBase();
+        // o perfil do passageiro mostra quantas corridas ele já fez
+        $dados['corridas_passageiro'] = $reputacao['corridas'] ?? 0;
+        $dados['passageiro_novo'] = $reputacao['novo'] ?? true;
+        $dados['corridas_para_deixar_de_ser_novo'] = ReputacaoService::corridasParaDeixarDeSerNovo();
 
         return response()->json($dados);
     }

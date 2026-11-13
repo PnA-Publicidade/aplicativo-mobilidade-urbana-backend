@@ -8,6 +8,7 @@ use App\Http\Controllers\Motorista\MetodosResgateController;
 use App\Http\Controllers\Motorista\MotoristaCadastroController;
 use App\Http\Controllers\Motorista\MotoristaController;
 use App\Http\Controllers\Motorista\MotoristaDocumentoController;
+use App\Http\Controllers\Motorista\PerfilMotoristaController;
 use App\Http\Controllers\Motorista\SolicitacoesVeiculoController;
 use App\Http\Controllers\Motorista\PreferenciasMotoristaController;
 use Illuminate\Support\Facades\Route;
@@ -29,6 +30,8 @@ Route::delete('motorista/me/veiculos/{veiculo}', [MotoristaController::class, 'r
 Route::get('motorista/me/estatisticas', [MotoristaController::class, 'estatisticas']);
 Route::get('motorista/me/taxa-finalizacao', [MotoristaController::class, 'taxaFinalizacao']);
 Route::get('motorista/me/taxa-aceitacao', [MotoristaController::class, 'taxaAceitacao']);
+Route::get('motorista/me/perfil', [PerfilMotoristaController::class, 'mostrar']);
+Route::get('motorista/me/notas-agradecimento', [PerfilMotoristaController::class, 'notasDeAgradecimento']);
 // viagem compartilhada: aceitar chamadas de grupo e lugares do carro
 Route::get('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'mostrar']);
 Route::put('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'atualizar']);

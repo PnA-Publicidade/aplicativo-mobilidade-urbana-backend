@@ -21,6 +21,7 @@ use App\Services\CompartilhamentoVeiculoService;
 use App\Services\DespachoCorridaService;
 use App\Services\NotificarUsuarioService;
 use App\Services\PagamentoCorridaService;
+use App\Services\ReputacaoService;
 use App\Services\SolicitarCorridaService;
 use App\Services\TaxasMotoristaService;
 use App\Support\Avisar;
@@ -341,7 +342,7 @@ class GrupoCompartilhadoService
      * Uma oferta por grupo, montada sobre a corrida de quem embarca primeiro.
      *
      * @param  Collection<int, Corrida>  $corridas  as corridas do grupo à espera de motorista
-     * @param  array<int, array{passageiro_nota: float|null, passageiro_corridas: int}>  $reputacoes
+     * @param  array<int, array{passageiro_nota: float, passageiro_corridas: int, passageiro_novo: bool}>  $reputacoes
      * @return non-empty-array<string, mixed>|null
      */
     public function oferta(int $salaId, Collection $corridas, StatusBusca $status, Motorista $motorista, ?Veiculo $veiculo, array $reputacoes, float $raioTarifa): ?array
@@ -400,7 +401,7 @@ class GrupoCompartilhadoService
             ], $paradas, array_keys($paradas)),
             'para_outra_pessoa' => false,
             'solicitada_em' => $lider->tempo_solicitacao,
-            ...($reputacoes[$lider->passageiro_id] ?? ['passageiro_nota' => null, 'passageiro_corridas' => 0]),
+            ...($reputacoes[$lider->passageiro_id] ?? ['passageiro_nota' => ReputacaoService::notaBase(), 'passageiro_corridas' => 0, 'passageiro_novo' => true]),
             // o card mostra que vale mais: "R$ 34,80 · 3 embarques · compartilhada"
             'compartilhada' => [
                 'passageiros' => $ativas->count(),

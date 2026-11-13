@@ -3,7 +3,6 @@
 namespace App\Services\Compartilhada;
 
 use App\Events\SalaCompartilhadaAtualizada;
-use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
@@ -16,9 +15,9 @@ use App\Models\User;
 use App\Services\EnderecoPorCoordenadaService;
 use App\Services\NotificarUsuarioService;
 use App\Services\PagamentoCorridaService;
+use App\Services\ReputacaoService;
 use App\Services\SolicitarCorridaService;
 use App\Support\Avisar;
-use App\Support\Reputacao;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -114,7 +113,7 @@ class SalaCompartilhadaService
         $nota = $this->notaDoPassageiro($passageiro->id);
         $notaMinima = (float) config('compartilhada.abrir_nota_minima', 4.0);
 
-        if ($nota !== null && $nota < $notaMinima) {
+        if ($nota < $notaMinima) {
             return 'Abrir sala compartilhada exige nota '.number_format($notaMinima, 1, ',', '').' ou maior.';
         }
 
@@ -1024,65 +1023,24 @@ class SalaCompartilhadaService
             ->count();
     }
 
-    private function notaDoPassageiro(int $passageiroId): ?float
+    private function notaDoPassageiro(int $passageiroId): float
     {
-        return $this->notasDosPassageiros([$passageiroId])[$passageiroId] ?? null;
+        return app(ReputacaoService::class)->doPassageiro($passageiroId)['nota'];
     }
 
     /**
-     * Nota que os outros enxergam: só de quem já tem o mínimo de corridas.
+     * Nota que os outros enxergam: base 5,0 até a primeira avaliação real,
+     * depois a média das últimas avaliações.
      *
      * @param  array<int, mixed>  $passageiroIds
      * @return array<int, float>
      */
     private function notasVisiveisDosPassageiros(array $passageiroIds): array
     {
-        $notas = $this->notasDosPassageiros($passageiroIds);
-
-        if ($notas === []) {
-            return [];
-        }
-
-        $totais = Corrida::whereIn('passageiro_id', array_keys($notas))
-            ->where('status_corrida', 'finalizada')
-            ->selectRaw('passageiro_id, COUNT(*) AS total')
-            ->groupBy('passageiro_id')
-            ->pluck('total', 'passageiro_id');
-
-        $visiveis = [];
-        foreach ($notas as $passageiroId => $nota) {
-            $media = Reputacao::media($nota, (int) ($totais[$passageiroId] ?? 0));
-            if ($media !== null) {
-                $visiveis[$passageiroId] = $media;
-            }
-        }
-
-        return $visiveis;
-    }
-
-    /**
-     * Nota que os motoristas deram a cada passageiro.
-     *
-     * @param  array<int, mixed>  $passageiroIds
-     * @return array<int, float>
-     */
-    private function notasDosPassageiros(array $passageiroIds): array
-    {
-        $passageiroIds = array_values(array_map('intval', $passageiroIds));
-
-        if ($passageiroIds === []) {
-            return [];
-        }
-
-        return AvaliacoesCorrida::query()
-            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
-            ->where('avaliacoes_corridas.tipo_usuario', 'motorista')
-            ->whereIn('corridas.passageiro_id', $passageiroIds)
-            ->selectRaw('corridas.passageiro_id, AVG(avaliacoes_corridas.nota) AS media')
-            ->groupBy('corridas.passageiro_id')
-            ->pluck('media', 'passageiro_id')
-            ->map(fn ($media) => round((float) $media, 2))
-            ->all();
+        return array_map(
+            fn (array $reputacao): float => $reputacao['nota'],
+            app(ReputacaoService::class)->dosPassageiros($passageiroIds)
+        );
     }
 
     /**

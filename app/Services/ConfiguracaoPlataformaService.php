@@ -45,6 +45,16 @@ class ConfiguracaoPlataformaService
         return $this->inteiro(self::DUPLICADA_JANELA_MINUTOS, self::DUPLICADA_JANELA_MINUTOS_PADRAO);
     }
 
+    // a nota de motoristas e passageiros é a média das últimas avaliações reais, neste número
+    public const AVALIACOES_MEDIA_ULTIMAS = 'avaliacoes_media_ultimas';
+
+    public const AVALIACOES_MEDIA_ULTIMAS_PADRAO = 200;
+
+    public function avaliacoesMediaUltimas(): int
+    {
+        return max(1, $this->inteiro(self::AVALIACOES_MEDIA_ULTIMAS, self::AVALIACOES_MEDIA_ULTIMAS_PADRAO));
+    }
+
     // restrições por taxa de finalização baixa (ciclo mensal, como na 99)
     public const RESTRICOES_ATIVAS = 'restricoes_taxa_ativas';
 

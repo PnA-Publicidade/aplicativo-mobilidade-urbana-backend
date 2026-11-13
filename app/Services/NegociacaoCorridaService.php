@@ -4,14 +4,12 @@ namespace App\Services;
 
 use App\Events\CorridaAtualizada;
 use App\Events\CorridasDisponiveisAlteradas;
-use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\CorridaFinanceiro;
 use App\Models\CorridaNegociacoes;
 use App\Models\Motorista;
 use App\Models\StatusBusca;
 use App\Support\Avisar;
-use App\Support\Reputacao;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -213,23 +211,12 @@ class NegociacaoCorridaService
         }
 
         $motoristaIds = $propostas->pluck('motorista_id')->filter()->unique()->values();
-        // tipo_usuario "passageiro" são as notas que passageiros deram ao motorista
-        $notas = AvaliacoesCorrida::query()
-            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
-            ->where('avaliacoes_corridas.tipo_usuario', 'passageiro')
-            ->whereIn('corridas.motorista_id', $motoristaIds)
-            ->selectRaw('corridas.motorista_id, AVG(avaliacoes_corridas.nota) AS media')
-            ->groupBy('corridas.motorista_id')
-            ->pluck('media', 'motorista_id');
-        $totais = Corrida::whereIn('motorista_id', $motoristaIds)
-            ->where('status_corrida', 'finalizada')
-            ->selectRaw('motorista_id, COUNT(*) AS total')
-            ->groupBy('motorista_id')
-            ->pluck('total', 'motorista_id');
+        // nota base 5,0 até a primeira avaliação real; "novo" enquanto tem poucas corridas
+        $reputacoes = app(ReputacaoService::class)->dosMotoristas($motoristaIds);
         $posicoes = StatusBusca::whereIn('motorista_id', $motoristaIds)->get()->keyBy('motorista_id');
         $corrida->loadMissing(['corrida_destinos', 'corrida_financeiro']);
 
-        return array_values($propostas->map(function (CorridaNegociacoes $proposta) use ($corrida, $notas, $totais, $posicoes) {
+        return array_values($propostas->map(function (CorridaNegociacoes $proposta) use ($corrida, $reputacoes, $posicoes) {
             $posicao = $posicoes->get($proposta->motorista_id);
             $distancia = $posicao === null ? null : $this->despacho->distanciaAteOEmbarque($corrida, $posicao);
             $nome = trim((string) $proposta->motorista?->user?->name);
@@ -250,8 +237,9 @@ class NegociacaoCorridaService
                 'motorista' => [
                     'nome' => $nome === '' ? 'Motorista' : explode(' ', $nome)[0],
                     'foto' => $proposta->motorista?->foto,
-                    'nota' => Reputacao::media($notas[$proposta->motorista_id] ?? null, (int) ($totais[$proposta->motorista_id] ?? 0)),
-                    'corridas' => (int) ($totais[$proposta->motorista_id] ?? 0),
+                    'nota' => $reputacoes[$proposta->motorista_id]['nota'] ?? ReputacaoService::notaBase(),
+                    'corridas' => $reputacoes[$proposta->motorista_id]['corridas'] ?? 0,
+                    'novo' => $reputacoes[$proposta->motorista_id]['novo'] ?? true,
                 ],
                 'veiculo' => $proposta->veiculo === null ? null : [
                     'marca' => $proposta->veiculo->marca,

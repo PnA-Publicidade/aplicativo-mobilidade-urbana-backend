@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Events\CorridaAtualizada;
 use App\Events\CorridasDisponiveisAlteradas;
 use App\Events\MotoristaMoveu;
-use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\CorridaFinanceiro;
 use App\Models\CorridaNegociacoes;
@@ -21,7 +20,6 @@ use App\Models\Tarifa;
 use App\Models\Veiculo;
 use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Support\Avisar;
-use App\Support\Reputacao;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -843,7 +841,7 @@ class DespachoCorridaService
     }
 
     /**
-     * @param  array<int, array{passageiro_nota: float|null, passageiro_corridas: int}>  $reputacoes
+     * @param  array<int, array{passageiro_nota: float, passageiro_corridas: int, passageiro_novo: bool}>  $reputacoes
      * @param  array<int, mixed>  $raios
      * @return non-empty-array<string, mixed>|null
      */
@@ -897,46 +895,29 @@ class DespachoCorridaService
             'para_outra_pessoa' => $corrida->convidado_nome !== null,
             'solicitada_em' => $corrida->tempo_solicitacao,
             ...($reputacoes[$corrida->passageiro_id] ?? [
-                'passageiro_nota' => null,
+                'passageiro_nota' => ReputacaoService::notaBase(),
                 'passageiro_corridas' => 0,
+                'passageiro_novo' => true,
             ]),
         ];
     }
 
     /**
-     * Nota e total de corridas são obtidos em duas consultas para todo o lote.
+     * Nota (base 5,0 até a primeira avaliação real), total de corridas e se é
+     * usuário novo, obtidos em poucas consultas para todo o lote.
      *
      * @param  Collection<int, Corrida>  $corridas
-     * @return array<int, array{passageiro_nota: float|null, passageiro_corridas: int}>
+     * @return array<int, array{passageiro_nota: float, passageiro_corridas: int, passageiro_novo: bool}>
      */
     private function reputacoesDosPassageiros(Collection $corridas): array
     {
-        $passageiroIds = $corridas->pluck('passageiro_id')->filter()->unique()->values();
-        if ($passageiroIds->isEmpty()) {
-            return [];
-        }
+        $reputacoes = app(ReputacaoService::class)->dosPassageiros($corridas->pluck('passageiro_id'));
 
-        $medias = AvaliacoesCorrida::query()
-            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
-            ->where('avaliacoes_corridas.tipo_usuario', 'motorista')
-            ->whereIn('corridas.passageiro_id', $passageiroIds)
-            ->selectRaw('corridas.passageiro_id, AVG(avaliacoes_corridas.nota) AS media')
-            ->groupBy('corridas.passageiro_id')
-            ->pluck('media', 'passageiro_id');
-
-        $totais = Corrida::query()
-            ->whereIn('passageiro_id', $passageiroIds)
-            ->where('status_corrida', 'finalizada')
-            ->selectRaw('passageiro_id, COUNT(*) AS total')
-            ->groupBy('passageiro_id')
-            ->pluck('total', 'passageiro_id');
-
-        return $passageiroIds
-            ->mapWithKeys(fn ($id) => [(int) $id => [
-                'passageiro_nota' => Reputacao::media($medias[$id] ?? null, (int) ($totais[$id] ?? 0)),
-                'passageiro_corridas' => (int) ($totais[$id] ?? 0),
-            ]])
-            ->all();
+        return array_map(fn (array $reputacao): array => [
+            'passageiro_nota' => $reputacao['nota'],
+            'passageiro_corridas' => $reputacao['corridas'],
+            'passageiro_novo' => $reputacao['novo'],
+        ], $reputacoes);
     }
 
     /**

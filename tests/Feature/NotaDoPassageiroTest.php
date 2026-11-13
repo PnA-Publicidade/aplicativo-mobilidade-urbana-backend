@@ -30,7 +30,9 @@ it('o usuário logado traz a nota que os motoristas deram ao passageiro', functi
 
     $this->actingAs($usuario, 'jwt')->getJson('/api/usuario-logado')
         ->assertOk()
-        ->assertJsonPath('nota_passageiro', null)
+        // toda conta nova começa com a nota base 5,0 e como novo usuário
+        ->assertJsonPath('nota_passageiro', 5)
+        ->assertJsonPath('passageiro_novo', true)
         ->assertJsonPath('corridas_passageiro', 0);
 
     foreach ([5, 4] as $nota) {
@@ -61,17 +63,18 @@ it('o usuário logado traz a nota que os motoristas deram ao passageiro', functi
         'status_corrida' => 'cancelada',
     ]);
 
-    // com menos corridas que o mínimo, a média ainda não aparece
+    // a primeira avaliação real troca a nota base pela média; com poucas corridas ainda é novo
     $this->actingAs($usuario, 'jwt')->getJson('/api/usuario-logado')
         ->assertOk()
-        ->assertJsonPath('nota_passageiro', null)
+        ->assertJsonPath('nota_passageiro', 4.5)
         ->assertJsonPath('corridas_passageiro', 2)
-        ->assertJsonPath('minimo_corridas_para_nota', 20);
+        ->assertJsonPath('passageiro_novo', true)
+        ->assertJsonPath('corridas_para_deixar_de_ser_novo', 20);
 
-    config(['avaliacoes.minimo_corridas_para_media' => 2]);
+    config(['avaliacoes.corridas_para_deixar_de_ser_novo' => 2]);
 
     $this->actingAs($usuario, 'jwt')->getJson('/api/usuario-logado')
         ->assertOk()
         ->assertJsonPath('nota_passageiro', 4.5)
-        ->assertJsonPath('corridas_passageiro', 2);
+        ->assertJsonPath('passageiro_novo', false);
 });

@@ -27,7 +27,12 @@ class ConfiguracoesController extends Controller
             'restricao_antecedencia_dias' => 'sometimes|integer|between:0,14',
             'restricao_minimo_corridas' => 'sometimes|integer|between:1,1000',
             'restricao_duracoes_dias' => ['sometimes', 'string', 'regex:/^[1-9]\d{0,2}(,[1-9]\d{0,2}){0,5}$/'],
+            'avaliacoes_media_ultimas' => 'sometimes|integer|between:1,5000',
         ]);
+
+        if (isset($dados['avaliacoes_media_ultimas'])) {
+            $this->configuracoes->definir(ConfiguracaoPlataformaService::AVALIACOES_MEDIA_ULTIMAS, (int) $dados['avaliacoes_media_ultimas']);
+        }
 
         foreach (['restricao_prazo_dia', 'restricao_antecedencia_dias', 'restricao_minimo_corridas'] as $chave) {
             if (isset($dados[$chave])) {
@@ -76,6 +81,8 @@ class ConfiguracoesController extends Controller
             'taxas_cancelamento_passageiro_segundos_padrao' => ConfiguracaoPlataformaService::CANCELAMENTO_PASSAGEIRO_SEGUNDOS_PADRAO,
             'taxas_duplicada_janela_minutos' => $this->configuracoes->duplicadaJanelaMinutos(),
             'taxas_duplicada_janela_minutos_padrao' => ConfiguracaoPlataformaService::DUPLICADA_JANELA_MINUTOS_PADRAO,
+            'avaliacoes_media_ultimas' => $this->configuracoes->avaliacoesMediaUltimas(),
+            'avaliacoes_media_ultimas_padrao' => ConfiguracaoPlataformaService::AVALIACOES_MEDIA_ULTIMAS_PADRAO,
             'restricoes_taxa_ativas' => $this->configuracoes->restricoesAtivas(),
             'restricao_prazo_dia' => $this->configuracoes->restricaoPrazoDia(),
             'restricao_prazo_dia_padrao' => ConfiguracaoPlataformaService::RESTRICAO_PRAZO_DIA_PADRAO,

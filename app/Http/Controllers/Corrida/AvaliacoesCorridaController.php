@@ -4,6 +4,7 @@
 
 namespace App\Http\Controllers\Corrida;
 
+use App\Enums\ElogioMotorista;
 use App\Http\Controllers\Controller;
 use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
@@ -13,6 +14,7 @@ use App\Services\Compartilhada\GrupoCompartilhadoService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AvaliacoesCorridaController extends Controller
 {
@@ -121,6 +123,9 @@ class AvaliacoesCorridaController extends Controller
             'corrida_id' => 'required|integer',
             'nota' => 'required|integer|min:1|max:5',
             'comentario' => 'nullable|string|max:1000',
+            // elogios ao motorista, marcados pelo passageiro
+            'elogios' => 'nullable|array|max:'.count(ElogioMotorista::cases()),
+            'elogios.*' => ['string', Rule::in(ElogioMotorista::valores())],
         ]);
 
         $corrida = $this->corridasDoUsuario($request)
@@ -152,10 +157,14 @@ class AvaliacoesCorridaController extends Controller
             return response()->json(['message' => 'Você já avaliou esta corrida.'], 409);
         }
 
+        // elogio é do passageiro para o motorista; o motorista não elogia o passageiro
+        $elogios = $papel === 'passageiro' ? array_values(array_unique($dados['elogios'] ?? [])) : [];
+
         if ($avaliacaoExistente !== null) {
             $avaliacaoExistente->update([
                 'nota' => $dados['nota'],
                 'comentario' => $dados['comentario'] ?? null,
+                'elogios' => $elogios === [] ? null : $elogios,
                 'automatica' => false,
             ]);
 
@@ -168,6 +177,7 @@ class AvaliacoesCorridaController extends Controller
             'tipo_usuario' => $papel,
             'nota' => $dados['nota'],
             'comentario' => $dados['comentario'] ?? null,
+            'elogios' => $elogios === [] ? null : $elogios,
             'automatica' => false,
         ]);
 
