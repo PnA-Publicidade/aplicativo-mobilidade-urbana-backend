@@ -20,7 +20,9 @@ use App\Services\CompartilhamentoVeiculoService;
 use App\Services\DespachoCorridaService;
 use App\Services\NotificarUsuarioService;
 use App\Services\PagamentoCorridaService;
+use App\Services\ReputacaoService;
 use App\Services\SolicitarCorridaService;
+use App\Services\TaxasMotoristaService;
 use App\Support\Avisar;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -339,7 +341,7 @@ class GrupoCompartilhadoService
      * Uma oferta por grupo, montada sobre a corrida de quem embarca primeiro.
      *
      * @param  Collection<int, Corrida>  $corridas  as corridas do grupo à espera de motorista
-     * @param  array<int, array{passageiro_nota: float|null, passageiro_corridas: int}>  $reputacoes
+     * @param  array<int, array{passageiro_nota: float, passageiro_corridas: int, passageiro_novo: bool}>  $reputacoes
      * @return non-empty-array<string, mixed>|null
      */
     public function oferta(int $salaId, Collection $corridas, StatusBusca $status, Motorista $motorista, ?Veiculo $veiculo, array $reputacoes, float $raioTarifa): ?array
@@ -398,7 +400,7 @@ class GrupoCompartilhadoService
             ], $paradas, array_keys($paradas)),
             'para_outra_pessoa' => false,
             'solicitada_em' => $lider->tempo_solicitacao,
-            ...($reputacoes[$lider->passageiro_id] ?? ['passageiro_nota' => null, 'passageiro_corridas' => 0]),
+            ...($reputacoes[$lider->passageiro_id] ?? ['passageiro_nota' => ReputacaoService::notaBase(), 'passageiro_corridas' => 0, 'passageiro_novo' => true]),
             // o card mostra que vale mais: "R$ 34,80 · 3 embarques · compartilhada"
             'compartilhada' => [
                 'passageiros' => $ativas->count(),
@@ -476,6 +478,7 @@ class GrupoCompartilhadoService
 
         StatusBusca::where('motorista_id', $motorista->id)->update(['disponivel' => false, 'visto_em' => now()]);
         $despacho->cancelarPropostasPendentes($motorista->id, $lider->id);
+        app(TaxasMotoristaService::class)->registrarAceite($lider, $motorista->id);
 
         foreach ($corridas as $corrida) {
             $antes = $this->quantosEmbarcamAntes($corrida);
@@ -551,11 +554,8 @@ class GrupoCompartilhadoService
 
         $this->repartirValorDoMotorista($salaId, $corridas, 0.0);
 
-        // a desistência pesa na taxa de aceitação de quem desistiu
-        DB::table('ofertas_motorista')->updateOrInsert(
-            ['motorista_id' => $motoristaId, 'corrida_id' => $corrida->id],
-            ['recusada_em' => now(), 'ofertada_em' => now()]
-        );
+        // desistir depois de aceitar pesa na taxa de finalização, uma vez por desistência
+        app(TaxasMotoristaService::class)->registrarDesistenciaDeGrupo($corrida->id, $motoristaId);
 
         // e suspende as chamadas de grupo dele por um tempo; as normais seguem
         $suspensaAte = now()->addHours((int) config('compartilhada.suspensao_por_desistencia_horas', 24));

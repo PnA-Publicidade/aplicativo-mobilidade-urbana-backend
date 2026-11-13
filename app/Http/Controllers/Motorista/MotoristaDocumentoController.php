@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Motorista;
 
 use App\Enums\MotivoReprovacaoDocumento;
 use App\Enums\TipoDocumentoMotorista;
+use App\Events\FilaDocumentosAlterada;
 use App\Http\Controllers\Controller;
 use App\Models\Gestor;
 use App\Models\Motorista;
@@ -43,6 +44,79 @@ class MotoristaDocumentoController extends Controller
     public function motivosReprovacao(): JsonResponse
     {
         return response()->json(['data' => MotivoReprovacaoDocumento::catalogo()]);
+    }
+
+    /**
+     * Fila de análise da gestão: motoristas com documentos no status pedido, cada um com
+     * seus documentos juntos. Os mais antigos primeiro, para ninguém ficar esquecido.
+     */
+    public function fila(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'status' => 'sometimes|in:em_analise,aprovado,reprovado',
+            'search' => 'sometimes|nullable|string|max:255',
+            'tipo_documento' => ['sometimes', 'nullable', Rule::enum(TipoDocumentoMotorista::class)],
+            'per_page' => 'sometimes|integer|between:1,50',
+        ]);
+        $status = $dados['status'] ?? 'em_analise';
+        $busca = trim($dados['search'] ?? '');
+        $tipo = $dados['tipo_documento'] ?? null;
+
+        $filtroDocumentos = fn ($query) => $query->where('ordem', 0)->where('status', $status)
+            ->when($tipo, fn ($q) => $q->where('tipo_documento', $tipo));
+
+        $consulta = Motorista::query()->whereHas('user')
+            ->whereHas('documentos', $filtroDocumentos)
+            ->withMin(['documentos as pendente_desde' => $filtroDocumentos], 'created_at')
+            ->when($busca !== '', function ($query) use ($busca): void {
+                $termo = '%'.$busca.'%';
+                $cpf = preg_match('/^[\d\s.-]+$/', $busca) ? preg_replace('/\D/', '', $busca) : '';
+                $termoCpf = '%'.($cpf !== '' ? $cpf : $busca).'%';
+                $query->where(fn ($q) => $q->where('name', 'like', $termo)->orWhere('cpf', 'like', $termoCpf));
+            })
+            ->with(['documentos' => fn ($query) => $filtroDocumentos($query)->with('veiculo')->orderBy('id')])
+            ->orderBy('pendente_desde')->orderBy('id');
+
+        $pagina = $consulta->paginate($dados['per_page'] ?? 10);
+        $pagina->getCollection()->transform(fn (Motorista $motorista): array => [
+            'id' => $motorista->id,
+            'nome' => $motorista->nome,
+            'cpf' => $motorista->cpf,
+            'foto' => $motorista->foto,
+            'status' => $motorista->status,
+            'pendente_desde' => $motorista->pendente_desde,
+            'user' => $motorista->only(['id', 'name', 'cpf', 'foto']),
+            'documentos' => $motorista->documentos->map(fn (MotoristaDocumento $documento): array => [
+                'id' => $documento->id,
+                'tipo_documento' => $documento->tipo_documento->value,
+                'titulo' => $documento->tipo_documento->titulo(),
+                'descricao' => $documento->tipo_documento->descricao(),
+                'status' => $documento->status,
+                'name' => $documento->name,
+                'mime_type' => $documento->mime_type,
+                'type' => $documento->type,
+                'size' => $documento->size,
+                'url' => $documento->url,
+                'verso' => $documento->verso,
+                'enviado_em' => $documento->created_at,
+                'informacoes_complementares' => $documento->informacoes_complementares,
+                'solicitacao_veiculo' => $documento->solicitacao_veiculo,
+                'veiculo' => $documento->veiculo?->only(['id', 'placa', 'marca', 'modelo']),
+                'possui_dados_crlv' => $documento->tipo_documento === TipoDocumentoMotorista::CRLV,
+            ])->values()->all(),
+        ]);
+
+        // totais por status para as abas, respeitando só a busca de tipo
+        $totais = MotoristaDocumento::query()->where('ordem', 0)->whereHas('motorista', fn ($q) => $q->whereHas('user'))
+            ->when($tipo, fn ($q) => $q->where('tipo_documento', $tipo))
+            ->selectRaw('status, count(*) as documentos, count(distinct motorista_id) as motoristas')
+            ->groupBy('status')->get()->keyBy('status');
+
+        return response()->json([...$pagina->toArray(), 'totais' => collect(['em_analise', 'aprovado', 'reprovado'])
+            ->mapWithKeys(fn (string $s): array => [$s => [
+                'documentos' => (int) ($totais[$s]->documentos ?? 0),
+                'motoristas' => (int) ($totais[$s]->motoristas ?? 0),
+            ]])]);
     }
 
     public function resumo(int $motoristaId): JsonResponse
@@ -260,6 +334,8 @@ class MotoristaDocumentoController extends Controller
             return $motorista === null ? null : $this->atualizarSituacaoMotoristaService->executar($motorista);
         });
 
+        event(new FilaDocumentosAlterada($motoristaDocumento->motorista_id, FilaDocumentosAlterada::REMOVIDO));
+
         return response()->json([
             'message' => 'Documento removido com sucesso',
             'situacao_motorista' => $situacao,
@@ -316,6 +392,8 @@ class MotoristaDocumentoController extends Controller
 
             return $motorista === null ? null : $this->atualizarSituacaoMotoristaService->executar($motorista);
         });
+
+        event(new FilaDocumentosAlterada($motoristaDocumento->motorista_id, FilaDocumentosAlterada::STATUS));
 
         return response()->json([
             'message' => 'Status do documento alterado com sucesso',

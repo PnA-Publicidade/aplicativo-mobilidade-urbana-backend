@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\MotivoReprovacaoDocumento;
 use App\Enums\TipoDocumentoMotorista;
+use App\Events\FilaDocumentosAlterada;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -32,6 +33,21 @@ class MotoristaDocumento extends Model
         'motivo_reprovacao',
         'descricao_reprovacao',
     ];
+
+    protected static function booted(): void
+    {
+        // todo envio novo, de qualquer origem, entra na fila de aprovação (o verso não conta)
+        static::created(function (self $documento): void {
+            if ($documento->ordem === 0) {
+                event(new FilaDocumentosAlterada($documento->motorista_id, FilaDocumentosAlterada::ENVIADO));
+            }
+        });
+    }
+
+    public function motorista(): BelongsTo
+    {
+        return $this->belongsTo(Motorista::class);
+    }
 
     public function veiculo(): BelongsTo
     {

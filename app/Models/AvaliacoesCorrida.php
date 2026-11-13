@@ -14,11 +14,12 @@ class AvaliacoesCorrida extends Model
         'tipo_usuario',
         'nota',
         'comentario',
+        'elogios',
         'automatica',
     ];
 
     protected function casts(): array
     {
-        return ['automatica' => 'boolean'];
+        return ['automatica' => 'boolean', 'elogios' => 'array'];
     }
 }

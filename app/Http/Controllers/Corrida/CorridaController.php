@@ -5,7 +5,6 @@
 namespace App\Http\Controllers\Corrida;
 
 use App\Http\Controllers\Controller;
-use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\CotacaoCorrida;
 use App\Models\Motorista;
@@ -24,11 +23,11 @@ use App\Services\EstimarRotaService;
 use App\Services\ObterNavegacaoService;
 use App\Services\ObterTracadoRotaService;
 use App\Services\PagamentoCorridaService;
+use App\Services\ReputacaoService;
 use App\Services\ResolverTarifaService;
 use App\Services\SimularCorridaNegociadaService;
 use App\Services\SolicitarCorridaService;
 use App\Support\PerfilLogado;
-use App\Support\Reputacao;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -456,25 +455,17 @@ class CorridaController extends Controller
             return null;
         }
 
-        $corridasDoMotorista = Corrida::where('motorista_id', $motorista->id);
-
-        // tipo_usuario guarda quem deu a nota: "passageiro" aqui são as
-        // notas que passageiros deram a este motorista, não o contrário
-        $nota = AvaliacoesCorrida::where('tipo_usuario', 'passageiro')
-            ->whereIn('corrida_id', (clone $corridasDoMotorista)->select('id'))
-            ->avg('nota');
-
+        // nota base 5,0 até a primeira avaliação real; "novo" enquanto tem poucas corridas
+        $reputacao = app(ReputacaoService::class)->doMotorista($motorista->id);
         $telefone = Motorista::whereKey($motorista->id)->value('telefone');
-        $finalizadas = (clone $corridasDoMotorista)
-            ->where('status_corrida', 'finalizada')
-            ->count();
 
         return [
             'nome' => $this->primeiroNome((string) $motorista->name),
             'foto' => $motorista->foto,
             'telefone' => is_string($telefone) ? $telefone : null,
-            'nota' => Reputacao::media($nota, $finalizadas),
-            'corridas' => $finalizadas,
+            'nota' => $reputacao['nota'],
+            'corridas' => $reputacao['corridas'],
+            'novo' => $reputacao['novo'],
         ];
     }
 
@@ -497,16 +488,8 @@ class CorridaController extends Controller
             return null;
         }
 
-        $corridasDoPassageiro = Corrida::where('passageiro_id', $passageiro->id);
-
-        $nota = AvaliacoesCorrida::where('tipo_usuario', 'motorista')
-            ->whereIn('corrida_id', (clone $corridasDoPassageiro)->select('id'))
-            ->avg('nota');
-
+        $reputacao = app(ReputacaoService::class)->doPassageiro($passageiro->id);
         $telefone = Passageiro::whereKey($passageiro->id)->value('telefone');
-        $finalizadas = (clone $corridasDoPassageiro)
-            ->where('status_corrida', 'finalizada')
-            ->count();
         $convidado = $corrida->convidado_nome !== null;
         $fotoLiberada = ! $convidado
             && in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
@@ -519,8 +502,9 @@ class CorridaController extends Controller
             'telefone' => $convidado
                 ? $corrida->convidado_telefone
                 : (is_string($telefone) ? $telefone : null),
-            'nota' => Reputacao::media($nota, $finalizadas),
-            'corridas' => $finalizadas,
+            'nota' => $reputacao['nota'],
+            'corridas' => $reputacao['corridas'],
+            'novo' => $reputacao['novo'],
         ];
     }
 

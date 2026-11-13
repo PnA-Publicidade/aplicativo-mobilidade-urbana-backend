@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Motorista;
 use App\Http\Controllers\Controller;
 // CODEX: 92 linhas alteradas; adiciona listagem e cadastro seguro dos veículos do motorista autenticado.
 
+use App\Models\AvaliacoesCorrida;
 use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Models\ProdutosCorrida;
@@ -13,7 +14,10 @@ use App\Services\AtualizarSituacaoMotoristaService;
 use App\Services\CadastrarPerfilUsuarioService;
 use App\Services\CarteiraMotoristaService;
 use App\Services\CompartilhamentoVeiculoService;
+use App\Services\ConfiguracaoPlataformaService;
 use App\Services\DocumentosMotoristaService;
+use App\Services\RestricaoTaxaService;
+use App\Services\TaxasMotoristaService;
 use App\Support\PerfilLogado;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -141,12 +145,14 @@ class MotoristaController extends Controller
     }
 
     /**
-     * Números do menu lateral, como na 99: só pesa o que dependeu do
-     * motorista. A aceitação conta as chamadas que ele aceitou ou recusou
-     * (deixar tocar até o fim é recusar); a finalização, as corridas que ele
-     * terminou ou cancelou. Cancelamento do passageiro não conta contra ele.
+     * Números do menu lateral, como na 99, lidos do livro das taxas
+     * (TaxasMotoristaService). Aceitação: mês corrente; toda chamada que tocou
+     * e não foi aceita pesa, menos duplicada, Negocia e a que o passageiro
+     * cancelou logo em seguida. Finalização: últimos 30 dias, com os
+     * cancelamentos do motorista e as desistências de grupo. Conta nova
+     * começa em 100% nas duas.
      */
-    public function estatisticas(Request $request): JsonResponse
+    public function estatisticas(Request $request, TaxasMotoristaService $taxas): JsonResponse
     {
         $motorista = PerfilLogado::motorista($request);
 
@@ -154,35 +160,91 @@ class MotoristaController extends Controller
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
         }
 
-        $corridas = DB::table('corridas')->where('motorista_id', $motorista->id);
-        $aceitas = (clone $corridas)->whereNotNull('tempo_aceite')->count();
-        $finalizadas = (clone $corridas)->where('status_corrida', 'finalizada')->count();
-        $canceladasPeloMotorista = (clone $corridas)
-            ->where('status_corrida', 'cancelada')
-            ->where('cancelado_por', 'motorista')
-            ->count();
-        $encerradas = $finalizadas + $canceladasPeloMotorista;
-
-        $ofertadas = DB::table('ofertas_motorista')
-            ->join('corridas', 'corridas.id', '=', 'ofertas_motorista.corrida_id')
-            ->where('ofertas_motorista.motorista_id', $motorista->id);
-        $aceitasDasOfertas = (clone $ofertadas)
-            ->where('corridas.motorista_id', $motorista->id)
-            ->whereNotNull('corridas.tempo_aceite')
-            ->count();
-        $recusadas = (clone $ofertadas)
-            ->whereNotNull('ofertas_motorista.recusada_em')
-            ->where(fn ($consulta) => $consulta
-                ->whereNull('corridas.motorista_id')
-                ->orWhere('corridas.motorista_id', '!=', $motorista->id))
-            ->count();
-        $respondidas = $aceitasDasOfertas + $recusadas;
+        $dados = $taxas->taxas($motorista->id);
 
         return response()->json([
-            'corridas_aceitas' => $aceitas,
-            'corridas_finalizadas' => $finalizadas,
-            'taxa_finalizacao' => $encerradas > 0 ? round($finalizadas / $encerradas * 100) : null,
-            'taxa_aceitacao' => $respondidas > 0 ? round($aceitasDasOfertas / $respondidas * 100) : null,
+            'corridas_aceitas' => $dados['aceitas'],
+            'chamadas_recusadas' => $dados['recusadas'],
+            'corridas_finalizadas' => $dados['finalizadas'],
+            'corridas_canceladas' => $dados['canceladas'],
+            'janela_dias' => TaxasMotoristaService::JANELA_FINALIZACAO_DIAS,
+            'periodo_aceitacao' => 'mes',
+            'taxa_finalizacao_minima' => app(ConfiguracaoPlataformaService::class)->taxaFinalizacaoMinima(),
+            'taxa_finalizacao' => $dados['taxa_finalizacao'],
+            'taxa_aceitacao' => $dados['taxa_aceitacao'],
+            'situacao_taxa' => app(RestricaoTaxaService::class)->situacao($motorista->id),
+            ...$this->notaDoMotorista($motorista->id),
+        ]);
+    }
+
+    /**
+     * Média das notas que os passageiros deram ao motorista (menu lateral do
+     * app). Quem ainda não foi avaliado não tem média, em vez de 0,00.
+     *
+     * @return array{nota_motorista: float|null, avaliacoes_recebidas: int}
+     */
+    private function notaDoMotorista(int $motoristaId): array
+    {
+        // tipo_usuario guarda quem deu a nota: "passageiro" são as notas ao motorista
+        $notas = AvaliacoesCorrida::query()
+            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
+            ->where('avaliacoes_corridas.tipo_usuario', 'passageiro')
+            ->where('corridas.motorista_id', $motoristaId);
+
+        $total = (clone $notas)->count();
+        $media = $total === 0 ? null : (clone $notas)->avg('avaliacoes_corridas.nota');
+
+        return [
+            'nota_motorista' => $media === null ? null : round((float) $media, 2),
+            'avaliacoes_recebidas' => $total,
+        ];
+    }
+
+    /**
+     * Tela Taxa de Finalização do app: taxa dos últimos 30 dias, série diária,
+     * histórico por janela e as regras que o motorista precisa conhecer.
+     */
+    public function taxaFinalizacao(Request $request, TaxasMotoristaService $taxas): JsonResponse
+    {
+        $motorista = PerfilLogado::motorista($request);
+
+        if ($motorista === null) {
+            return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
+        }
+
+        $configuracoes = app(ConfiguracaoPlataformaService::class);
+
+        return response()->json([
+            ...$taxas->detalheFinalizacao($motorista->id),
+            'minima' => $configuracoes->taxaFinalizacaoMinima(),
+            'situacao_taxa' => app(RestricaoTaxaService::class)->situacao($motorista->id),
+            'regras' => [
+                'prazo_dia' => $configuracoes->restricaoPrazoDia(),
+                'duracoes_dias' => $configuracoes->restricaoDuracoesDias(),
+            ],
+        ]);
+    }
+
+    /**
+     * Tela Taxa de Aceitação do app: taxa do mês corrente, série diária dos
+     * últimos 30 dias e histórico dos últimos 6 meses.
+     */
+    public function taxaAceitacao(Request $request, TaxasMotoristaService $taxas): JsonResponse
+    {
+        $motorista = PerfilLogado::motorista($request);
+
+        if ($motorista === null) {
+            return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
+        }
+
+        $configuracoes = app(ConfiguracaoPlataformaService::class);
+
+        return response()->json([
+            ...$taxas->detalheAceitacao($motorista->id),
+            'regras' => [
+                'cancelamento_passageiro_segundos' => $configuracoes->cancelamentoPassageiroSegundos(),
+                'duplicada_janela_minutos' => $configuracoes->duplicadaJanelaMinutos(),
+            ],
         ]);
     }
 

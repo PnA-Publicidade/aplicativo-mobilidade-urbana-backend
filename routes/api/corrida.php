@@ -27,6 +27,7 @@ Route::post('motorista/posicao', [CorridaMotoristaController::class, 'posicao'])
 Route::get('motorista/corridas-disponiveis', [CorridaMotoristaController::class, 'corridasDisponiveis']);
 Route::post('motorista/corridas/{corrida}/aceitar', [CorridaMotoristaController::class, 'aceitar']);
 Route::post('motorista/corridas/{corrida}/recusar', [CorridaMotoristaController::class, 'recusar']);
+Route::post('motorista/corridas/{corrida}/tocou', [CorridaMotoristaController::class, 'tocou'])->whereNumber('corrida');
 // Negocia: o motorista propõe, o passageiro vê as propostas e escolhe uma
 Route::post('motorista/corridas/{corrida}/propostas', [NegociacaoCorridaController::class, 'propor'])
     ->middleware('throttle:30,1,negocia-propor');

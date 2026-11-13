@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Events\CorridaAtualizada;
 use App\Events\CorridasDisponiveisAlteradas;
 use App\Events\MotoristaMoveu;
-use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\CorridaFinanceiro;
 use App\Models\CorridaNegociacoes;
@@ -21,7 +20,6 @@ use App\Models\Tarifa;
 use App\Models\Veiculo;
 use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Support\Avisar;
-use App\Support\Reputacao;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -210,7 +208,7 @@ class DespachoCorridaService
      */
     public function recusar(Motorista $motorista, int $corridaId): void
     {
-        DB::table('ofertas_motorista')
+        $recusadas = DB::table('ofertas_motorista')
             ->where('motorista_id', $motorista->id)
             ->where('corrida_id', $corridaId)
             ->whereNull('recusada_em')
@@ -220,6 +218,19 @@ class DespachoCorridaService
                 ->where('corridas.status_corrida', 'solicitada')
                 ->whereNull('corridas.motorista_id'))
             ->update(['recusada_em' => now()]);
+
+        if ($recusadas > 0) {
+            app(TaxasMotoristaService::class)->registrarRecusa($motorista->id, $corridaId);
+        }
+    }
+
+    /**
+     * A chamada apareceu na tela do motorista. Só a que tocou entra na conta
+     * da taxa de aceitação.
+     */
+    public function registrarToque(Motorista $motorista, int $corridaId): void
+    {
+        app(TaxasMotoristaService::class)->registrarToque($motorista->id, $corridaId);
     }
 
     public function aceitar(Motorista $motorista, int $corridaId): Corrida
@@ -269,6 +280,8 @@ class DespachoCorridaService
                 ->update(['disponivel' => false, 'visto_em' => now()]);
 
             $this->cancelarPropostasPendentes($motorista->id, $corrida->id);
+
+            app(TaxasMotoristaService::class)->registrarAceite($corrida, $motorista->id);
 
             $this->notificarPassageiro($corrida, 'Motorista a caminho', 'Seu motorista aceitou a corrida e está indo até o embarque.');
 
@@ -343,6 +356,10 @@ class DespachoCorridaService
         if (filled($motorista->cpf) && $corrida->passageiro()->value('cpf') === $motorista->cpf) {
             throw new RuntimeException('Você não pode atender a sua própria corrida.', 409);
         }
+
+        // restrição por taxa de finalização: nem aceitar nem propor
+        app(RestricaoTaxaService::class)->exigirSemRestricao($motorista);
+        app(RestricaoNotaService::class)->exigirMotoristaSemRestricao($motorista);
 
         $ocupado = Corrida::where('motorista_id', $motorista->id)
             ->whereKeyNot($corrida->id)
@@ -478,6 +495,8 @@ class DespachoCorridaService
             }
 
             if ($regra['para'] === 'finalizada') {
+                app(TaxasMotoristaService::class)->registrarFinalizada($corrida);
+
                 $grupoSegue = $corrida->sala_compartilhada_id !== null
                     && app(GrupoCompartilhadoService::class)->motoristaAindaOcupado((int) $motorista->id);
 
@@ -650,6 +669,16 @@ class DespachoCorridaService
                 app(GrupoCompartilhadoService::class)->repartirMultaComOsOutros($corrida);
             }
 
+            // taxas: cancelar depois do aceite pesa na finalização; o passageiro
+            // que cancela logo após a chamada tocar livra o motorista da recusa
+            if ($quem === 'motorista' && $motoristaId !== null && $tipoRegistrado !== 'nao_comparecimento') {
+                app(TaxasMotoristaService::class)->registrarCancelamentoDoMotorista($corrida, (int) $motoristaId);
+            }
+
+            if ($quem === 'passageiro') {
+                app(TaxasMotoristaService::class)->desconsiderarPorCancelamentoDoPassageiro($corrida);
+            }
+
             // no grupo o carro só pula o ponto de quem saiu e segue com os outros
             $grupoSegue = $motoristaId !== null && $corrida->sala_compartilhada_id !== null
                 && app(GrupoCompartilhadoService::class)->motoristaAindaOcupado((int) $motoristaId);
@@ -807,7 +836,7 @@ class DespachoCorridaService
     }
 
     /**
-     * @param  array<int, array{passageiro_nota: float|null, passageiro_corridas: int}>  $reputacoes
+     * @param  array<int, array{passageiro_nota: float, passageiro_corridas: int, passageiro_novo: bool}>  $reputacoes
      * @param  array<int, mixed>  $raios
      * @return non-empty-array<string, mixed>|null
      */
@@ -861,46 +890,29 @@ class DespachoCorridaService
             'para_outra_pessoa' => $corrida->convidado_nome !== null,
             'solicitada_em' => $corrida->tempo_solicitacao,
             ...($reputacoes[$corrida->passageiro_id] ?? [
-                'passageiro_nota' => null,
+                'passageiro_nota' => ReputacaoService::notaBase(),
                 'passageiro_corridas' => 0,
+                'passageiro_novo' => true,
             ]),
         ];
     }
 
     /**
-     * Nota e total de corridas são obtidos em duas consultas para todo o lote.
+     * Nota (base 5,0 até a primeira avaliação real), total de corridas e se é
+     * usuário novo, obtidos em poucas consultas para todo o lote.
      *
      * @param  Collection<int, Corrida>  $corridas
-     * @return array<int, array{passageiro_nota: float|null, passageiro_corridas: int}>
+     * @return array<int, array{passageiro_nota: float, passageiro_corridas: int, passageiro_novo: bool}>
      */
     private function reputacoesDosPassageiros(Collection $corridas): array
     {
-        $passageiroIds = $corridas->pluck('passageiro_id')->filter()->unique()->values();
-        if ($passageiroIds->isEmpty()) {
-            return [];
-        }
+        $reputacoes = app(ReputacaoService::class)->dosPassageiros($corridas->pluck('passageiro_id'));
 
-        $medias = AvaliacoesCorrida::query()
-            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
-            ->where('avaliacoes_corridas.tipo_usuario', 'motorista')
-            ->whereIn('corridas.passageiro_id', $passageiroIds)
-            ->selectRaw('corridas.passageiro_id, AVG(avaliacoes_corridas.nota) AS media')
-            ->groupBy('corridas.passageiro_id')
-            ->pluck('media', 'passageiro_id');
-
-        $totais = Corrida::query()
-            ->whereIn('passageiro_id', $passageiroIds)
-            ->where('status_corrida', 'finalizada')
-            ->selectRaw('passageiro_id, COUNT(*) AS total')
-            ->groupBy('passageiro_id')
-            ->pluck('total', 'passageiro_id');
-
-        return $passageiroIds
-            ->mapWithKeys(fn ($id) => [(int) $id => [
-                'passageiro_nota' => Reputacao::media($medias[$id] ?? null, (int) ($totais[$id] ?? 0)),
-                'passageiro_corridas' => (int) ($totais[$id] ?? 0),
-            ]])
-            ->all();
+        return array_map(fn (array $reputacao): array => [
+            'passageiro_nota' => $reputacao['nota'],
+            'passageiro_corridas' => $reputacao['corridas'],
+            'passageiro_novo' => $reputacao['novo'],
+        ], $reputacoes);
     }
 
     /**

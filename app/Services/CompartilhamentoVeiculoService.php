@@ -129,6 +129,10 @@ class CompartilhamentoVeiculoService
             if ($disponivel && $motorista->status !== 'ativo') {
                 throw new RuntimeException('Seu cadastro de motorista ainda não foi aprovado.', 403);
             }
+            if ($disponivel) {
+                app(RestricaoTaxaService::class)->exigirSemRestricao($motorista);
+                app(RestricaoNotaService::class)->exigirMotoristaSemRestricao($motorista);
+            }
             if ($disponivel && app(DocumentosMotoristaService::class)->acoesNecessarias($motorista) !== []) {
                 throw new RuntimeException('Resolva as ações necessárias para ficar online.', 403);
             }
