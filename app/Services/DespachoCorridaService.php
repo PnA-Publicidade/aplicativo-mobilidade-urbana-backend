@@ -210,7 +210,7 @@ class DespachoCorridaService
      */
     public function recusar(Motorista $motorista, int $corridaId): void
     {
-        DB::table('ofertas_motorista')
+        $recusadas = DB::table('ofertas_motorista')
             ->where('motorista_id', $motorista->id)
             ->where('corrida_id', $corridaId)
             ->whereNull('recusada_em')
@@ -220,6 +220,19 @@ class DespachoCorridaService
                 ->where('corridas.status_corrida', 'solicitada')
                 ->whereNull('corridas.motorista_id'))
             ->update(['recusada_em' => now()]);
+
+        if ($recusadas > 0) {
+            app(TaxasMotoristaService::class)->registrarRecusa($motorista->id, $corridaId);
+        }
+    }
+
+    /**
+     * A chamada apareceu na tela do motorista. Só a que tocou entra na conta
+     * da taxa de aceitação.
+     */
+    public function registrarToque(Motorista $motorista, int $corridaId): void
+    {
+        app(TaxasMotoristaService::class)->registrarToque($motorista->id, $corridaId);
     }
 
     public function aceitar(Motorista $motorista, int $corridaId): Corrida
@@ -269,6 +282,8 @@ class DespachoCorridaService
                 ->update(['disponivel' => false, 'visto_em' => now()]);
 
             $this->cancelarPropostasPendentes($motorista->id, $corrida->id);
+
+            app(TaxasMotoristaService::class)->registrarAceite($corrida, $motorista->id);
 
             $this->notificarPassageiro($corrida, 'Motorista a caminho', 'Seu motorista aceitou a corrida e está indo até o embarque.');
 
@@ -346,6 +361,9 @@ class DespachoCorridaService
         if ($corrida->passageiro()->value('user_id') === $motorista->user_id) {
             throw new RuntimeException('Você não pode atender a sua própria corrida.', 409);
         }
+
+        // restrição por taxa de finalização: nem aceitar nem propor
+        app(RestricaoTaxaService::class)->exigirSemRestricao($motorista);
 
         $ocupado = Corrida::where('motorista_id', $motorista->id)
             ->whereKeyNot($corrida->id)
@@ -481,6 +499,8 @@ class DespachoCorridaService
             }
 
             if ($regra['para'] === 'finalizada') {
+                app(TaxasMotoristaService::class)->registrarFinalizada($corrida);
+
                 $grupoSegue = $corrida->sala_compartilhada_id !== null
                     && app(GrupoCompartilhadoService::class)->motoristaAindaOcupado((int) $motorista->id);
 
@@ -653,6 +673,16 @@ class DespachoCorridaService
 
             if ($tipoRegistrado === 'nao_comparecimento') {
                 app(GrupoCompartilhadoService::class)->repartirMultaComOsOutros($corrida);
+            }
+
+            // taxas: cancelar depois do aceite pesa na finalização; o passageiro
+            // que cancela logo após a chamada tocar livra o motorista da recusa
+            if ($quem === 'motorista' && $motoristaId !== null && $tipoRegistrado !== 'nao_comparecimento') {
+                app(TaxasMotoristaService::class)->registrarCancelamentoDoMotorista($corrida, (int) $motoristaId);
+            }
+
+            if ($quem === 'passageiro') {
+                app(TaxasMotoristaService::class)->desconsiderarPorCancelamentoDoPassageiro($corrida);
             }
 
             // no grupo o carro só pula o ponto de quem saiu e segue com os outros

@@ -22,6 +22,7 @@ use App\Services\DespachoCorridaService;
 use App\Services\NotificarUsuarioService;
 use App\Services\PagamentoCorridaService;
 use App\Services\SolicitarCorridaService;
+use App\Services\TaxasMotoristaService;
 use App\Support\Avisar;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -477,6 +478,7 @@ class GrupoCompartilhadoService
 
         StatusBusca::where('motorista_id', $motorista->id)->update(['disponivel' => false, 'visto_em' => now()]);
         $despacho->cancelarPropostasPendentes($motorista->id, $lider->id);
+        app(TaxasMotoristaService::class)->registrarAceite($lider, $motorista->id);
 
         foreach ($corridas as $corrida) {
             $antes = $this->quantosEmbarcamAntes($corrida);
@@ -552,11 +554,8 @@ class GrupoCompartilhadoService
 
         $this->repartirValorDoMotorista($salaId, $corridas, 0.0);
 
-        // a desistência pesa na taxa de aceitação de quem desistiu
-        DB::table('ofertas_motorista')->updateOrInsert(
-            ['motorista_id' => $motoristaId, 'corrida_id' => $corrida->id],
-            ['recusada_em' => now(), 'ofertada_em' => now()]
-        );
+        // desistir depois de aceitar pesa na taxa de finalização, uma vez por desistência
+        app(TaxasMotoristaService::class)->registrarDesistenciaDeGrupo($corrida->id, $motoristaId);
 
         // e suspende as chamadas de grupo dele por um tempo; as normais seguem
         $suspensaAte = now()->addHours((int) config('compartilhada.suspensao_por_desistencia_horas', 24));

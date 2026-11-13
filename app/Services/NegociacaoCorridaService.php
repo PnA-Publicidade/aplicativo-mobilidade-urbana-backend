@@ -396,6 +396,9 @@ class NegociacaoCorridaService
 
             $this->despacho->cancelarPropostasPendentes($motorista->id, $corrida->id);
 
+            // Negocia fica fora da aceitação: o evento nasce já desconsiderado
+            app(TaxasMotoristaService::class)->registrarAceite($corrida, $motorista->id);
+
             if ($diferenca > 0.009) {
                 $usado = $this->pagamento->aplicarCredito($corrida, $diferenca);
 

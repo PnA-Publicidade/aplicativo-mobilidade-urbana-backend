@@ -156,6 +156,20 @@ class CorridaMotoristaController extends Controller
         return response()->json(null, 204);
     }
 
+    /** O app avisa que a chamada apareceu na tela; só ela conta na taxa de aceitação. */
+    public function tocou(Request $request, int $corrida): JsonResponse
+    {
+        $motorista = $this->motoristaDoUsuario($request);
+
+        if ($motorista === null) {
+            return $this->negarPorCadastro();
+        }
+
+        $this->despachoCorridaService->registrarToque($motorista, $corrida);
+
+        return response()->json(null, 204);
+    }
+
     public function transicionar(Request $request, int $corrida, string $acao): JsonResponse
     {
         $motorista = $this->motoristaDoUsuario($request);

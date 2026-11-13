@@ -15,6 +15,8 @@ use App\Services\CarteiraMotoristaService;
 use App\Services\CompartilhamentoVeiculoService;
 use App\Services\ConfiguracaoPlataformaService;
 use App\Services\DocumentosMotoristaService;
+use App\Services\RestricaoTaxaService;
+use App\Services\TaxasMotoristaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -24,9 +26,6 @@ use Illuminate\Validation\Rule;
 
 class MotoristaController extends Controller
 {
-    // as taxas olham só os últimos 30 dias, como na 99
-    private const JANELA_TAXAS_DIAS = 30;
-
     /**
      * Lista os veículos vinculados; a consulta de Meus veículos pode incluir os em análise.
      */
@@ -144,15 +143,14 @@ class MotoristaController extends Controller
     }
 
     /**
-     * Números do menu lateral, como na 99: só pesa o que dependeu do
-     * motorista. A aceitação conta as chamadas que ele aceitou ou recusou
-     * (deixar tocar até o fim é recusar); a finalização, as corridas que ele
-     * terminou ou cancelou. Cancelamento do passageiro, do sistema e o
-     * não comparecimento do passageiro não contam contra ele. Ambas olham
-     * os últimos 30 dias: a aceitação pela data em que a chamada tocou e a
-     * finalização pela data do aceite.
+     * Números do menu lateral, como na 99, lidos do livro das taxas
+     * (TaxasMotoristaService). Aceitação: mês corrente; toda chamada que tocou
+     * e não foi aceita pesa, menos duplicada, Negocia e a que o passageiro
+     * cancelou logo em seguida. Finalização: últimos 30 dias, com os
+     * cancelamentos do motorista e as desistências de grupo. Conta nova
+     * começa em 100% nas duas.
      */
-    public function estatisticas(Request $request): JsonResponse
+    public function estatisticas(Request $request, TaxasMotoristaService $taxas): JsonResponse
     {
         $motorista = Motorista::where('user_id', $request->user()->id)->first();
 
@@ -160,44 +158,19 @@ class MotoristaController extends Controller
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
         }
 
-        $corridas = DB::table('corridas')->where('motorista_id', $motorista->id);
-        $desde = now()->subDays(self::JANELA_TAXAS_DIAS);
-
-        $aceitas = (clone $corridas)->whereNotNull('tempo_aceite')->count();
-        $naJanela = (clone $corridas)->where('tempo_aceite', '>=', $desde);
-        $finalizadas = (clone $naJanela)->where('status_corrida', 'finalizada')->count();
-        $canceladasPeloMotorista = (clone $naJanela)
-            ->where('status_corrida', 'cancelada')
-            ->where('cancelado_por', 'motorista')
-            ->where(fn ($consulta) => $consulta
-                ->whereNull('tipo_cancelamento')
-                ->orWhere('tipo_cancelamento', '!=', 'nao_comparecimento'))
-            ->count();
-        $encerradas = $finalizadas + $canceladasPeloMotorista;
-
-        $ofertadas = DB::table('ofertas_motorista')
-            ->join('corridas', 'corridas.id', '=', 'ofertas_motorista.corrida_id')
-            ->where('ofertas_motorista.motorista_id', $motorista->id)
-            ->where('ofertas_motorista.ofertada_em', '>=', $desde);
-        $aceitasDasOfertas = (clone $ofertadas)
-            ->where('corridas.motorista_id', $motorista->id)
-            ->whereNotNull('corridas.tempo_aceite')
-            ->count();
-        $recusadas = (clone $ofertadas)
-            ->whereNotNull('ofertas_motorista.recusada_em')
-            ->where(fn ($consulta) => $consulta
-                ->whereNull('corridas.motorista_id')
-                ->orWhere('corridas.motorista_id', '!=', $motorista->id))
-            ->count();
-        $respondidas = $aceitasDasOfertas + $recusadas;
+        $dados = $taxas->taxas($motorista->id);
 
         return response()->json([
-            'corridas_aceitas' => $aceitas,
-            'corridas_finalizadas' => $finalizadas,
-            'janela_dias' => self::JANELA_TAXAS_DIAS,
+            'corridas_aceitas' => $dados['aceitas'],
+            'chamadas_recusadas' => $dados['recusadas'],
+            'corridas_finalizadas' => $dados['finalizadas'],
+            'corridas_canceladas' => $dados['canceladas'],
+            'janela_dias' => TaxasMotoristaService::JANELA_FINALIZACAO_DIAS,
+            'periodo_aceitacao' => 'mes',
             'taxa_finalizacao_minima' => app(ConfiguracaoPlataformaService::class)->taxaFinalizacaoMinima(),
-            'taxa_finalizacao' => $encerradas > 0 ? round($finalizadas / $encerradas * 100) : null,
-            'taxa_aceitacao' => $respondidas > 0 ? round($aceitasDasOfertas / $respondidas * 100) : null,
+            'taxa_finalizacao' => $dados['taxa_finalizacao'],
+            'taxa_aceitacao' => $dados['taxa_aceitacao'],
+            'situacao_taxa' => app(RestricaoTaxaService::class)->situacao($motorista->id),
         ]);
     }
 
