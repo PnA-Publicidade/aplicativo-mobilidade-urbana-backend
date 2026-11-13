@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Motorista;
 use App\Http\Controllers\Controller;
 use App\Models\Motorista;
 use App\Services\ReputacaoService;
+use App\Services\RestricaoNotaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -37,6 +38,11 @@ class PerfilMotoristaController extends Controller
             'corridas_para_deixar_de_ser_novo' => ReputacaoService::corridasParaDeixarDeSerNovo(),
             // a nota é a média das últimas avaliações reais, até este número
             'janela_da_media' => $this->reputacao->janelaDaMedia(),
+            // classificação da nota (Excelente, Atenção, Alto risco) e os limites definidos na gestão
+            'faixa' => $this->reputacao->classificar($resumo['nota']),
+            'faixas' => $this->reputacao->limitesDasFaixas(),
+            // alerta, prazo ou restrição por nota baixa (em modo sombra o motorista não vê alerta)
+            'situacao_nota' => app(RestricaoNotaService::class)->situacao(RestricaoNotaService::MOTORISTA, $motorista->id),
             'desde' => ($inicio = $motorista->liberado_em ?? $motorista->created_at) === null ? null : Carbon::parse($inicio)->toDateString(),
             'meses_na_plataforma' => $meses,
             'distribuicao' => $distribuicao,

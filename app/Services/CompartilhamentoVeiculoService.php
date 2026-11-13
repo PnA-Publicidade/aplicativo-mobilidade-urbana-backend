@@ -131,6 +131,7 @@ class CompartilhamentoVeiculoService
             }
             if ($disponivel) {
                 app(RestricaoTaxaService::class)->exigirSemRestricao($motorista);
+                app(RestricaoNotaService::class)->exigirMotoristaSemRestricao($motorista);
             }
             if ($disponivel && app(DocumentosMotoristaService::class)->acoesNecessarias($motorista) !== []) {
                 throw new RuntimeException('Resolva as ações necessárias para ficar online.', 403);

@@ -259,3 +259,68 @@ it('a gestão define quantas avaliações entram na média', function () {
     $this->withToken($token)->putJson('/api/gestao/configuracoes', ['avaliacoes_media_ultimas' => 0])->assertUnprocessable();
     $this->withToken($token)->putJson('/api/gestao/configuracoes', ['avaliacoes_media_ultimas' => 5001])->assertUnprocessable();
 });
+
+it('classifica a nota em Excelente, Atenção e Alto risco, com os limites pertencendo a Atenção', function () {
+    $servico = app(ReputacaoService::class);
+
+    expect($servico->classificar(5.0)['chave'])->toBe('excelente')
+        ->and($servico->classificar(4.86)['chave'])->toBe('excelente')
+        ->and($servico->classificar(4.85)['chave'])->toBe('atencao')
+        ->and($servico->classificar(4.70)['chave'])->toBe('atencao')
+        ->and($servico->classificar(4.51)['chave'])->toBe('atencao')
+        ->and($servico->classificar(4.50)['chave'])->toBe('alto_risco')
+        ->and($servico->classificar(3.2)['chave'])->toBe('alto_risco')
+        ->and($servico->classificar(4.854)['chave'])->toBe('atencao')
+        ->and($servico->classificar(4.86)['titulo'])->toBe('Excelente');
+});
+
+it('o perfil traz a faixa da nota e os limites definidos na gestão', function () {
+    $motorista = pmMotorista();
+
+    // conta nova: nota base 5,0 é Excelente
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+        ->assertOk()
+        ->assertJsonPath('faixa', ['chave' => 'excelente', 'titulo' => 'Excelente'])
+        ->assertJsonPath('faixas.excelente_acima', 4.85)
+        ->assertJsonPath('faixas.alto_risco_abaixo', 4.51);
+
+    pmAvaliada($motorista, 4);
+    pmAvaliada($motorista, 4);
+
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+        ->assertOk()->assertJsonPath('nota', 4)->assertJsonPath('faixa.chave', 'alto_risco');
+
+    // a gestão muda os limites: 4,0 passa a ser Atenção
+    app(ConfiguracaoPlataformaService::class)->definirFaixas(4.9, 3.5);
+
+    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/perfil')
+        ->assertOk()->assertJsonPath('faixa.chave', 'atencao')->assertJsonPath('faixas.alto_risco_abaixo', 3.5);
+});
+
+it('a gestão define os limites das faixas e a ordem deles é validada', function () {
+    $gestor = Gestor::create([
+        'name' => 'Gestor Faixas', 'email' => 'gestor-fx-'.Str::random(6).'@example.test', 'cpf' => '52998224725',
+        'data_nascimento' => '1985-01-01', 'telefone' => '69988887777', 'password' => 'senha-de-teste',
+    ]);
+    $gestor->forceFill(['perfil_acesso' => 'admin'])->save();
+    $token = auth('gestores')->claims(['perfil' => 'gestao'])->login($gestor);
+
+    $this->withToken($token)->getJson('/api/gestao/configuracoes')->assertOk()
+        ->assertJsonPath('avaliacoes_faixa_excelente_acima', 4.85)
+        ->assertJsonPath('avaliacoes_faixa_alto_risco_abaixo', 4.51)
+        ->assertJsonPath('avaliacoes_faixa_excelente_acima_padrao', 4.85)
+        ->assertJsonPath('avaliacoes_faixa_alto_risco_abaixo_padrao', 4.51);
+
+    $this->withToken($token)->putJson('/api/gestao/configuracoes', [
+        'avaliacoes_faixa_excelente_acima' => 4.9, 'avaliacoes_faixa_alto_risco_abaixo' => 4.6,
+    ])->assertOk()
+        ->assertJsonPath('avaliacoes_faixa_excelente_acima', 4.9)
+        ->assertJsonPath('avaliacoes_faixa_alto_risco_abaixo', 4.6);
+
+    // alto risco acima de excelente, fora de 1 a 5 e mais de duas casas
+    $this->withToken($token)->putJson('/api/gestao/configuracoes', ['avaliacoes_faixa_alto_risco_abaixo' => 4.95])->assertUnprocessable();
+    $this->withToken($token)->putJson('/api/gestao/configuracoes', ['avaliacoes_faixa_excelente_acima' => 5.5])->assertUnprocessable();
+    $this->withToken($token)->putJson('/api/gestao/configuracoes', ['avaliacoes_faixa_excelente_acima' => 4.851])->assertUnprocessable();
+
+    expect(app(ReputacaoService::class)->limitesDasFaixas())->toBe(['excelente_acima' => 4.9, 'alto_risco_abaixo' => 4.6]);
+});

@@ -6,6 +6,7 @@ use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Services\Compartilhada\SalaCompartilhadaService;
 use App\Services\DespachoCorridaService;
 use App\Services\PagamentoCorridaService;
+use App\Services\RestricaoNotaService;
 use App\Services\RestricaoTaxaService;
 use App\Services\TaxasMotoristaService;
 use Illuminate\Foundation\Inspiring;
@@ -65,6 +66,16 @@ Schedule::call(function () {
     $restricoes->encerrarRestricoesVencidas();
 })
     ->name('taxas:processar-restricoes')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+// restrições por nota baixa: prazos vencidos viram penalidade e as suspensões vencidas terminam
+Schedule::call(function () {
+    $restricoes = app(RestricaoNotaService::class);
+    $restricoes->processarPrazos();
+    $restricoes->encerrarVencidas();
+})
+    ->name('notas:processar-restricoes')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 

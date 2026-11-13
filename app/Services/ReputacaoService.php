@@ -37,6 +37,50 @@ class ReputacaoService
         return (int) config('avaliacoes.corridas_para_deixar_de_ser_novo', 20);
     }
 
+    public const FAIXA_EXCELENTE = 'excelente';
+
+    public const FAIXA_ATENCAO = 'atencao';
+
+    public const FAIXA_ALTO_RISCO = 'alto_risco';
+
+    /**
+     * Faixa da nota, com os limites definidos na gestão (padrão: Excelente
+     * acima de 4,85; Atenção de 4,51 a 4,85; Alto risco abaixo de 4,51). A
+     * nota vale com duas casas e os limites pertencem à faixa Atenção.
+     *
+     * @return array{chave: string, titulo: string}
+     */
+    public function classificar(float $nota): array
+    {
+        $configuracoes = app(ConfiguracaoPlataformaService::class);
+        $centavos = (int) round($nota * 100);
+
+        if ($centavos > (int) round($configuracoes->faixaExcelenteAcima() * 100)) {
+            return ['chave' => self::FAIXA_EXCELENTE, 'titulo' => 'Excelente'];
+        }
+
+        if ($centavos < (int) round($configuracoes->faixaAltoRiscoAbaixo() * 100)) {
+            return ['chave' => self::FAIXA_ALTO_RISCO, 'titulo' => 'Alto risco'];
+        }
+
+        return ['chave' => self::FAIXA_ATENCAO, 'titulo' => 'Atenção'];
+    }
+
+    /**
+     * Os limites das faixas, para o app explicar a classificação.
+     *
+     * @return array{excelente_acima: float, alto_risco_abaixo: float}
+     */
+    public function limitesDasFaixas(): array
+    {
+        $configuracoes = app(ConfiguracaoPlataformaService::class);
+
+        return [
+            'excelente_acima' => $configuracoes->faixaExcelenteAcima(),
+            'alto_risco_abaixo' => $configuracoes->faixaAltoRiscoAbaixo(),
+        ];
+    }
+
     /**
      * @return array{nota: float, avaliacoes: int, nota_base: bool, corridas: int, novo: bool}
      */

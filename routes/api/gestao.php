@@ -11,6 +11,7 @@ use App\Http\Controllers\Gestao\HistoricoCorridaSaldoController;
 use App\Http\Controllers\Gestao\PlataformaLucrosController;
 use App\Http\Controllers\Gestao\RegrasAcessoController;
 use App\Http\Controllers\Gestao\RestricoesMotoristasController;
+use App\Http\Controllers\Gestao\RestricoesNotaController;
 use App\Http\Controllers\Gestao\SaldoMotoristasController;
 use App\Http\Controllers\Gestao\TaxasMotoristasController;
 use App\Http\Controllers\Gestao\VeiculoUsuariosController;
@@ -68,6 +69,9 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::get('restricoes-motoristas', [RestricoesMotoristasController::class, 'index']);
             Route::post('restricoes-motoristas', [RestricoesMotoristasController::class, 'store'])->middleware('throttle:20,1');
             Route::post('restricoes-motoristas/{restricao}/liberar', [RestricoesMotoristasController::class, 'liberar'])->whereNumber('restricao')->middleware('throttle:20,1');
+            Route::get('restricoes-nota', [RestricoesNotaController::class, 'index']);
+            Route::post('restricoes-nota', [RestricoesNotaController::class, 'store'])->middleware('throttle:20,1');
+            Route::post('restricoes-nota/{restricao}/liberar', [RestricoesNotaController::class, 'liberar'])->whereNumber('restricao')->middleware('throttle:20,1');
             Route::get('taxas-motoristas', [TaxasMotoristasController::class, 'index']);
             Route::get('taxas-motoristas/{motorista}/eventos', [TaxasMotoristasController::class, 'eventos'])->whereNumber('motorista');
             Route::get('administracao/regras', [RegrasAcessoController::class, 'index']);

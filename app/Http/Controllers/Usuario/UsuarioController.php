@@ -8,6 +8,7 @@ use App\Models\Passageiro;
 use App\Models\User;
 use App\Services\PerfilUsuarioService;
 use App\Services\ReputacaoService;
+use App\Services\RestricaoNotaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -77,6 +78,8 @@ class UsuarioController extends Controller
         $dados['corridas_passageiro'] = $reputacao['corridas'] ?? 0;
         $dados['passageiro_novo'] = $reputacao['novo'] ?? true;
         $dados['corridas_para_deixar_de_ser_novo'] = ReputacaoService::corridasParaDeixarDeSerNovo();
+        // aviso, suspensão ou bloqueio por nota baixa (em modo sombra não aparece alerta)
+        $dados['situacao_nota'] = $passageiroId === null ? null : app(RestricaoNotaService::class)->situacao(RestricaoNotaService::PASSAGEIRO, (int) $passageiroId);
 
         return response()->json($dados);
     }

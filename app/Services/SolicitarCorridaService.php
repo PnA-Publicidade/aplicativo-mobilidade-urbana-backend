@@ -65,6 +65,9 @@ class SolicitarCorridaService
         $passageiro = Passageiro::firstOrCreate(['user_id' => $usuario->id]);
         $pagamento = app(PagamentoCorridaService::class);
 
+        // suspensão ou bloqueio por nota baixa: nenhum pedido novo
+        app(RestricaoNotaService::class)->exigirPassageiroSemRestricao($passageiro->id);
+
         // valor em aberto de corrida anterior bloqueia qualquer novo pedido
         $pagamento->exigirSemPendencia($passageiro->id);
 

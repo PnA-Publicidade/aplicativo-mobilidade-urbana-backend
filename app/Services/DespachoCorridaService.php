@@ -362,6 +362,7 @@ class DespachoCorridaService
 
         // restrição por taxa de finalização: nem aceitar nem propor
         app(RestricaoTaxaService::class)->exigirSemRestricao($motorista);
+        app(RestricaoNotaService::class)->exigirMotoristaSemRestricao($motorista);
 
         $ocupado = Corrida::where('motorista_id', $motorista->id)
             ->whereKeyNot($corrida->id)

@@ -55,6 +55,96 @@ class ConfiguracaoPlataformaService
         return max(1, $this->inteiro(self::AVALIACOES_MEDIA_ULTIMAS, self::AVALIACOES_MEDIA_ULTIMAS_PADRAO));
     }
 
+    // faixas da nota: Excelente acima de X; Alto risco abaixo de Y; Atenção de Y a X
+    public const FAIXA_EXCELENTE_ACIMA = 'avaliacoes_faixa_excelente_acima';
+
+    public const FAIXA_EXCELENTE_ACIMA_PADRAO = 4.85;
+
+    public const FAIXA_ALTO_RISCO_ABAIXO = 'avaliacoes_faixa_alto_risco_abaixo';
+
+    public const FAIXA_ALTO_RISCO_ABAIXO_PADRAO = 4.51;
+
+    public function faixaExcelenteAcima(): float
+    {
+        return $this->decimal(self::FAIXA_EXCELENTE_ACIMA, self::FAIXA_EXCELENTE_ACIMA_PADRAO);
+    }
+
+    public function faixaAltoRiscoAbaixo(): float
+    {
+        return $this->decimal(self::FAIXA_ALTO_RISCO_ABAIXO, self::FAIXA_ALTO_RISCO_ABAIXO_PADRAO);
+    }
+
+    public function definirFaixas(float $excelenteAcima, float $altoRiscoAbaixo): void
+    {
+        $this->definirTexto(self::FAIXA_EXCELENTE_ACIMA, number_format($excelenteAcima, 2, '.', ''));
+        $this->definirTexto(self::FAIXA_ALTO_RISCO_ABAIXO, number_format($altoRiscoAbaixo, 2, '.', ''));
+    }
+
+    // restrições por nota baixa (motorista e passageiro). Desligado = modo sombra:
+    // registra quem seria afetado, sem bloquear nem avisar.
+    public const RESTRICOES_NOTA_ATIVAS = 'restricoes_nota_ativas';
+
+    // avaliações reais antes de a faixa valer (evita uma nota 1 virar Alto risco)
+    public const RESTRICAO_NOTA_MINIMO_AVALIACOES = 'restricao_nota_minimo_avaliacoes';
+
+    public const RESTRICAO_NOTA_MINIMO_AVALIACOES_PADRAO = 10;
+
+    // dias que quem entrou em Alto risco tem para recuperar a nota antes da penalidade
+    public const RESTRICAO_NOTA_PRAZO_DIAS = 'restricao_nota_prazo_dias';
+
+    public const RESTRICAO_NOTA_PRAZO_DIAS_PADRAO = 7;
+
+    // motorista: 1ª restrição, 2ª, 3ª...; depois alterna entre as duas últimas
+    public const RESTRICAO_NOTA_MOTORISTA_DURACOES_DIAS = 'restricao_nota_motorista_duracoes_dias';
+
+    public const RESTRICAO_NOTA_MOTORISTA_DURACOES_DIAS_PADRAO = '5,10,15';
+
+    // passageiro: suspensão temporária (bloqueio educativo)
+    public const RESTRICAO_NOTA_PASSAGEIRO_SUSPENSAO_DIAS = 'restricao_nota_passageiro_suspensao_dias';
+
+    public const RESTRICAO_NOTA_PASSAGEIRO_SUSPENSAO_DIAS_PADRAO = 7;
+
+    // passageiro: depois desta quantidade de suspensões a seguinte é o bloqueio permanente (0 = nunca)
+    public const RESTRICAO_NOTA_PASSAGEIRO_BLOQUEIO_APOS = 'restricao_nota_passageiro_bloqueio_apos';
+
+    public const RESTRICAO_NOTA_PASSAGEIRO_BLOQUEIO_APOS_PADRAO = 2;
+
+    public function restricoesNotaAtivas(): bool
+    {
+        return $this->inteiro(self::RESTRICOES_NOTA_ATIVAS, 0) === 1;
+    }
+
+    public function restricaoNotaMinimoAvaliacoes(): int
+    {
+        return $this->inteiro(self::RESTRICAO_NOTA_MINIMO_AVALIACOES, self::RESTRICAO_NOTA_MINIMO_AVALIACOES_PADRAO);
+    }
+
+    public function restricaoNotaPrazoDias(): int
+    {
+        return $this->inteiro(self::RESTRICAO_NOTA_PRAZO_DIAS, self::RESTRICAO_NOTA_PRAZO_DIAS_PADRAO);
+    }
+
+    public function restricaoNotaPassageiroSuspensaoDias(): int
+    {
+        return $this->inteiro(self::RESTRICAO_NOTA_PASSAGEIRO_SUSPENSAO_DIAS, self::RESTRICAO_NOTA_PASSAGEIRO_SUSPENSAO_DIAS_PADRAO);
+    }
+
+    public function restricaoNotaPassageiroBloqueioApos(): int
+    {
+        return $this->inteiro(self::RESTRICAO_NOTA_PASSAGEIRO_BLOQUEIO_APOS, self::RESTRICAO_NOTA_PASSAGEIRO_BLOQUEIO_APOS_PADRAO);
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function restricaoNotaMotoristaDuracoesDias(): array
+    {
+        $texto = DB::table('configuracoes_plataforma')->where('chave', self::RESTRICAO_NOTA_MOTORISTA_DURACOES_DIAS)->value('valor');
+        $dias = array_values(array_filter(array_map('intval', explode(',', (string) ($texto ?? self::RESTRICAO_NOTA_MOTORISTA_DURACOES_DIAS_PADRAO))), fn (int $d) => $d > 0));
+
+        return $dias === [] ? [5, 10, 15] : $dias;
+    }
+
     // restrições por taxa de finalização baixa (ciclo mensal, como na 99)
     public const RESTRICOES_ATIVAS = 'restricoes_taxa_ativas';
 
@@ -121,6 +211,13 @@ class ConfiguracaoPlataformaService
     public function definir(string $chave, int $valor): void
     {
         $this->definirTexto($chave, (string) $valor);
+    }
+
+    private function decimal(string $chave, float $padrao): float
+    {
+        $valor = DB::table('configuracoes_plataforma')->where('chave', $chave)->value('valor');
+
+        return $valor === null ? $padrao : (float) $valor;
     }
 
     private function inteiro(string $chave, int $padrao): int
