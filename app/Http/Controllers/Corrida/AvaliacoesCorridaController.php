@@ -4,16 +4,21 @@
 
 namespace App\Http\Controllers\Corrida;
 
+use App\Enums\ElogioMotorista;
 use App\Http\Controllers\Controller;
 use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
 use App\Services\Compartilhada\GrupoCompartilhadoService;
+use App\Services\RestricaoNotaService;
 use App\Support\PerfilLogado;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
+use Throwable;
 
 class AvaliacoesCorridaController extends Controller
 {
@@ -121,6 +126,9 @@ class AvaliacoesCorridaController extends Controller
             'corrida_id' => 'required|integer',
             'nota' => 'required|integer|min:1|max:5',
             'comentario' => 'nullable|string|max:1000',
+            // elogios ao motorista, marcados pelo passageiro
+            'elogios' => 'nullable|array|max:'.count(ElogioMotorista::cases()),
+            'elogios.*' => ['string', Rule::in(ElogioMotorista::valores())],
         ]);
 
         $corrida = $this->corridasDoUsuario($request)
@@ -152,12 +160,18 @@ class AvaliacoesCorridaController extends Controller
             return response()->json(['message' => 'Você já avaliou esta corrida.'], 409);
         }
 
+        // elogio é do passageiro para o motorista; o motorista não elogia o passageiro
+        $elogios = $papel === 'passageiro' ? array_values(array_unique($dados['elogios'] ?? [])) : [];
+
         if ($avaliacaoExistente !== null) {
             $avaliacaoExistente->update([
                 'nota' => $dados['nota'],
                 'comentario' => $dados['comentario'] ?? null,
+                'elogios' => $elogios === [] ? null : $elogios,
                 'automatica' => false,
             ]);
+
+            $this->reavaliarQuemFoiAvaliado($corrida, $papel);
 
             return response()->json($avaliacaoExistente->fresh());
         }
@@ -168,10 +182,30 @@ class AvaliacoesCorridaController extends Controller
             'tipo_usuario' => $papel,
             'nota' => $dados['nota'],
             'comentario' => $dados['comentario'] ?? null,
+            'elogios' => $elogios === [] ? null : $elogios,
             'automatica' => false,
         ]);
 
+        $this->reavaliarQuemFoiAvaliado($corrida, $papel);
+
         return response()->json($avaliacao, 201);
+    }
+
+    /** A nota de quem recebeu a avaliação mudou: confere a faixa e as penalidades por nota. */
+    private function reavaliarQuemFoiAvaliado(Corrida $corrida, string $papelDeQuemAvaliou): void
+    {
+        try {
+            $restricoes = app(RestricaoNotaService::class);
+
+            if ($papelDeQuemAvaliou === 'passageiro' && $corrida->motorista_id > 0) {
+                $restricoes->avaliar(RestricaoNotaService::MOTORISTA, $corrida->motorista_id);
+            } elseif ($papelDeQuemAvaliou === 'motorista' && $corrida->passageiro_id > 0) {
+                $restricoes->avaliar(RestricaoNotaService::PASSAGEIRO, $corrida->passageiro_id);
+            }
+        } catch (Throwable $erro) {
+            // a avaliação já foi gravada: falha aqui não pode derrubar a resposta
+            Log::warning('Falha ao reavaliar a nota depois da avaliação.', ['corrida_id' => $corrida->id, 'erro' => $erro->getMessage()]);
+        }
     }
 
     /**

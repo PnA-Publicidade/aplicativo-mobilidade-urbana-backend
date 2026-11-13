@@ -89,7 +89,11 @@ class VerificacaoTipoDocumentoService
         $texto = $this->leitor->extrair($arquivo);
         if ($texto === null) {
             // sem conseguir ler, não há como saber o que é: nada entra sem conferência
-            throw ValidationException::withMessages([$campo => 'Não foi possível verificar o documento agora. Tente novamente em alguns instantes.']);
+            $mensagem = 'Não foi possível verificar o documento agora. Tente novamente em alguns instantes.';
+            if (config('app.debug') && $this->leitor->ultimoErro !== null) {
+                $mensagem .= ' [debug] '.$this->leitor->ultimoErro;
+            }
+            throw ValidationException::withMessages([$campo => $mensagem]);
         }
         // PDF com texto mas sem nada reconhecível (a CNH digital traz só o rodapé da assinatura):
         // os dados estão numa imagem, então lê a página também como imagem.

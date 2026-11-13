@@ -7,6 +7,7 @@ use Database\Factories\MotoristaFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
@@ -85,5 +86,13 @@ class Motorista extends Authenticatable implements JWTSubject
             'aceita_compartilhada' => 'boolean',
             'compartilhada_suspensa_ate' => 'datetime',
         ];
+    }
+
+    /**
+     * @return HasMany<MotoristaDocumento, $this>
+     */
+    public function documentos(): HasMany
+    {
+        return $this->hasMany(MotoristaDocumento::class);
     }
 }

@@ -300,7 +300,6 @@ it('preserva um raio inicial de tarifa maior que o limite global', function () {
 it('agrega reputacao e mantem consultas constantes com muitas ofertas', function () {
     [$motorista] = criarMotoristaDespacho(true);
     $passageiro = criarPassageiroDespacho();
-    config(['avaliacoes.minimo_corridas_para_media' => 1]);
     $historica = criarCorridaDespacho($passageiro, status: 'finalizada');
     AvaliacoesCorrida::create([
         'corrida_id' => $historica->id,
@@ -666,7 +665,9 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
         ->assertJsonPath('corrida.cancelamento_gratis_ate', fn ($valor) => is_string($valor) && str_contains($valor, 'T'))
         ->assertJsonPath('motorista_info.nome', 'João')
         ->assertJsonPath('motorista_info.telefone', $motorista->telefone)
-        ->assertJsonPath('motorista_info.nota', null)
+        // motorista sem avaliações: nota base 5,0 e selo de novo usuário
+        ->assertJsonPath('motorista_info.nota', 5)
+        ->assertJsonPath('motorista_info.novo', true)
         ->assertJsonPath('motorista_info.corridas', 0);
 
     app(DespachoCorridaService::class)->transicionar($motorista, $corrida->id, 'cheguei');
@@ -701,18 +702,20 @@ it('mostra a nota media e o total de corridas do motorista para o passageiro', f
     $corrida = criarCorridaDespacho($passageiro);
     $servico->aceitar($motorista, $corrida->id);
 
-    // duas notas não bastam: a primeira avaliação viraria a média inteira
+    // a nota é a média das avaliações reais; com poucas corridas o motorista ainda é novo
     $this->actingAs($passageiro, 'passageiros')->getJson('/api/minha-corrida-atual')
         ->assertOk()
-        ->assertJsonPath('motorista_info.nota', null)
-        ->assertJsonPath('motorista_info.corridas', 2);
+        ->assertJsonPath('motorista_info.nota', 4)
+        ->assertJsonPath('motorista_info.corridas', 2)
+        ->assertJsonPath('motorista_info.novo', true);
 
-    config(['avaliacoes.minimo_corridas_para_media' => 2]);
+    config(['avaliacoes.corridas_para_deixar_de_ser_novo' => 2]);
 
     $this->actingAs($passageiro, 'passageiros')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('motorista_info.nota', 4)
-        ->assertJsonPath('motorista_info.corridas', 2);
+        ->assertJsonPath('motorista_info.corridas', 2)
+        ->assertJsonPath('motorista_info.novo', false);
 });
 
 it('não mostra motorista_info pra quem consulta a própria corrida como motorista', function () {

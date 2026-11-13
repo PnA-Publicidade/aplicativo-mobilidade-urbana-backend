@@ -6,6 +6,9 @@ use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Services\Compartilhada\SalaCompartilhadaService;
 use App\Services\DespachoCorridaService;
 use App\Services\PagamentoCorridaService;
+use App\Services\RestricaoNotaService;
+use App\Services\RestricaoTaxaService;
+use App\Services\TaxasMotoristaService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -42,4 +45,42 @@ Schedule::call(fn () => app(GrupoCompartilhadoService::class)->dissolverSemMotor
 Schedule::call(fn () => app(PagamentoCorridaService::class)->reprocessarEstornosPendentes())
     ->name('pagamentos:reprocessar-estornos')
     ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+// taxas dos motoristas: chamada que tocou e ficou sem resposta vira tempo esgotado
+Schedule::call(fn () => app(TaxasMotoristaService::class)->fecharChamadasSemResposta())
+    ->name('taxas:fechar-chamadas-sem-resposta')
+    ->everyTenSeconds()
+    ->withoutOverlapping();
+
+// retrato diário das taxas, com o dia anterior já completo
+Schedule::command('taxas:fechar-dia')
+    ->name('taxas:fechar-dia')
+    ->dailyAt('00:10')
+    ->withoutOverlapping();
+
+// restrições por taxa de finalização: prazos vencidos viram restrição e as vencidas terminam
+Schedule::call(function () {
+    $restricoes = app(RestricaoTaxaService::class);
+    $restricoes->processarPrazos();
+    $restricoes->encerrarRestricoesVencidas();
+})
+    ->name('taxas:processar-restricoes')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+// restrições por nota baixa: prazos vencidos viram penalidade e as suspensões vencidas terminam
+Schedule::call(function () {
+    $restricoes = app(RestricaoNotaService::class);
+    $restricoes->processarPrazos();
+    $restricoes->encerrarVencidas();
+})
+    ->name('notas:processar-restricoes')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+// a taxa muda também quando eventos saem da janela de 30 dias
+Schedule::call(fn () => app(RestricaoTaxaService::class)->varrer())
+    ->name('taxas:varrer-restricoes')
+    ->dailyAt('00:20')
     ->withoutOverlapping();

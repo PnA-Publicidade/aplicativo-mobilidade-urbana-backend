@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Usuario;
 
 use App\Http\Controllers\Controller;
-use App\Models\AvaliacoesCorrida;
-use App\Models\Corrida;
 use App\Models\Motorista;
 use App\Models\Passageiro;
+use App\Services\ReputacaoService;
+use App\Services\RestricaoNotaService;
 use App\Support\FotoDePerfil;
 use App\Support\PerfilLogado;
-use App\Support\Reputacao;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,23 +20,19 @@ class PerfilController extends Controller
         $perfil = PerfilLogado::de($request);
         abort_if($perfil->indisponivelNoApp(), 403, 'Este perfil está indisponível. Entre em contato com o suporte.');
 
-        // nota que os motoristas deram ao passageiro (o menu do app mostra)
         $passageiroId = $perfil instanceof Passageiro ? $perfil->id : null;
-        $nota = $passageiroId === null ? null : AvaliacoesCorrida::query()
-            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
-            ->where('avaliacoes_corridas.tipo_usuario', 'motorista')
-            ->where('corridas.passageiro_id', $passageiroId)
-            ->avg('avaliacoes_corridas.nota');
-        // o perfil do passageiro mostra quantas corridas ele já fez
-        $corridas = $passageiroId === null ? 0 : Corrida::where('passageiro_id', $passageiroId)
-            ->where('status_corrida', 'finalizada')
-            ->count();
+        // nota base 5,0 até a primeira avaliação real; "novo" enquanto tem poucas corridas
+        $reputacao = $passageiroId === null ? null : app(ReputacaoService::class)->doPassageiro($passageiroId);
 
         return response()->json([
             ...$perfil->dadosDoApp(),
-            'nota_passageiro' => Reputacao::media($nota, $corridas),
-            'corridas_passageiro' => $corridas,
-            'minimo_corridas_para_nota' => Reputacao::minimoDeCorridas(),
+            'nota_passageiro' => $reputacao['nota'] ?? ReputacaoService::notaBase(),
+            // o perfil do passageiro mostra quantas corridas ele já fez
+            'corridas_passageiro' => $reputacao['corridas'] ?? 0,
+            'passageiro_novo' => $reputacao['novo'] ?? true,
+            'corridas_para_deixar_de_ser_novo' => ReputacaoService::corridasParaDeixarDeSerNovo(),
+            // aviso, suspensão ou bloqueio por nota baixa (em modo sombra não aparece alerta)
+            'situacao_nota' => $passageiroId === null ? null : app(RestricaoNotaService::class)->situacao(RestricaoNotaService::PASSAGEIRO, $passageiroId),
         ]);
     }
 
