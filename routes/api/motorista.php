@@ -27,6 +27,7 @@ Route::put('motorista/me/veiculo-ativo', [MotoristaController::class, 'seleciona
 Route::post('motorista/me/veiculos', [MotoristaController::class, 'cadastrarMeuVeiculo']);
 Route::delete('motorista/me/veiculos/{veiculo}', [MotoristaController::class, 'removerMeuVeiculo'])->whereNumber('veiculo');
 Route::get('motorista/me/estatisticas', [MotoristaController::class, 'estatisticas']);
+Route::get('motorista/me/taxa-finalizacao', [MotoristaController::class, 'taxaFinalizacao']);
 // viagem compartilhada: aceitar chamadas de grupo e lugares do carro
 Route::get('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'mostrar']);
 Route::put('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'atualizar']);

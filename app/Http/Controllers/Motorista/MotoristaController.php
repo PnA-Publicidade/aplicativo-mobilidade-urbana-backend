@@ -175,6 +175,31 @@ class MotoristaController extends Controller
     }
 
     /**
+     * Tela Taxa de Finalização do app: taxa dos últimos 30 dias, série diária,
+     * histórico por janela e as regras que o motorista precisa conhecer.
+     */
+    public function taxaFinalizacao(Request $request, TaxasMotoristaService $taxas): JsonResponse
+    {
+        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+
+        if ($motorista === null) {
+            return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 403);
+        }
+
+        $configuracoes = app(ConfiguracaoPlataformaService::class);
+
+        return response()->json([
+            ...$taxas->detalheFinalizacao($motorista->id),
+            'minima' => $configuracoes->taxaFinalizacaoMinima(),
+            'situacao_taxa' => app(RestricaoTaxaService::class)->situacao($motorista->id),
+            'regras' => [
+                'prazo_dia' => $configuracoes->restricaoPrazoDia(),
+                'duracoes_dias' => $configuracoes->restricaoDuracoesDias(),
+            ],
+        ]);
+    }
+
+    /**
      * Cadastra e vincula um veículo à própria conta, sem confiar em IDs
      * de motorista enviados pelo aplicativo.
      */

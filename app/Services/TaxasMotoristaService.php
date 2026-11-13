@@ -179,7 +179,8 @@ class TaxasMotoristaService
         $ate = $ate ?? now();
 
         $aceitacao = $this->contar($motoristaId, self::ACEITACAO, $ate->copy()->startOfMonth(), $ate);
-        $finalizacao = $this->contar($motoristaId, self::FINALIZACAO, $ate->copy()->subDays(self::JANELA_FINALIZACAO_DIAS), $ate);
+        // 30 dias corridos contando hoje: de 14/10 a 12/11, como a tela do motorista mostra
+        $finalizacao = $this->contar($motoristaId, self::FINALIZACAO, $ate->copy()->subDays(self::JANELA_FINALIZACAO_DIAS - 1)->startOfDay(), $ate);
 
         return [
             'taxa_aceitacao' => $this->percentual($aceitacao['positivos'], $aceitacao['negativos']),
@@ -188,6 +189,84 @@ class TaxasMotoristaService
             'recusadas' => $aceitacao['negativos'],
             'finalizadas' => $finalizacao['positivos'],
             'canceladas' => $finalizacao['negativos'],
+        ];
+    }
+
+    /**
+     * Dados da tela Taxa de Finalização do motorista: o período, a taxa dos
+     * últimos 30 dias, a série diária e o histórico da taxa de cada janela de
+     * 30 dias que terminou nos últimos 30 dias.
+     *
+     * @return array{
+     *     periodo: array{de: string, ate: string},
+     *     taxa: int, finalizadas: int, canceladas: int,
+     *     diario: list<array{data: string, finalizadas: int, canceladas: int, taxa: int|null}>,
+     *     historico: list<array{de: string, ate: string, taxa: int, finalizadas: int, canceladas: int}>
+     * }
+     */
+    public function detalheFinalizacao(int $motoristaId, ?CarbonInterface $ate = null): array
+    {
+        $ate = $ate ?? now();
+        $janela = self::JANELA_FINALIZACAO_DIAS;
+        $hoje = $ate->copy()->startOfDay();
+        // a janela mais antiga do histórico começa 2 janelas atrás
+        $inicio = $hoje->copy()->subDays($janela * 2 - 2);
+
+        $porDia = [];
+        $linhas = DB::table('motorista_taxa_eventos')
+            ->where('motorista_id', $motoristaId)
+            ->where('taxa', self::FINALIZACAO)
+            ->whereNull('desconsiderado_motivo')
+            ->where('ocorrido_em', '>=', $inicio)
+            ->where('ocorrido_em', '<=', $ate)
+            ->selectRaw('DATE(ocorrido_em) as dia, resultado, COUNT(*) as total')
+            ->groupBy('dia', 'resultado')
+            ->get();
+
+        foreach ($linhas as $linha) {
+            $porDia[$linha->dia][$linha->resultado === 'positivo' ? 'finalizadas' : 'canceladas'] = (int) $linha->total;
+        }
+
+        $dia = fn (int $voltando): array => [
+            'data' => $hoje->copy()->subDays($voltando)->toDateString(),
+            'finalizadas' => $porDia[$hoje->copy()->subDays($voltando)->toDateString()]['finalizadas'] ?? 0,
+            'canceladas' => $porDia[$hoje->copy()->subDays($voltando)->toDateString()]['canceladas'] ?? 0,
+        ];
+
+        $diario = [];
+        for ($i = $janela - 1; $i >= 0; $i--) {
+            $d = $dia($i);
+            $total = $d['finalizadas'] + $d['canceladas'];
+            $diario[] = $d + ['taxa' => $total === 0 ? null : $this->percentual($d['finalizadas'], $d['canceladas'])];
+        }
+
+        $historico = [];
+        for ($fim = 0; $fim < $janela; $fim++) {
+            $positivas = 0;
+            $negativas = 0;
+            for ($i = $fim; $i < $fim + $janela; $i++) {
+                $d = $dia($i);
+                $positivas += $d['finalizadas'];
+                $negativas += $d['canceladas'];
+            }
+            $historico[] = [
+                'de' => $hoje->copy()->subDays($fim + $janela - 1)->toDateString(),
+                'ate' => $hoje->copy()->subDays($fim)->toDateString(),
+                'taxa' => $this->percentual($positivas, $negativas),
+                'finalizadas' => $positivas,
+                'canceladas' => $negativas,
+            ];
+        }
+
+        $atual = $this->taxas($motoristaId, $ate);
+
+        return [
+            'periodo' => ['de' => $hoje->copy()->subDays($janela - 1)->toDateString(), 'ate' => $hoje->toDateString()],
+            'taxa' => $atual['taxa_finalizacao'],
+            'finalizadas' => $atual['finalizadas'],
+            'canceladas' => $atual['canceladas'],
+            'diario' => $diario,
+            'historico' => $historico,
         ];
     }
 
