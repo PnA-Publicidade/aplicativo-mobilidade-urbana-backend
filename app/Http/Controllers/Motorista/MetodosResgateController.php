@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreMetodoResgateRequest;
 use App\Models\MetodoResgate;
 use App\Models\Motorista;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -124,7 +125,7 @@ class MetodosResgateController extends Controller
             now()->addMinutes((int) config('saques.codigo_sms_validade_minutos')),
         );
 
-        Log::info('Código da conta bancária (SMS simulado)', ['user_id' => $request->user()->id]);
+        Log::info('Código da conta bancária (SMS simulado)', ['motorista_id' => $request->user()->id]);
 
         return response()->json(array_filter([
             'enviado' => true,
@@ -134,7 +135,7 @@ class MetodosResgateController extends Controller
 
     private function motorista(Request $request): Motorista
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
 

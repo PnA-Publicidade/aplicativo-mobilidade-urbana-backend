@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * trabalho (no máximo um de cada) e favoritos.
  *
  * @property int $id
- * @property int $user_id
+ * @property int $passageiro_id
  * @property string $tipo
  * @property string|null $nome
  * @property string $endereco
@@ -29,7 +29,7 @@ class LocalSalvo extends Model
     protected $table = 'locais_salvos';
 
     protected $fillable = [
-        'user_id',
+        'passageiro_id',
         'tipo',
         'nome',
         'endereco',
@@ -38,7 +38,7 @@ class LocalSalvo extends Model
         'longitude',
     ];
 
-    protected $hidden = ['user_id'];
+    protected $hidden = ['passageiro_id'];
 
     protected function casts(): array
     {
@@ -49,10 +49,10 @@ class LocalSalvo extends Model
     }
 
     /**
-     * @return BelongsTo<User, $this>
+     * @return BelongsTo<Passageiro, $this>
      */
-    public function user(): BelongsTo
+    public function passageiro(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(Passageiro::class);
     }
 }

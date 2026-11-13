@@ -4,7 +4,6 @@ use App\Models\CobrancaCartao;
 use App\Models\Corrida;
 use App\Models\CorridaFinanceiro;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -18,18 +17,7 @@ beforeEach(function () {
 
 function passageiroCartao(): Passageiro
 {
-    $id = str_replace('-', '', (string) Str::uuid());
-    $user = User::create([
-        'name' => 'Passageiro Cartão',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => '52998224725',
-        'data_nascimento' => '1990-01-01',
-        'email' => "cartao-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-
-    return Passageiro::create(['user_id' => $user->id, 'media_avaliacao' => null]);
+    return Passageiro::factory()->create(['name' => 'Passageiro Cartão', 'cpf' => '52998224725']);
 }
 
 function corridaCartao(Passageiro $passageiro, string $status = 'finalizada', string $metodo = 'cartao'): Corrida
@@ -72,7 +60,7 @@ it('cria produto e checkout só com cartão e devolve o link de pagamento', func
     $passageiro = passageiroCartao();
     $corrida = corridaCartao($passageiro);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/cartao")
         ->assertOk()
         ->assertJsonPath('cobranca.url', 'https://app.abacatepay.com/pay/bill_teste')
@@ -90,8 +78,8 @@ it('reaproveita o checkout pendente da corrida', function () {
     $passageiro = passageiroCartao();
     $corrida = corridaCartao($passageiro);
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk();
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk();
 
     expect(CobrancaCartao::count())->toBe(1);
     Http::assertSentCount(2);
@@ -101,9 +89,9 @@ it('marca a corrida como paga quando o checkout é pago', function () {
     fakeCheckoutAbacate('PAID');
     $passageiro = passageiroCartao();
     $corrida = corridaCartao($passageiro);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/cartao")
         ->assertOk()
         ->assertJsonPath('cobranca.status', 'PAID');
@@ -118,8 +106,8 @@ it('recusa cartão sem pendência e no pré-pagamento de outro método', functio
     $pix->update(['status_pagamento' => 'pago']);
     $andamento = corridaCartao($passageiro, 'em_andamento');
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$pix->id}/cartao")->assertStatus(409);
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$andamento->id}/cartao")->assertStatus(409);
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$pix->id}/cartao")->assertStatus(409);
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$andamento->id}/cartao")->assertStatus(409);
 
     Http::assertNothingSent();
 });

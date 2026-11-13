@@ -9,6 +9,7 @@ use App\Services\ArmazenarAnexoMotoristaService;
 use App\Services\ImpedirCrlvDuplicadoService;
 use App\Services\LeituraCrlvService;
 use App\Services\SolicitacaoVeiculoService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -90,7 +91,7 @@ class SolicitacoesVeiculoController extends Controller
 
     private function motorista(Request $request): Motorista
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
         abort_unless($motorista !== null, 403, 'Cadastro de motorista não encontrado.');
         abort_if(in_array($motorista->status, ['bloqueado', 'inativo'], true), 403, 'Cadastro indisponível.');
 

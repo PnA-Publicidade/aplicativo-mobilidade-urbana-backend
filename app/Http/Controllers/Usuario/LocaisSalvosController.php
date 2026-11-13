@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Usuario;
 
 use App\Http\Controllers\Controller;
 use App\Models\LocalSalvo;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -15,7 +16,7 @@ class LocaisSalvosController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $locais = LocalSalvo::where('user_id', $request->user()->id)
+        $locais = LocalSalvo::where('passageiro_id', $this->passageiroId($request))
             ->orderByRaw("CASE tipo WHEN 'casa' THEN 0 WHEN 'trabalho' THEN 1 ELSE 2 END")
             ->orderBy('nome')
             ->orderBy('id')
@@ -35,18 +36,18 @@ class LocaisSalvosController extends Controller
             'longitude' => ['required', 'numeric', 'between:-180,180'],
         ]);
 
-        $userId = $request->user()->id;
+        $passageiroId = $this->passageiroId($request);
 
         if (in_array($dados['tipo'], LocalSalvo::TIPOS_UNICOS, true)) {
             $local = DB::transaction(fn () => LocalSalvo::updateOrCreate(
-                ['user_id' => $userId, 'tipo' => $dados['tipo']],
+                ['passageiro_id' => $passageiroId, 'tipo' => $dados['tipo']],
                 $dados,
             ));
 
             return response()->json($local, $local->wasRecentlyCreated ? 201 : 200);
         }
 
-        $favoritos = LocalSalvo::where('user_id', $userId)->where('tipo', 'favorito')->count();
+        $favoritos = LocalSalvo::where('passageiro_id', $passageiroId)->where('tipo', 'favorito')->count();
 
         if ($favoritos >= LocalSalvo::LIMITE_FAVORITOS) {
             throw ValidationException::withMessages([
@@ -54,17 +55,22 @@ class LocaisSalvosController extends Controller
             ]);
         }
 
-        $local = LocalSalvo::create([...$dados, 'user_id' => $userId]);
+        $local = LocalSalvo::create([...$dados, 'passageiro_id' => $passageiroId]);
 
         return response()->json($local, 201);
     }
 
     public function destroy(Request $request, int $localSalvo): Response
     {
-        LocalSalvo::where('user_id', $request->user()->id)
+        LocalSalvo::where('passageiro_id', $this->passageiroId($request))
             ->findOrFail($localSalvo)
             ->delete();
 
         return response()->noContent();
+    }
+
+    private function passageiroId(Request $request): int
+    {
+        return (PerfilLogado::passageiro($request) ?? abort(403, 'Locais salvos são do passageiro.'))->id;
     }
 }

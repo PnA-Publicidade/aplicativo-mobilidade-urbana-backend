@@ -9,7 +9,6 @@ use App\Models\Passageiro;
 use App\Models\ProdutosCorrida;
 use App\Models\StatusBusca;
 use App\Models\Tarifa;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\DespachoCorridaService;
 use App\Services\EnderecoPorCoordenadaService;
@@ -17,7 +16,6 @@ use App\Services\PagamentoCorridaService;
 use Database\Seeders\PrecificacaoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -43,27 +41,12 @@ beforeEach(function () {
     }
 });
 
-function catUsuario(string $prefixo): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => "Teste $prefixo",
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$prefixo-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 /**
  * @param  array{eletrico?: bool, taxi?: bool}  $marcas
  */
 function catMotorista(?string $tipoVeiculo, array $marcas = []): Motorista
 {
-    $motorista = Motorista::create(['user_id' => catUsuario('motorista')->id, 'status' => 'ativo']);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
 
     if ($tipoVeiculo !== null) {
         $veiculo = Veiculo::create([
@@ -96,7 +79,7 @@ function catMotorista(?string $tipoVeiculo, array $marcas = []): Motorista
 
 function catPassageiro(): Passageiro
 {
-    return Passageiro::create(['user_id' => catUsuario('passageiro')->id]);
+    return Passageiro::factory()->create();
 }
 
 /**
@@ -137,7 +120,7 @@ function catCotacao(Passageiro $passageiro, array $precos): CotacaoCorrida
     }
 
     return CotacaoCorrida::create([
-        'user_id' => $passageiro->user_id,
+        'passageiro_id' => $passageiro->id,
         'distancia_km' => 4,
         'tempo_min' => 10,
         'enderecos' => [
@@ -154,7 +137,7 @@ function catCotacao(Passageiro $passageiro, array $precos): CotacaoCorrida
  */
 function catPedir(Passageiro $passageiro, array $precos, string $metodo = 'dinheiro'): Corrida
 {
-    $resposta = test()->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    $resposta = test()->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => catCotacao($passageiro, $precos)->id,
         'produtos_codigos' => array_keys($precos),
         'metodo_pagamento' => $metodo,
@@ -228,7 +211,7 @@ it('recusa o aceite de quem não tem veículo da categoria', function () {
 it('Negocia não é pedido junto com outras categorias', function () {
     $passageiro = catPassageiro();
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    $this->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => catCotacao($passageiro, ['negocia' => 10.0, 'pop' => 12.0])->id,
         'produtos_codigos' => ['negocia', 'pop'],
         'metodo_pagamento' => 'dinheiro',
@@ -262,7 +245,7 @@ it('no Pix cobra a mais cara e devolve a diferença em crédito ao fim', functio
 });
 
 it('veículo só pode ser carro ou moto, e elétrico só carro', function () {
-    $motorista = Motorista::create(['user_id' => catUsuario('cadastro')->id, 'status' => 'ativo']);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
     $dados = [
         'marca' => 'Honda',
         'modelo' => 'CG',
@@ -275,16 +258,16 @@ it('veículo só pode ser carro ou moto, e elétrico só carro', function () {
         'uf' => 'RO',
     ];
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', $dados + ['categoria' => 'bicicleta'])
         ->assertStatus(422)->assertJsonValidationErrors('categoria');
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', $dados + ['categoria' => 'moto', 'eletrico' => true])
         ->assertStatus(422)->assertJsonValidationErrors('eletrico');
 
     // elétrico e táxi entram como pedido; quem libera é a gestão
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', $dados + ['categoria' => 'carro', 'eletrico' => true, 'taxi' => true])
         ->assertCreated()
         ->assertJsonPath('data.eletrico', false)
@@ -301,8 +284,8 @@ it('o pedido de elétrico só traz corridas Elétrico depois que a gestão aprov
 
     expect(catOfertadas($motorista))->toBe([]);
 
-    $this->actingAs(catUsuario('gestao'), 'jwt')
-        ->patchJson("/api/veiculos/{$veiculo->id}", ['eletrico' => true])
+    $this->withToken(tokenDeGestor())
+        ->patchJson("/api/gestao/veiculos/{$veiculo->id}", ['eletrico' => true])
         ->assertStatus(201)
         ->assertJsonPath('data.eletrico', true)
         ->assertJsonPath('data.eletrico_solicitado', false);
@@ -315,10 +298,11 @@ it('o motorista não aprova elétrico ou táxi no próprio veículo', function (
     $veiculo = Veiculo::findOrFail(MotoristaVeiculo::where('motorista_id', $motorista->id)->value('veiculo_id'));
     $veiculo->update(['taxi_solicitado' => true]);
 
-    $this->actingAs($motorista->user, 'jwt')
+    // a aprovação é só da gestão: pelo app a rota nem existe, e o token do app não entra na gestão
+    $this->actingAs($motorista, 'motoristas')
         ->patchJson("/api/veiculos/{$veiculo->id}", ['taxi' => true])
-        ->assertForbidden()
-        ->assertJsonPath('message', 'Você não pode aprovar elétrico ou táxi no seu próprio veículo.');
+        ->assertNotFound();
+    $this->patchJson("/api/gestao/veiculos/{$veiculo->id}", ['taxi' => true])->assertUnauthorized();
 
     expect($veiculo->refresh()->taxi)->toBeFalse()
         ->and($veiculo->taxi_solicitado)->toBeTrue();
@@ -329,7 +313,7 @@ it('o motorista não fica online com o veículo de outro', function () {
     $veiculoAlheio = MotoristaVeiculo::where('motorista_id', $dono->id)->value('veiculo_id');
     $espertinho = catMotorista('moto');
 
-    $this->actingAs($espertinho->user, 'jwt')
+    $this->actingAs($espertinho, 'motoristas')
         ->postJson('/api/motorista/disponibilidade', [
             'disponivel' => true,
             'latitude' => -8.7601,
@@ -386,7 +370,7 @@ it('o seeder cria o Expresso logo depois do Normal, com raio de busca menor', fu
 it('motorista sem veículo não fica online', function () {
     $motorista = catMotorista(null);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/disponibilidade', [
             'disponivel' => true,
             'latitude' => -8.76,
@@ -401,7 +385,8 @@ it('motorista sem veículo não fica online', function () {
 
 it('quem também é passageiro não recebe nem aceita a própria corrida', function () {
     $motorista = catMotorista('carro');
-    $euPassageiro = Passageiro::create(['user_id' => $motorista->user_id]);
+    // a mesma pessoa no app do passageiro: o CPF é o do motorista
+    $euPassageiro = Passageiro::factory()->create(['cpf' => $motorista->cpf]);
     $minha = catPedir($euPassageiro, ['pop' => 12.0]);
     $deOutro = catPedir(catPassageiro(), ['pop' => 12.0]);
 
@@ -421,7 +406,7 @@ it('pedido com embarque "Localização Atual" grava a rua para o motorista', fun
     $enderecos[0]['formattedAddress'] = 'Localização Atual';
     $cotacao->update(['enderecos' => $enderecos]);
 
-    $id = $this->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    $id = $this->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => $cotacao->id,
         'produtos_codigos' => ['pop'],
         'metodo_pagamento' => 'dinheiro',

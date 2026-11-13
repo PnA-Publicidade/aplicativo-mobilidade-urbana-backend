@@ -9,6 +9,7 @@ use App\Models\MotoristaVeiculo;
 use App\Models\StatusBusca;
 use App\Models\Veiculo;
 use App\Services\Compartilhada\GrupoCompartilhadoService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,7 +21,7 @@ class PreferenciasMotoristaController extends Controller
 {
     public function mostrar(Request $request): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 404);
@@ -31,7 +32,7 @@ class PreferenciasMotoristaController extends Controller
 
     public function atualizar(AtualizarPreferenciasMotoristaRequest $request): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Cadastro de motorista não encontrado.'], 404);

@@ -6,41 +6,21 @@ use App\Models\CorridaFinanceiro;
 use App\Models\Motorista;
 use App\Models\Notificacao;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\DespachoCorridaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-function usuarioNotificacao(string $papel): User
+/** @return Notificacao|null a do perfil (o id sozinho não diz se é motorista ou passageiro) */
+function notificacaoDo(Motorista|Passageiro $perfil): ?Notificacao
 {
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => ucfirst($papel).' Notificação',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$papel-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
+    return Notificacao::where('perfil', $perfil->perfilDoApp())->where('perfil_id', $perfil->id)->first();
 }
 
 it('avisa motorista e passageiro quando a corrida é finalizada', function () {
-    $motorista = Motorista::create([
-        'user_id' => usuarioNotificacao('motorista')->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
-    $passageiro = Passageiro::create([
-        'user_id' => usuarioNotificacao('passageiro')->id,
-        'media_avaliacao' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
     $corrida = Corrida::create([
         'codigo_corrida' => 'NOT-'.Str::upper(Str::random(8)),
         'motorista_id' => $motorista->id,
@@ -63,58 +43,59 @@ it('avisa motorista e passageiro quando a corrida é finalizada', function () {
 
     app(DespachoCorridaService::class)->transicionar($motorista, $corrida->id, 'finalizar');
 
-    expect(Notificacao::where('user_id', $motorista->user_id)->value('mensagem'))->toContain('14,00')
-        ->and(Notificacao::where('user_id', $passageiro->user_id)->value('mensagem'))->toContain('15,50');
+    expect(notificacaoDo($motorista)?->mensagem)->toContain('14,00')
+        ->and(notificacaoDo($passageiro)?->mensagem)->toContain('15,50');
 });
 
-it('lista só as notificações do usuário e marca como lidas', function () {
-    $eu = usuarioNotificacao('usuario');
-    $outro = usuarioNotificacao('outro');
-    Notificacao::create(['user_id' => $eu->id, 'titulo' => 'Minha', 'mensagem' => 'texto']);
-    Notificacao::create(['user_id' => $outro->id, 'titulo' => 'Alheia', 'mensagem' => 'texto']);
+it('lista só as notificações do perfil logado e marca como lidas', function () {
+    $eu = Passageiro::factory()->create();
+    $outro = Passageiro::factory()->create();
+    Notificacao::create(['perfil' => 'passageiro', 'perfil_id' => $eu->id, 'titulo' => 'Minha', 'mensagem' => 'texto']);
+    Notificacao::create(['perfil' => 'passageiro', 'perfil_id' => $outro->id, 'titulo' => 'Alheia', 'mensagem' => 'texto']);
 
-    $this->actingAs($eu, 'jwt')
+    $this->actingAs($eu, 'passageiros')
         ->getJson('/api/notificacoes')
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('nao_lidas', 1);
 
-    $this->actingAs($eu, 'jwt')->postJson('/api/notificacoes/lidas')->assertOk();
+    $this->actingAs($eu, 'passageiros')->postJson('/api/notificacoes/lidas')->assertOk();
 
-    expect(Notificacao::where('user_id', $eu->id)->whereNull('lida_em')->count())->toBe(0);
-    expect(Notificacao::where('user_id', $outro->id)->whereNull('lida_em')->count())->toBe(1);
+    expect(Notificacao::where('perfil_id', $eu->id)->whereNull('lida_em')->count())->toBe(0);
+    expect(Notificacao::where('perfil_id', $outro->id)->whereNull('lida_em')->count())->toBe(1);
 });
 
-it('cada app vê só as notificações do seu papel, e as antigas aparecem nos dois', function () {
-    $eu = usuarioNotificacao('duplo');
-    Notificacao::create(['user_id' => $eu->id, 'perfil' => 'motorista', 'titulo' => 'Corrida finalizada', 'mensagem' => 'Você recebe R$ 10,00']);
-    Notificacao::create(['user_id' => $eu->id, 'perfil' => 'passageiro', 'titulo' => 'Viagem concluída', 'mensagem' => 'Valor da corrida: R$ 12,00']);
-    Notificacao::create(['user_id' => $eu->id, 'titulo' => 'Antiga', 'mensagem' => 'sem perfil']);
+it('cada app vê só as notificações do seu perfil, mesmo com o mesmo id', function () {
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
+    // o mesmo número em motoristas e em passageiros: o perfil da notificação separa os dois
+    Notificacao::create(['perfil' => 'motorista', 'perfil_id' => $passageiro->id, 'titulo' => 'De um motorista', 'mensagem' => 'Você recebe R$ 9,00']);
+    Notificacao::create(['perfil' => 'motorista', 'perfil_id' => $motorista->id, 'titulo' => 'Corrida finalizada', 'mensagem' => 'Você recebe R$ 10,00']);
+    Notificacao::create(['perfil' => 'passageiro', 'perfil_id' => $passageiro->id, 'titulo' => 'Viagem concluída', 'mensagem' => 'Valor da corrida: R$ 12,00']);
 
-    $this->actingAs($eu, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/notificacoes?perfil=passageiro')
         ->assertOk()
-        ->assertJsonCount(2, 'data')
-        ->assertJsonPath('nao_lidas', 2)
-        ->assertJsonMissing(['titulo' => 'Corrida finalizada']);
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('nao_lidas', 1)
+        ->assertJsonMissing(['titulo' => 'De um motorista']);
 
-    $this->postJson('/api/notificacoes/lidas?perfil=passageiro')->assertOk();
+    $this->postJson('/api/notificacoes/lidas')->assertOk();
 
     // marcar as do passageiro como lidas não mexe nas do motorista
-    $this->getJson('/api/notificacoes?perfil=motorista')
+    $this->actingAs($motorista, 'motoristas')
+        ->getJson('/api/notificacoes')
         ->assertOk()
-        ->assertJsonCount(2, 'data')
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.titulo', 'Corrida finalizada')
         ->assertJsonPath('nao_lidas', 1);
 
     $this->getJson('/api/notificacoes?perfil=outro')->assertUnprocessable();
 });
 
-it('a corrida finalizada avisa cada um no seu papel', function () {
-    $motorista = Motorista::create([
-        'user_id' => usuarioNotificacao('motorista2')->id,
-        'status' => 'ativo',
-    ]);
-    $passageiro = Passageiro::create(['user_id' => usuarioNotificacao('passageiro2')->id]);
+it('a corrida finalizada avisa cada um no seu app', function () {
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
+    $passageiro = Passageiro::factory()->create();
     $corrida = Corrida::create([
         'codigo_corrida' => 'NOT-'.Str::upper(Str::random(8)),
         'motorista_id' => $motorista->id,
@@ -137,6 +118,7 @@ it('a corrida finalizada avisa cada um no seu papel', function () {
 
     app(DespachoCorridaService::class)->transicionar($motorista, $corrida->id, 'finalizar');
 
-    expect(Notificacao::where('user_id', $motorista->user_id)->value('perfil'))->toBe('motorista')
-        ->and(Notificacao::where('user_id', $passageiro->user_id)->value('perfil'))->toBe('passageiro');
+    expect(notificacaoDo($motorista))->not->toBeNull()
+        ->and(notificacaoDo($passageiro))->not->toBeNull()
+        ->and(Notificacao::count())->toBe(2);
 });

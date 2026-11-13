@@ -7,6 +7,7 @@ use App\Models\CobrancaCartao;
 use App\Models\Corrida;
 use App\Models\Passageiro;
 use App\Services\CobrancaCartaoService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -60,7 +61,7 @@ class CobrancaCartaoController extends Controller
 
     private function corridaDoPassageiro(Request $request, int $corrida): Corrida
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
         $registro = $passageiroId === null
             ? null
             : Corrida::whereKey($corrida)->where('passageiro_id', $passageiroId)->first();

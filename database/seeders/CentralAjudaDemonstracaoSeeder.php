@@ -6,8 +6,9 @@ use App\Models\ChamadoAjuda;
 use App\Models\ChamadoMensagem;
 use App\Models\Corrida;
 use App\Models\Gestor;
+use App\Models\Motorista;
+use App\Models\Passageiro;
 use App\Models\TicketTransfer;
-use App\Models\User;
 use App\Services\TicketAnexosService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +27,8 @@ class CentralAjudaDemonstracaoSeeder extends Seeder
             throw new RuntimeException('Demonstração da Central de Ajuda permitida somente em local ou testing.');
         }
         Event::fakeFor(fn () => DB::transaction(function () {
-            $passageiro = User::where('email', 'passageiro@example.com')->firstOrFail();
-            $motorista = User::where('email', 'motorista@example.com')->firstOrFail();
+            $passageiro = Passageiro::where('email', 'passageiro@example.com')->firstOrFail();
+            $motorista = Motorista::where('email', 'motorista@example.com')->firstOrFail();
             $admin = Gestor::where('perfil_acesso', 'admin')->firstOrFail();
             $operadores = [Gestor::where('perfil_acesso', 'atendimento')->firstOrFail(), Gestor::where('perfil_acesso', 'suporte_tecnico')->firstOrFail()];
             $corrida = Corrida::where('codigo_corrida', HistoricoCorridaDemonstracaoSeeder::CODIGO)->firstOrFail();
@@ -42,9 +43,9 @@ class CentralAjudaDemonstracaoSeeder extends Seeder
                 $status = $cenario['status'];
                 $codigo = self::PREFIXO.str_pad((string) $i, 2, '0', STR_PAD_LEFT);
                 $tipo = intdiv($i - 1, 4) % 2 === 0 ? 'passageiro' : 'motorista';
-                $user = $tipo === 'passageiro' ? $passageiro : $motorista;
+                $solicitante = $tipo === 'passageiro' ? $passageiro : $motorista;
                 $descricao = $codigo.' · Demonstração de atendimento: conferir '.($i % 2 === 0 ? 'pagamento e valores da corrida.' : 'cadastro e funcionamento do aplicativo.');
-                if (ChamadoAjuda::where('descricao', $descricao)->where('user_id', $user->id)->exists()) {
+                if (ChamadoAjuda::where('descricao', $descricao)->where('solicitante_tipo', $tipo)->where('solicitante_id', $solicitante->id)->exists()) {
                     continue;
                 }
                 $quando = now()->subMinutes(30 + $i * 10);
@@ -54,8 +55,8 @@ class CentralAjudaDemonstracaoSeeder extends Seeder
                     $fila = ChamadoAjuda::where('gestor_responsavel_id', $operador->id)->whereIn('status', ['waiting', 'in_progress']);
                     $posicao = max((int) (clone $fila)->max('fila_posicao') + 1, (clone $fila)->where('status', 'in_progress')->count());
                 }
-                $ticket = ChamadoAjuda::forceCreate(['user_id' => $user->id, 'solicitante_tipo' => $tipo, 'corrida_id' => $i % 2 === 0 ? $corrida->id : null, 'motivo' => $i % 2 === 0 ? 'tarifa_incorreta' : 'outros', 'descricao' => $descricao, 'status' => $status, 'gestor_responsavel_id' => $operador?->id, 'fila_entrada_em' => in_array($status, ['waiting', 'in_progress'], true) ? $quando : null, 'fila_posicao' => $status === 'in_progress' ? 0 : $posicao, 'resolvido_em' => $status === 'resolved' ? $quando->copy()->addMinutes(4) : null, 'created_at' => $quando, 'updated_at' => $quando]);
-                $mensagem = ChamadoMensagem::forceCreate(['chamado_id' => $ticket->id, 'autor_tipo' => 'usuario', 'user_id' => $user->id, 'autor_nome' => $user->name, 'conteudo' => $descricao, 'client_message_id' => (string) Str::uuid(), 'created_at' => $quando, 'updated_at' => $quando]);
+                $ticket = ChamadoAjuda::forceCreate(['solicitante_id' => $solicitante->id, 'solicitante_tipo' => $tipo, 'corrida_id' => $i % 2 === 0 ? $corrida->id : null, 'motivo' => $i % 2 === 0 ? 'tarifa_incorreta' : 'outros', 'descricao' => $descricao, 'status' => $status, 'gestor_responsavel_id' => $operador?->id, 'fila_entrada_em' => in_array($status, ['waiting', 'in_progress'], true) ? $quando : null, 'fila_posicao' => $status === 'in_progress' ? 0 : $posicao, 'resolvido_em' => $status === 'resolved' ? $quando->copy()->addMinutes(4) : null, 'created_at' => $quando, 'updated_at' => $quando]);
+                $mensagem = ChamadoMensagem::forceCreate(['chamado_id' => $ticket->id, 'autor_tipo' => 'usuario', 'autor_nome' => $solicitante->name, 'conteudo' => $descricao, 'client_message_id' => (string) Str::uuid(), 'created_at' => $quando, 'updated_at' => $quando]);
                 if ($i % 3 === 0) {
                     $this->anexo($mensagem, $codigo);
                 }

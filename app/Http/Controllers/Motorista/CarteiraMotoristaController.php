@@ -9,6 +9,7 @@ use App\Models\Motorista;
 use App\Models\Saque;
 use App\Services\CarteiraMotoristaService;
 use App\Services\SaqueService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -60,7 +61,7 @@ class CarteiraMotoristaController extends Controller
 
     private function motorista(Request $request): Motorista
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
 

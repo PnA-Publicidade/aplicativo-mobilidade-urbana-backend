@@ -3,7 +3,7 @@
 namespace App\Contracts;
 
 use App\Models\Corrida;
-use App\Models\User;
+use App\Models\Passageiro;
 use Illuminate\Support\Carbon;
 
 /**
@@ -19,7 +19,7 @@ interface GatewayPagamento
     /**
      * @return array{id: string, status: string, valor_centavos: int, br_code: string, br_code_base64: string, expira_em: Carbon, dev_mode: bool}
      */
-    public function criarPix(Corrida $corrida, int $centavos, User $cliente): array;
+    public function criarPix(Corrida $corrida, int $centavos, Passageiro $cliente): array;
 
     public function statusPix(string $id): string;
 

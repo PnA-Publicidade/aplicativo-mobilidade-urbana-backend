@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\User;
+use App\Models\Passageiro;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -12,10 +12,10 @@ beforeEach(function () {
 });
 
 it('responde lista vazia para texto curto sem consultar o provedor de lugares', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
     Http::fake();
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->getJson('/api/buscar-endereco?endereco=ru')
         ->assertOk()
         ->assertExactJson([]);
@@ -24,13 +24,13 @@ it('responde lista vazia para texto curto sem consultar o provedor de lugares', 
 });
 
 it('responde lista vazia quando o provedor não encontra endereços', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
 
     Http::fake([
         'places.googleapis.com/*' => Http::response([]),
     ]);
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->getJson('/api/buscar-endereco?endereco=Rua+inexistente')
         ->assertOk()
         ->assertExactJson([]);
@@ -39,7 +39,7 @@ it('responde lista vazia quando o provedor não encontra endereços', function (
 });
 
 it('rua que a busca de lugares não acha vem do geocoding de endereço', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
 
     Http::fake([
         'places.googleapis.com/*' => Http::response([]),
@@ -55,7 +55,7 @@ it('rua que a busca de lugares não acha vem do geocoding de endereço', functio
         ]]]),
     ]);
 
-    $this->actingAs($usuario, 'jwt')
+    $this->actingAs($usuario, 'passageiros')
         ->getJson('/api/buscar-endereco?endereco='.urlencode('Rua Jobu Miró, 123'))
         ->assertOk()
         ->assertJsonCount(1)
@@ -64,16 +64,16 @@ it('rua que a busca de lugares não acha vem do geocoding de endereço', functio
 });
 
 it('resultado vazio não fica horas em cache', function () {
-    $usuario = User::factory()->create();
+    $usuario = Passageiro::factory()->create();
     Http::fake([
         'places.googleapis.com/*' => Http::response([]),
         'maps.googleapis.com/*' => Http::response(['status' => 'ZERO_RESULTS', 'results' => []]),
     ]);
 
-    $this->actingAs($usuario, 'jwt')->getJson('/api/buscar-endereco?endereco=Rua+Nova')->assertExactJson([]);
+    $this->actingAs($usuario, 'passageiros')->getJson('/api/buscar-endereco?endereco=Rua+Nova')->assertExactJson([]);
 
     $this->travel(11)->minutes();
-    $this->actingAs($usuario, 'jwt')->getJson('/api/buscar-endereco?endereco=Rua+Nova')->assertExactJson([]);
+    $this->actingAs($usuario, 'passageiros')->getJson('/api/buscar-endereco?endereco=Rua+Nova')->assertExactJson([]);
 
     Http::assertSentCount(4);
 });

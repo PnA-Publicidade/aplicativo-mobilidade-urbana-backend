@@ -12,22 +12,23 @@ class NotificarUsuarioService
     public function __construct(private readonly EnviarPushService $push) {}
 
     /**
+     * @param  int  $perfilId  id em motoristas ou passageiros, conforme o perfil
      * @param  'passageiro'|'motorista'  $perfil  app em que a notificação aparece
      * @param  array<string, string>  $dados  vão junto no push (ex.: corrida_id)
      */
-    public function executar(int $userId, string $perfil, string $titulo, string $mensagem, array $dados = []): void
+    public function executar(int $perfilId, string $perfil, string $titulo, string $mensagem, array $dados = []): void
     {
         $titulo = mb_substr($titulo, 0, 120);
         $mensagem = mb_substr($mensagem, 0, 255);
 
         Notificacao::create([
-            'user_id' => $userId,
             'perfil' => $perfil,
+            'perfil_id' => $perfilId,
             'titulo' => $titulo,
             'mensagem' => $mensagem,
         ]);
 
         // depois da resposta: o FCM não atrasa quem mudou o status da corrida
-        dispatch(fn () => $this->push->paraUsuario($userId, $perfil, $titulo, $mensagem, $dados))->afterResponse();
+        dispatch(fn () => $this->push->paraUsuario($perfilId, $perfil, $titulo, $mensagem, $dados))->afterResponse();
     }
 }

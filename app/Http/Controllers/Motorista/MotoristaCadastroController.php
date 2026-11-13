@@ -14,6 +14,7 @@ use App\Services\CrlvVeiculoService;
 use App\Services\DocumentosMotoristaService;
 use App\Services\InformacoesDocumentoMotoristaService;
 use App\Services\VerificacaoTipoDocumentoService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -41,7 +42,7 @@ class MotoristaCadastroController extends Controller
      */
     public function mostrar(Request $request): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json([
@@ -99,7 +100,7 @@ class MotoristaCadastroController extends Controller
             'cnh_expiracao.after' => 'Sua CNH está vencida.',
         ]);
 
-        $motorista = Motorista::firstOrNew(['user_id' => $request->user()->id]);
+        $motorista = (PerfilLogado::motorista($request) ?? abort(403, 'Perfil de motorista não encontrado.'));
 
         if ($motorista->exists && $motorista->status === self::ATIVO) {
             return response()->json([
@@ -150,10 +151,7 @@ class MotoristaCadastroController extends Controller
             'arquivo_verso' => $this->armazenarAnexoMotoristaService->regrasVerso($request, 'jpg,jpeg,png,webp,heic,heif,gif', 10240),
         ]);
 
-        $motorista = Motorista::firstOrCreate(
-            ['user_id' => $request->user()->id],
-            ['status' => 'pendente']
-        );
+        $motorista = PerfilLogado::motorista($request) ?? abort(403, 'Perfil de motorista não encontrado.');
 
         // o motorista ativo também reenvia CNH, Nada Consta e Seguro; o CRLV de quem
         // já está ativo entra pelo cadastro de novo veículo
@@ -236,7 +234,7 @@ class MotoristaCadastroController extends Controller
      */
     public function removerDocumento(Request $request, int $documento): JsonResponse
     {
-        $motorista = Motorista::where('user_id', $request->user()->id)->first();
+        $motorista = PerfilLogado::motorista($request);
 
         if ($motorista === null) {
             return response()->json(['message' => 'Você ainda não tem cadastro de motorista.'], 403);
@@ -274,7 +272,7 @@ class MotoristaCadastroController extends Controller
     /**
      * Atalho de desenvolvimento: pula CNH e documentos e aprova o motorista
      * direto, sem passar pela análise. Mesmo espírito do código de
-     * verificação fake em LoginController::enviarCodigo — remover antes de
+     * verificação fake em AutenticacaoAppController::enviarCodigo — remover antes de
      * publicar.
      */
     public function aprovarDev(Request $request): JsonResponse
@@ -282,7 +280,7 @@ class MotoristaCadastroController extends Controller
         abort_unless(App::environment(['local', 'testing']), 404);
 
         $motorista = DB::transaction(function () use ($request): Motorista {
-            $motorista = Motorista::firstOrNew(['user_id' => $request->user()->id]);
+            $motorista = (PerfilLogado::motorista($request) ?? abort(403, 'Perfil de motorista não encontrado.'));
             $motorista->numero_registro ??= '00000000000';
             $motorista->cnh_categoria ??= 'B';
             $motorista->cnh_expiracao ??= now()->addYears(5)->toDateString();
@@ -343,7 +341,7 @@ class MotoristaCadastroController extends Controller
     {
         abort_unless(App::environment(['local', 'testing']), 404);
 
-        $motorista = Motorista::firstOrCreate(['user_id' => $request->user()->id], ['status' => 'pendente']);
+        $motorista = (PerfilLogado::motorista($request) ?? abort(403, 'Perfil de motorista não encontrado.'));
         $motorista->forceFill(['liberado_em' => $motorista->liberado_em ?? now()])->save();
 
         return response()->json([

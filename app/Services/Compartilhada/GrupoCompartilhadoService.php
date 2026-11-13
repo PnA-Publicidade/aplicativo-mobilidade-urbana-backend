@@ -15,7 +15,6 @@ use App\Models\SalaCompartilhada;
 use App\Models\SalaParticipante;
 use App\Models\StatusBusca;
 use App\Models\Tarifa;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\CompartilhamentoVeiculoService;
 use App\Services\DespachoCorridaService;
@@ -243,7 +242,7 @@ class GrupoCompartilhadoService
     {
         $participantes = SalaParticipante::where('sala_id', $salaId)
             ->where('status', SalaParticipante::NO_GRUPO)
-            ->with(['corrida.corrida_financeiro', 'passageiro.user'])
+            ->with(['corrida.corrida_financeiro', 'passageiro'])
             ->get();
 
         $paradas = [];
@@ -257,7 +256,7 @@ class GrupoCompartilhadoService
 
             $status = $corrida->status_corrida;
             $cancelada = $status === 'cancelada';
-            $nome = $corrida->convidado_nome ?? (string) $participante->passageiro?->user?->name;
+            $nome = $corrida->convidado_nome ?? (string) $participante->passageiro?->name;
 
             foreach (['embarque', 'desembarque'] as $acao) {
                 $paradas[] = [
@@ -561,11 +560,8 @@ class GrupoCompartilhadoService
         // e suspende as chamadas de grupo dele por um tempo; as normais seguem
         $suspensaAte = now()->addHours((int) config('compartilhada.suspensao_por_desistencia_horas', 24));
         Motorista::whereKey($motoristaId)->update(['compartilhada_suspensa_ate' => $suspensaAte]);
-        $motoristaUserId = Motorista::whereKey($motoristaId)->value('user_id');
-        if ($motoristaUserId !== null) {
-            $this->notificar->executar((int) $motoristaUserId, 'motorista', 'Compartilhadas suspensas',
-                'Você desistiu de um grupo. Volta a receber compartilhadas '.$this->quando($suspensaAte).'.');
-        }
+        $this->notificar->executar((int) $motoristaId, 'motorista', 'Compartilhadas suspensas',
+            'Você desistiu de um grupo. Volta a receber compartilhadas '.$this->quando($suspensaAte).'.');
 
         app(CompartilhamentoVeiculoService::class)->retomarDisponibilidade($motoristaId);
 
@@ -814,10 +810,9 @@ class GrupoCompartilhadoService
     /**
      * Passageiro que, depois de 1 min sem motorista, prefere seguir sozinho.
      */
-    public function seguirSozinho(User $usuario, int $corridaId): Corrida
+    public function seguirSozinho(Passageiro $passageiro, int $corridaId): Corrida
     {
-        $passageiroId = Passageiro::where('user_id', $usuario->id)->value('id');
-        $corrida = Corrida::whereKey($corridaId)->where('passageiro_id', $passageiroId)->first();
+        $corrida = Corrida::whereKey($corridaId)->where('passageiro_id', $passageiro->id)->first();
 
         if ($corrida === null || $corrida->sala_compartilhada_id === null) {
             throw new RuntimeException('Corrida não encontrada.', 404);
@@ -937,14 +932,10 @@ class GrupoCompartilhadoService
 
     private function notificarPassageiro(Corrida $corrida, string $titulo, string $mensagem): void
     {
-        $userId = Passageiro::whereKey($corrida->passageiro_id)->value('user_id');
-
-        if ($userId !== null) {
-            $this->notificar->executar((int) $userId, 'passageiro', $titulo, $mensagem, [
-                'corrida_id' => (string) $corrida->id,
-                'status' => (string) $corrida->status_corrida,
-            ]);
-        }
+        $this->notificar->executar((int) $corrida->passageiro_id, 'passageiro', $titulo, $mensagem, [
+            'corrida_id' => (string) $corrida->id,
+            'status' => (string) $corrida->status_corrida,
+        ]);
     }
 
     private function reais(float $valor): string

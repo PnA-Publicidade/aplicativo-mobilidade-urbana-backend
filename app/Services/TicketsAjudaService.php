@@ -10,8 +10,9 @@ use App\Models\ChamadoAjuda;
 use App\Models\ChamadoMensagem;
 use App\Models\Corrida;
 use App\Models\Gestor;
+use App\Models\Motorista;
+use App\Models\Passageiro;
 use App\Models\TicketTransfer;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -19,40 +20,37 @@ class TicketsAjudaService
 {
     public function __construct(private FilaTicketsService $fila, private TicketAnexosService $anexos) {}
 
-    public function validarContexto(User $user, array $dados): string
+    /** o chamado é do motorista ou do passageiro que o abre (ou para quem a gestão o abre) */
+    public function validarContexto(Motorista|Passageiro $solicitante, array $dados): string
     {
-        $tipo = $dados['solicitante_tipo'] ?? ($user->motorista()->exists() && ! $user->passageiro()->exists() ? 'motorista' : 'passageiro');
-        $perfil = $user->{$tipo}()->first();
-        if (! $perfil) {
-            throw ValidationException::withMessages(['solicitante_tipo' => 'Este usuário não possui o perfil selecionado.']);
-        }
+        $tipo = $solicitante->perfilDoApp();
         if (! empty($dados['corrida_id'])) {
-            abort_unless(Corrida::whereKey($dados['corrida_id'])->where($tipo.'_id', $perfil->id)->exists(), 404, 'Corrida não encontrada para este solicitante.');
+            abort_unless(Corrida::whereKey($dados['corrida_id'])->where($tipo.'_id', $solicitante->id)->exists(), 404, 'Corrida não encontrada para este solicitante.');
         }
 
         return $tipo;
     }
 
-    public function criar(User $user, array $dados, ?Gestor $gestor = null): ChamadoAjuda
+    public function criar(Motorista|Passageiro $solicitante, array $dados, ?Gestor $gestor = null): ChamadoAjuda
     {
-        $tipo = $this->validarContexto($user, $dados);
+        $tipo = $this->validarContexto($solicitante, $dados);
 
-        return DB::transaction(function () use ($user, $dados, $tipo, $gestor) {
+        return DB::transaction(function () use ($solicitante, $dados, $tipo, $gestor) {
             $ticket = ChamadoAjuda::create([
-                'user_id' => $user->id, 'solicitante_tipo' => $tipo, 'corrida_id' => $dados['corrida_id'] ?? null,
+                'solicitante_id' => $solicitante->id, 'solicitante_tipo' => $tipo, 'corrida_id' => $dados['corrida_id'] ?? null,
                 'motivo' => $dados['motivo'], 'descricao' => $dados['descricao'], 'status' => 'open',
             ]);
-            $this->registrar($ticket, $gestor ? 'gestor' : 'usuario', $dados['descricao'], $gestor ?? $user);
+            $this->registrar($ticket, $gestor ? 'gestor' : 'usuario', $dados['descricao'], $gestor ?? $solicitante);
             event(new TicketAtualizado($ticket->id));
 
             return $ticket;
         });
     }
 
-    private function registrar(ChamadoAjuda $ticket, string $tipo, string $texto, User|Gestor|null $autor = null, ?string $uuid = null, array $imagens = [], array &$gravados = []): ChamadoMensagem
+    private function registrar(ChamadoAjuda $ticket, string $tipo, string $texto, Motorista|Passageiro|Gestor|null $autor = null, ?string $uuid = null, array $imagens = [], array &$gravados = []): ChamadoMensagem
     {
         $message = $ticket->mensagens()->create([
-            'autor_tipo' => $tipo, 'user_id' => $autor instanceof User ? $autor->id : null,
+            'autor_tipo' => $tipo,
             'gestor_id' => $autor instanceof Gestor ? $autor->id : null, 'autor_nome' => $autor?->name ?? 'Sistema',
             'conteudo' => $texto, 'client_message_id' => $uuid,
         ]);
@@ -64,10 +62,10 @@ class TicketsAjudaService
         return $message;
     }
 
-    private function acesso(ChamadoAjuda $ticket, User|Gestor $autor): void
+    private function acesso(ChamadoAjuda $ticket, Motorista|Passageiro|Gestor $autor): void
     {
         // Reavalia após lockForUpdate: uma transferência pode ter ocorrido depois do controller.
-        abort_unless($autor instanceof Gestor ? $autor->podeAcessarTicket($ticket) : $ticket->user_id === $autor->id, 404);
+        abort_unless($autor instanceof Gestor ? $autor->podeAcessarTicket($ticket) : $this->ehDoSolicitante($ticket, $autor), 404);
     }
 
     private function atribuir(ChamadoAjuda $ticket, ?Gestor $destino, Gestor $autor, string $tipo, ?string $nota = null): void
@@ -99,6 +97,12 @@ class TicketsAjudaService
         event(new TicketTransferredEvent($ticket->id, $transferencia->id, $anteriorId, $destino?->id));
     }
 
+    /** o perfil logado é quem abriu o chamado (motorista 1 e passageiro 1 são pessoas diferentes) */
+    public function ehDoSolicitante(ChamadoAjuda $ticket, Motorista|Passageiro $perfil): bool
+    {
+        return $ticket->solicitante_tipo === $perfil->perfilDoApp() && (int) $ticket->solicitante_id === (int) $perfil->id;
+    }
+
     public function transferir(ChamadoAjuda $registro, Gestor $autor, int $destinoId, ?string $nota): ChamadoAjuda
     {
         return $this->fila->executar($registro, [$destinoId], function (ChamadoAjuda $ticket) use ($autor, $destinoId, $nota) {
@@ -119,7 +123,7 @@ class TicketsAjudaService
         });
     }
 
-    public function enviar(ChamadoAjuda $registro, User|Gestor $autor, string $texto, string $uuid, array $imagens = []): ChamadoMensagem
+    public function enviar(ChamadoAjuda $registro, Motorista|Passageiro|Gestor $autor, string $texto, string $uuid, array $imagens = []): ChamadoMensagem
     {
         $preparadas = $this->anexos->preparar($imagens);
         $gravados = [];
@@ -129,7 +133,7 @@ class TicketsAjudaService
                 $tipo = $autor instanceof Gestor ? 'gestor' : 'usuario';
                 $anterior = $ticket->mensagens()->where('client_message_id', $uuid)->first();
                 if ($anterior) {
-                    abort_unless($anterior->autor_tipo === $tipo && ($tipo === 'gestor' ? $anterior->gestor_id : $anterior->user_id) === $autor->id && $anterior->conteudo === $texto && $this->anexos->corresponde($anterior, $preparadas), 409, 'Identificador de mensagem já utilizado.');
+                    abort_unless($anterior->autor_tipo === $tipo && ($tipo === 'gestor' ? $anterior->gestor_id === $autor->id : $anterior->gestor_id === null) && $anterior->conteudo === $texto && $this->anexos->corresponde($anterior, $preparadas), 409, 'Identificador de mensagem já utilizado.');
 
                     return $anterior;
                 }

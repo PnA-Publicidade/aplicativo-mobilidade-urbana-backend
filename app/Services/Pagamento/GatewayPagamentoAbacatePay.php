@@ -4,7 +4,7 @@ namespace App\Services\Pagamento;
 
 use App\Contracts\GatewayPagamento;
 use App\Models\Corrida;
-use App\Models\User;
+use App\Models\Passageiro;
 use App\Services\AbacatePayClient;
 use Illuminate\Support\Carbon;
 use RuntimeException;
@@ -22,7 +22,7 @@ class GatewayPagamentoAbacatePay implements GatewayPagamento
         return false;
     }
 
-    public function criarPix(Corrida $corrida, int $centavos, User $cliente): array
+    public function criarPix(Corrida $corrida, int $centavos, Passageiro $cliente): array
     {
         $dados = $this->abacatePay->post('/v2/transparents/create', [
             'method' => 'PIX',

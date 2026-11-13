@@ -4,36 +4,17 @@ use App\Models\Corrida;
 use App\Models\CorridaDestino;
 use App\Models\Motorista;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Services\EstimarChegadaService;
 use App\Services\EstimarRotaService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 function motoristaComPosicaoChegada(): Motorista
 {
-    $id = str_replace('-', '', (string) Str::uuid());
-    $user = User::create([
-        'name' => 'Motorista Chegada',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "motorista-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-    $motorista = Motorista::create([
-        'user_id' => $user->id,
-        'status' => 'ativo',
-        'cnh_numero' => null,
-        'cnh_categoria' => null,
-        'cnh_expiracao' => null,
-        'ear' => null,
-    ]);
+    $motorista = Motorista::factory()->create(['status' => 'ativo']);
     StatusBusca::create([
         'motorista_id' => $motorista->id,
         'disponivel' => false,

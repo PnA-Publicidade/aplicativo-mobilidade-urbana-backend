@@ -9,19 +9,18 @@ use App\Models\CorridaMensagem;
 use App\Models\Gestor;
 use App\Models\Motorista;
 use App\Models\Passageiro;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class ChatCorridaService
 {
     public const STATUS_ENVIO = ['aceita', 'motorista_chegou', 'em_andamento'];
 
-    public function perfilParticipante(Corrida $corrida, User $usuario): ?string
+    public function perfilParticipante(Corrida $corrida, Motorista|Passageiro $perfil): ?string
     {
-        if (Passageiro::whereKey($corrida->passageiro_id)->where('user_id', $usuario->id)->exists()) {
+        if ($perfil instanceof Passageiro && (int) $corrida->passageiro_id === (int) $perfil->id) {
             return 'passageiro';
         }
-        if ($corrida->motorista_id && Motorista::whereKey($corrida->motorista_id)->where('user_id', $usuario->id)->exists()) {
+        if ($perfil instanceof Motorista && $corrida->motorista_id && (int) $corrida->motorista_id === (int) $perfil->id) {
             return 'motorista';
         }
 
@@ -48,13 +47,13 @@ class ChatCorridaService
         $itens = $consulta->orderBy('id', $depois ? 'asc' : 'desc')->limit($limite + 1)->get();
         $mais = $itens->count() > $limite;
         $itens = $itens->take($limite)->sortBy('id')->values();
-        $corrida->loadMissing(['passageiro.user', 'motorista.user']);
+        $corrida->loadMissing(['passageiro', 'motorista']);
 
         return [
             'corrida' => [
                 'id' => $corrida->id, 'codigo_corrida' => $corrida->codigo_corrida, 'status' => $corrida->status_corrida,
-                'passageiro' => ['nome' => $corrida->passageiro?->user?->name ?? 'Passageiro'],
-                'motorista' => ['nome' => $corrida->motorista?->user?->name ?? 'Motorista não designado'],
+                'passageiro' => ['nome' => $corrida->passageiro?->name ?? 'Passageiro'],
+                'motorista' => ['nome' => $corrida->motorista?->name ?? 'Motorista não designado'],
             ],
             'pode_enviar' => $podeEnviar && in_array($corrida->status_corrida, self::STATUS_ENVIO, true) && $corrida->motorista_id !== null,
             'data' => $itens->map->dados(), 'has_more' => $mais,
@@ -62,7 +61,7 @@ class ChatCorridaService
         ];
     }
 
-    public function enviar(Corrida $registro, User $usuario, string $texto, string $uuid): CorridaMensagem
+    public function enviar(Corrida $registro, Motorista|Passageiro $usuario, string $texto, string $uuid): CorridaMensagem
     {
         return DB::transaction(function () use ($registro, $usuario, $texto, $uuid) {
             $corrida = Corrida::whereKey($registro->id)->lockForUpdate()->firstOrFail();
@@ -70,14 +69,14 @@ class ChatCorridaService
             abort_unless($perfil, 404, 'Corrida não encontrada para este usuário.');
             $anterior = CorridaMensagem::where('corrida_id', $corrida->id)->where('client_message_id', $uuid)->first();
             if ($anterior) {
-                abort_unless($anterior->user_id === $usuario->id && $anterior->conteudo === $texto, 409, 'Identificador de mensagem já utilizado.');
+                abort_unless($anterior->autor_tipo === $perfil && $anterior->conteudo === $texto, 409, 'Identificador de mensagem já utilizado.');
 
                 return $anterior;
             }
             abort_unless(in_array($corrida->status_corrida, self::STATUS_ENVIO, true) && $corrida->motorista_id !== null,
                 409, 'O chat permite mensagens do aceite até a finalização ou cancelamento da corrida.');
             $mensagem = CorridaMensagem::create([
-                'corrida_id' => $corrida->id, 'user_id' => $usuario->id,
+                'corrida_id' => $corrida->id,
                 'autor_tipo' => $perfil, 'autor_nome' => $usuario->name,
                 'conteudo' => $texto, 'client_message_id' => $uuid,
             ]);

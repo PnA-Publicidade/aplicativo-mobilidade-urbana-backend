@@ -8,7 +8,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
- * @property int $user_id
+ * @property int $passageiro_id
  * @property int|null $cidade_id
  * @property float $distancia_km
  * @property float $tempo_min
@@ -28,7 +28,7 @@ class CotacaoCorrida extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
-        'user_id',
+        'passageiro_id',
         'cidade_id',
         'distancia_km',
         'tempo_min',

@@ -6,7 +6,6 @@ use App\Models\Motorista;
 use App\Models\MotoristaVeiculo;
 use App\Models\ProdutosCorrida;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\CompartilhamentoVeiculoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,10 +14,7 @@ uses(RefreshDatabase::class);
 
 function criarMotoristaParaVeiculos(): Motorista
 {
-    $usuario = User::factory()->create();
-
-    return Motorista::create([
-        'user_id' => $usuario->id,
+    return Motorista::factory()->create([
         'status' => 'ativo',
         'numero_registro' => fake()->unique()->numerify('###########'),
         'cnh_categoria' => 'B',
@@ -47,7 +43,7 @@ it('cadastra e lista somente os veículos do motorista autenticado', function ()
     $motorista = criarMotoristaParaVeiculos();
     $outroMotorista = criarMotoristaParaVeiculos();
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')
+    $resposta = $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', dadosValidosDoVeiculo());
 
     $resposta->assertCreated()
@@ -60,13 +56,13 @@ it('cadastra e lista somente os veículos do motorista autenticado', function ()
         'veiculo_id' => $veiculoId,
     ])->exists())->toBeTrue();
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->getJson('/api/motorista/me/veiculos')
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $veiculoId);
 
-    $this->actingAs($outroMotorista->user, 'jwt')
+    $this->actingAs($outroMotorista, 'motoristas')
         ->getJson('/api/motorista/me/veiculos')
         ->assertOk()
         ->assertJsonCount(0, 'data');
@@ -80,7 +76,7 @@ it('sem veículo selecionado, o motorista fica online com o veículo novo', func
         'visto_em' => now(),
     ]);
 
-    $resposta = $this->actingAs($motorista->user, 'jwt')
+    $resposta = $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', dadosValidosDoVeiculo());
     $resposta->assertCreated();
     // o veículo novo recalcula a situação pelos documentos; aqui só interessa a escolha do veículo
@@ -96,7 +92,7 @@ it('sem veículo selecionado, o motorista fica online com o veículo novo', func
 it('exige o CPF ou CNPJ do proprietário do veículo', function () {
     $motorista = criarMotoristaParaVeiculos();
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', dadosValidosDoVeiculo(['cpf_cnpj_proprietario' => '']))
         ->assertUnprocessable()
         ->assertJsonPath('errors.cpf_cnpj_proprietario.0', 'Informe o CPF ou CNPJ do proprietário, como está no documento do veículo.');
@@ -118,7 +114,7 @@ it('lista categorias do veiculo com as mesmas restricoes do despacho', function 
         ['codigo' => 'teste_eletrico', 'nome' => 'Elétrico', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => 'eletrico'],
         ['codigo' => 'teste_taxi', 'nome' => 'Táxi', 'tipo_veiculo' => 'carro', 'requisito_veiculo' => 'taxi'],
     ])->map(fn ($dados) => ProdutosCorrida::create([...$dados, 'estrategia_precificacao' => 'normal']));
-    $consulta = fn () => collect($this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/veiculos')
+    $consulta = fn () => collect($this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/veiculos')
         ->assertOk()->json('data.0.categorias_servico'))->pluck('codigo')->all();
     expect($consulta())->toContain('teste_pop', 'teste_comfort', 'teste_plus')
         ->not->toContain('teste_moto', 'teste_eletrico', 'teste_taxi');
@@ -132,14 +128,14 @@ it('nao anuncia categorias liberadas para um veiculo em analise', function () {
     $motorista = criarMotoristaParaVeiculos();
     $veiculo = Veiculo::create([...dadosValidosDoVeiculo(), 'status' => 'em_analise']);
     MotoristaVeiculo::create(['motorista_id' => $motorista->id, 'veiculo_id' => $veiculo->id]);
-    $this->actingAs($motorista->user, 'jwt')->getJson('/api/motorista/me/veiculos?incluir_em_analise=1')
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/veiculos?incluir_em_analise=1')
         ->assertOk()->assertJsonPath('data.0.categorias_servico', [])->assertJsonPath('data.0.pode_selecionar', false);
 });
 
 it('rejeita placa inválida e dados duplicados', function () {
     $motorista = criarMotoristaParaVeiculos();
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', dadosValidosDoVeiculo([
             'placa' => 'INVALIDA',
         ]))
@@ -148,7 +144,7 @@ it('rejeita placa inválida e dados duplicados', function () {
 
     Veiculo::create([...dadosValidosDoVeiculo(), 'status' => 'aprovado']);
 
-    $this->actingAs($motorista->user, 'jwt')
+    $this->actingAs($motorista, 'motoristas')
         ->postJson('/api/motorista/me/veiculos', dadosValidosDoVeiculo())
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['placa', 'renavam']);

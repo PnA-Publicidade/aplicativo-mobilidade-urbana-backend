@@ -9,7 +9,6 @@ use App\Models\MotoristaVeiculo;
 use App\Models\Passageiro;
 use App\Models\ProdutosCorrida;
 use App\Models\StatusBusca;
-use App\Models\User;
 use App\Models\Veiculo;
 use App\Services\DespachoCorridaService;
 use App\Services\NegociacaoCorridaService;
@@ -64,24 +63,9 @@ function negPixGerado(): void
     ]);
 }
 
-function negUsuario(string $prefixo, string $nome = 'Teste Silva'): User
-{
-    $id = str_replace('-', '', (string) Str::uuid());
-
-    return User::create([
-        'name' => $nome,
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "$prefixo-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-}
-
 function negMotorista(string $nome = 'Carlos Souza', string $tipo = 'carro', float $latitude = -8.7601): Motorista
 {
-    $motorista = Motorista::create(['user_id' => negUsuario('motorista', $nome)->id, 'status' => 'ativo']);
+    $motorista = Motorista::factory()->create(['name' => $nome, 'status' => 'ativo']);
     $veiculo = Veiculo::create([
         'marca' => 'Chevrolet',
         'modelo' => 'Onix',
@@ -108,7 +92,7 @@ function negMotorista(string $nome = 'Carlos Souza', string $tipo = 'carro', flo
 
 function negPassageiro(): Passageiro
 {
-    return Passageiro::create(['user_id' => negUsuario('passageiro')->id]);
+    return Passageiro::factory()->create(['name' => 'Teste Silva']);
 }
 
 function negCotacao(Passageiro $passageiro, float $sugerido = 10.0): CotacaoCorrida
@@ -116,7 +100,7 @@ function negCotacao(Passageiro $passageiro, float $sugerido = 10.0): CotacaoCorr
     $produto = ProdutosCorrida::where('codigo', 'negocia')->firstOrFail();
 
     return CotacaoCorrida::create([
-        'user_id' => $passageiro->user_id,
+        'passageiro_id' => $passageiro->id,
         'distancia_km' => 4,
         'tempo_min' => 10,
         'enderecos' => [
@@ -153,7 +137,7 @@ function negCotacao(Passageiro $passageiro, float $sugerido = 10.0): CotacaoCorr
 
 function negPedir(Passageiro $passageiro, float $oferta = 9.0, string $metodo = 'dinheiro', bool $aceiteAutomatico = false): Corrida
 {
-    $resposta = test()->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    $resposta = test()->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => negCotacao($passageiro)->id,
         'produtos_codigos' => ['negocia'],
         'valor_oferecido' => $oferta,
@@ -181,7 +165,7 @@ function negPedirPago(Passageiro $passageiro, float $oferta = 9.0, bool $aceiteA
 
 function negPropor(Motorista $motorista, Corrida $corrida, ?float $valor = null)
 {
-    return test()->actingAs($motorista->user, 'jwt')->postJson(
+    return test()->actingAs($motorista, 'motoristas')->postJson(
         "/api/motorista/corridas/{$corrida->id}/propostas",
         $valor === null ? [] : ['valor_motorista' => $valor]
     );
@@ -196,7 +180,7 @@ it('o passageiro oferece um valor dentro da faixa e a corrida abre a negociaçã
         ->and((float) $corrida->corrida_financeiro->valor_motorista)->toBe(8.46);
 
     $passageiro = negPassageiro();
-    $this->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    $this->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => negCotacao($passageiro)->id,
         'produtos_codigos' => ['negocia'],
         'valor_oferecido' => 6.5,
@@ -231,7 +215,7 @@ it('no Pix, escolher quem aceitou a oferta paga no pedido manda o motorista na h
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida)->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertOk()
         ->assertJsonPath('status_corrida', 'aceita');
@@ -258,7 +242,7 @@ it('motorista que aceita o valor entra na lista para o passageiro escolher', fun
         ->and(CorridaNegociacoes::where('corrida_id', $corrida->id)->value('status'))->toBe('pendente')
         ->and(StatusBusca::where('motorista_id', $motorista->id)->value('disponivel'))->toBeTruthy();
 
-    $this->actingAs($corrida->passageiro->user, 'jwt')
+    $this->actingAs($corrida->passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/propostas")
         ->assertOk()
         ->assertJsonPath('propostas.0.aceitou_oferta', true);
@@ -299,7 +283,7 @@ it('a lista de propostas diz quanto tempo falta, pelo relógio do servidor', fun
     negPropor(negMotorista(), $corrida)->assertCreated();
     Carbon::setTestNow(now()->addSeconds(12));
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/propostas")
         ->assertOk()
         ->assertJsonPath('propostas.0.validade_segundos', 20)
@@ -318,7 +302,7 @@ it('o passageiro vê as propostas valendo, da mais recente para a mais antiga', 
     negPropor($velho, $corrida, 8.60)->assertCreated();
     CorridaNegociacoes::where('motorista_id', $velho->id)->update(['expira_em' => now()->subSecond()]);
 
-    $propostas = $this->actingAs($passageiro->user, 'jwt')
+    $propostas = $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/propostas")
         ->assertOk()
         ->json('propostas');
@@ -331,7 +315,7 @@ it('o passageiro vê as propostas valendo, da mais recente para a mais antiga', 
         ->and($propostas[1]['motorista']['nome'])->toBe('Carlos')
         ->and(CorridaNegociacoes::where('motorista_id', $velho->id)->value('status'))->toBe('expirada');
 
-    $this->actingAs(negPassageiro()->user, 'jwt')
+    $this->actingAs(negPassageiro(), 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/propostas")
         ->assertNotFound();
 });
@@ -344,7 +328,7 @@ it('no dinheiro, escolher a proposta já entrega a corrida ao motorista', functi
     $propostaCarlos = negPropor($carlos, $corrida, 10.0)->json('id');
     negPropor($ana, $corrida, 8.46)->assertCreated();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$propostaCarlos}/escolher")
         ->assertOk()
         ->assertJsonPath('status_corrida', 'aceita');
@@ -367,12 +351,12 @@ it('o passageiro recusa uma proposta sem encerrar as demais', function () {
     $propostaCarlos = negPropor($carlos, $corrida)->json('id');
     $propostaAna = negPropor($ana, $corrida, 10.0)->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$propostaCarlos}/recusar")
         ->assertOk()
         ->assertJsonPath('message', 'Proposta recusada.');
 
-    $propostas = $this->actingAs($passageiro->user, 'jwt')
+    $propostas = $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corrida->id}/propostas")
         ->assertOk()
         ->json('propostas');
@@ -389,7 +373,7 @@ it('no Pix, a proposta maior que a oferta cobra só a diferença e o motorista v
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida, 10.0)->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertOk()
         ->assertJsonPath('status_corrida', 'aguardando_pagamento');
@@ -397,7 +381,7 @@ it('no Pix, a proposta maior que a oferta cobra só a diferença e o motorista v
     // 10,00 para o motorista são 10,64 para o passageiro, que já pagou 9,00
     Http::assertSent(fn ($pedido) => str_contains($pedido->url(), 'transparents/create')
         && data_get($pedido->data(), 'data.amount') === 164);
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/minha-corrida-atual?perfil=passageiro')
         ->assertOk()
         ->assertJsonPath('corrida.valor_a_pagar', 1.64);
@@ -422,12 +406,12 @@ it('o motorista que espera o Pix do Negocia sabe até quando, e vê o passageiro
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida, 10.0)->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertOk();
 
     $aceite = $corrida->refresh()->tempo_aceite;
-    $resposta = $this->actingAs($carlos->user, 'jwt')
+    $resposta = $this->actingAs($carlos, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertOk()
         ->assertJsonPath('corrida.status_corrida', 'aguardando_pagamento')
@@ -445,7 +429,7 @@ it('Pix não pago no prazo do Negocia cancela e libera o motorista', function ()
     $corrida = negPedirPago($passageiro, 9.0);
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida, 10.0)->json('id');
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertOk();
     Http::fake([
@@ -472,7 +456,7 @@ it('negociar por muito tempo não encurta o prazo do Pix depois da escolha', fun
     Carbon::setTestNow(now()->addMinutes(17));
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida, 10.0)->json('id');
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertOk();
     Http::fake([
@@ -492,7 +476,7 @@ it('proposta de motorista que ficou ocupado não pode ser escolhida', function (
     $proposta = negPropor($carlos, $corrida, 8.46)->json('id');
     StatusBusca::where('motorista_id', $carlos->id)->update(['disponivel' => false]);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertStatus(409)
         ->assertJsonPath('message', 'Este motorista não está mais disponível. Escolha outra proposta.');
@@ -505,7 +489,7 @@ it('no Negocia o trajeto não muda nem durante a negociação', function () {
     $passageiro = negPassageiro();
     $corrida = negPedir($passageiro, 9.0);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/destino", [
             'endereco' => 'Outro lugar',
             'latitude' => -8.70,
@@ -526,7 +510,7 @@ it('se o Pix da diferença não puder ser gerado, a escolha não vale e a negoci
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida, 10.0)->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertStatus(409)
         ->assertJsonPath('message', 'Não foi possível gerar o pagamento agora. Tente de novo ou troque para dinheiro.');
@@ -548,7 +532,7 @@ it('o passageiro aumenta a oferta enquanto espera e o motorista passa a ver o va
     negPropor($barato, $corrida, 8.46)->assertCreated();
     negPropor($caro, $corrida, 12.0)->assertCreated();
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/minha-corrida-atual?perfil=passageiro')
         ->assertOk()
         ->assertJsonPath('corrida.oferta_maxima', 20);
@@ -575,7 +559,7 @@ it('a nova oferta precisa ser maior que a atual e caber no teto', function () {
     $passageiro = negPassageiro();
     $corrida = negPedir($passageiro, 9.0);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/oferta", ['valor_oferecido' => 9.0])
         ->assertStatus(422)
         ->assertJsonPath('message', 'A nova oferta precisa ser maior que a atual.');
@@ -585,7 +569,7 @@ it('a nova oferta precisa ser maior que a atual e caber no teto', function () {
         ->assertJsonPath('message', 'Ofereça até R$ 20,00.');
 
     // outra pessoa não mexe na oferta
-    $this->actingAs(negPassageiro()->user, 'jwt')
+    $this->actingAs(negPassageiro(), 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/oferta", ['valor_oferecido' => 10.0])
         ->assertNotFound();
 });
@@ -633,7 +617,7 @@ it('sem o aceite automático, quem aceita a oferta espera a escolha do passageir
 it('o pedido grava o aceite automático e recusa valor que não é verdadeiro ou falso', function () {
     $passageiro = negPassageiro();
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    $this->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => negCotacao($passageiro)->id,
         'produtos_codigos' => ['negocia'],
         'valor_oferecido' => 9.0,
@@ -669,21 +653,21 @@ it('o motorista fica sabendo quando o passageiro cancela a corrida dele', functi
     $corrida = negPedir($passageiro, 9.0);
     $carlos = negMotorista();
     $proposta = negPropor($carlos, $corrida)->json('id');
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$proposta}/escolher")
         ->assertOk();
 
-    $this->actingAs($carlos->user, 'jwt')
+    $this->actingAs($carlos, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id)
         ->assertJsonPath('encerrada', null);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/cancelar", ['motivo' => 'mudei de ideia'])
         ->assertOk();
 
-    $this->actingAs($carlos->user, 'jwt')
+    $this->actingAs($carlos, 'motoristas')
         ->getJson('/api/minha-corrida-atual?perfil=motorista')
         ->assertOk()
         ->assertJsonPath('corrida', null)
@@ -699,7 +683,7 @@ it('o motorista fica sabendo quando o passageiro cancela a corrida dele', functi
 it('quem não é motorista nunca recebe o resumo de corrida cancelada', function () {
     $passageiro = negPassageiro();
     $corrida = negPedir($passageiro, 9.0);
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/cancelar", ['motivo' => 'desisti'])
         ->assertOk();
 
@@ -717,12 +701,12 @@ it('escolhido num Negocia, as outras propostas do motorista são canceladas', fu
     $escolhida = negPropor($carlos, $corrida)->json('id');
     $esperando = negPropor($carlos, $outra)->json('id');
 
-    $this->actingAs($primeiro->user, 'jwt')
+    $this->actingAs($primeiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/propostas/{$escolhida}/escolher")
         ->assertOk();
 
     expect(CorridaNegociacoes::find($esperando)->status)->toBe('cancelada');
-    $this->actingAs($segundo->user, 'jwt')
+    $this->actingAs($segundo, 'passageiros')
         ->getJson("/api/corridas/{$outra->id}/propostas")
         ->assertOk()
         ->assertJsonCount(0, 'propostas');
@@ -750,7 +734,7 @@ it('aceitar uma corrida normal cancela as propostas do Negocia que o motorista t
     ]);
     $normal->corrida_financeiro()->create(['valor_motorista' => 9.0, 'valor_pago_passageiro' => 10.0, 'metodo_pagamento' => 'dinheiro']);
 
-    $this->actingAs($carlos->user, 'jwt')
+    $this->actingAs($carlos, 'motoristas')
         ->postJson("/api/motorista/corridas/{$normal->id}/aceitar")
         ->assertOk();
 

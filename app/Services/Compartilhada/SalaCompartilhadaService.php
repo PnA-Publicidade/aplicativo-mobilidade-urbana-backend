@@ -12,7 +12,6 @@ use App\Models\SalaCompartilhada;
 use App\Models\SalaParticipante;
 use App\Models\StatusBusca;
 use App\Models\Tarifa;
-use App\Models\User;
 use App\Services\EnderecoPorCoordenadaService;
 use App\Services\NotificarUsuarioService;
 use App\Services\PagamentoCorridaService;
@@ -142,7 +141,7 @@ class SalaCompartilhadaService
             ->where('tipo', 'publica')
             ->where('produto_id', $categoria['produto']['id'] ?? null)
             ->where('expira_em', '>', now()->addSeconds(20))
-            ->with(['presentes.passageiro.user'])
+            ->with(['presentes.passageiro'])
             ->get();
 
         [$embarque, $desembarque] = $this->pontosDaCotacao($cotacao);
@@ -179,9 +178,8 @@ class SalaCompartilhadaService
     /**
      * @param  'publica'|'convite'  $tipo
      */
-    public function abrir(User $usuario, CotacaoCorrida $cotacao, string $tipo, string $metodo): SalaCompartilhada
+    public function abrir(Passageiro $passageiro, CotacaoCorrida $cotacao, string $tipo, string $metodo): SalaCompartilhada
     {
-        $passageiro = Passageiro::firstOrCreate(['user_id' => $usuario->id]);
         $this->pagamento->exigirSemPendencia($passageiro->id);
 
         $disponibilidade = $this->disponibilidade($passageiro, $cotacao);
@@ -226,7 +224,7 @@ class SalaCompartilhadaService
         return $sala;
     }
 
-    public function entrarPorCodigo(User $usuario, string $codigo, CotacaoCorrida $cotacao, string $metodo): SalaCompartilhada
+    public function entrarPorCodigo(Passageiro $passageiro, string $codigo, CotacaoCorrida $cotacao, string $metodo): SalaCompartilhada
     {
         $sala = SalaCompartilhada::where('codigo', mb_strtoupper(trim($codigo)))->first();
 
@@ -234,12 +232,11 @@ class SalaCompartilhadaService
             throw new RuntimeException('Código de sala não encontrado.', 404);
         }
 
-        return $this->entrar($usuario, $sala->id, $cotacao, $metodo, $sala->codigo);
+        return $this->entrar($passageiro, $sala->id, $cotacao, $metodo, $sala->codigo);
     }
 
-    public function entrar(User $usuario, int $salaId, CotacaoCorrida $cotacao, string $metodo, ?string $codigo = null): SalaCompartilhada
+    public function entrar(Passageiro $passageiro, int $salaId, CotacaoCorrida $cotacao, string $metodo, ?string $codigo = null): SalaCompartilhada
     {
-        $passageiro = Passageiro::firstOrCreate(['user_id' => $usuario->id]);
         $this->pagamento->exigirSemPendencia($passageiro->id);
 
         $sala = SalaCompartilhada::with('presentes')->find($salaId);
@@ -306,9 +303,9 @@ class SalaCompartilhadaService
         return $sala;
     }
 
-    public function pronto(User $usuario, int $salaId, bool $pronto): SalaCompartilhada
+    public function pronto(Passageiro $passageiro, int $salaId, bool $pronto): SalaCompartilhada
     {
-        $passageiroId = $this->passageiroId($usuario);
+        $passageiroId = $passageiro->id;
 
         $sala = DB::transaction(function () use ($salaId, $passageiroId, $pronto) {
             $sala = SalaCompartilhada::whereKey($salaId)->lockForUpdate()->first();
@@ -343,9 +340,9 @@ class SalaCompartilhadaService
         return $sala;
     }
 
-    public function sair(User $usuario, int $salaId): void
+    public function sair(Passageiro $passageiro, int $salaId): void
     {
-        $passageiroId = $this->passageiroId($usuario);
+        $passageiroId = $passageiro->id;
 
         $sala = DB::transaction(function () use ($salaId, $passageiroId) {
             $sala = SalaCompartilhada::whereKey($salaId)->lockForUpdate()->first();
@@ -395,9 +392,9 @@ class SalaCompartilhadaService
      * Quem ficou sozinho (ou ainda está sozinho na sala) vira corrida normal
      * com um toque, sem refazer o pedido.
      */
-    public function pedirSozinho(User $usuario, int $salaId): Corrida
+    public function pedirSozinho(Passageiro $passageiro, int $salaId): Corrida
     {
-        $passageiroId = $this->passageiroId($usuario);
+        $passageiroId = $passageiro->id;
 
         [$sala, $cotacao, $metodo, $codigo] = DB::transaction(function () use ($salaId, $passageiroId) {
             $sala = SalaCompartilhada::whereKey($salaId)->lockForUpdate()->first();
@@ -428,7 +425,7 @@ class SalaCompartilhadaService
 
             // o preço é o mesmo cotado ao entrar na sala
             $cotacao = CotacaoCorrida::create([
-                'user_id' => $original->user_id,
+                'passageiro_id' => $original->passageiro_id,
                 'cidade_id' => $original->cidade_id,
                 'distancia_km' => $original->distancia_km,
                 'tempo_min' => $original->tempo_min,
@@ -443,7 +440,7 @@ class SalaCompartilhadaService
         $this->avisar($sala);
 
         return app(SolicitarCorridaService::class)->executar(
-            usuario: $usuario,
+            passageiro: $passageiro,
             cotacao: $cotacao,
             produtosCodigos: [$codigo],
             metodoPagamento: $metodo,
@@ -570,7 +567,7 @@ class SalaCompartilhadaService
      */
     public function resumo(SalaCompartilhada $sala, int $passageiroId): array
     {
-        $sala->loadMissing(['participantes.passageiro.user']);
+        $sala->loadMissing(['participantes.passageiro']);
         $grupoFechado = $sala->status === SalaCompartilhada::FECHADA;
         $presentes = $sala->participantes
             ->filter(fn (SalaParticipante $participante) => $participante->status !== SalaParticipante::SAIU)
@@ -627,7 +624,7 @@ class SalaCompartilhadaService
             ],
             'participantes' => $presentes->map(fn (SalaParticipante $participante) => [
                 'id' => $participante->id,
-                'nome' => $this->primeiroNome((string) $participante->passageiro?->user?->name),
+                'nome' => $this->primeiroNome((string) $participante->passageiro?->name),
                 // a foto dos outros só sai do servidor depois que o grupo
                 // fecha: borrar no app não protege quem chama a API direto
                 'foto' => $grupoFechado || $participante->passageiro_id === $passageiroId
@@ -821,7 +818,7 @@ class SalaCompartilhadaService
             'expira_em' => $sala->expira_em->toIso8601String(),
             // antes de aceitar: primeiro nome, foto borrada e nota; nunca o destino
             'participantes' => $presentes->map(fn (SalaParticipante $participante) => [
-                'nome' => $this->primeiroNome((string) $participante->passageiro?->user?->name),
+                'nome' => $this->primeiroNome((string) $participante->passageiro?->name),
                 // antes de aceitar, só primeiro nome e nota: a foto não sai do servidor
                 'foto' => null,
                 'foto_borrada' => true,
@@ -1092,15 +1089,12 @@ class SalaCompartilhadaService
     {
         $presentes = SalaParticipante::where('sala_id', $sala->id)
             ->where('status', '!=', SalaParticipante::SAIU)
-            ->with('passageiro:id,user_id')
             ->get();
 
         foreach ($presentes as $participante) {
             $texto = $mensagem($participante);
-            $userId = $participante->passageiro?->user_id;
-
-            if ($texto !== null && $userId !== null) {
-                $this->notificar->executar((int) $userId, 'passageiro', $texto[0], $texto[1], [
+            if ($texto !== null) {
+                $this->notificar->executar((int) $participante->passageiro_id, 'passageiro', $texto[0], $texto[1], [
                     'sala_id' => (string) $sala->id,
                     'tipo' => 'sala_compartilhada',
                 ]);
@@ -1111,17 +1105,6 @@ class SalaCompartilhadaService
     public function avisar(SalaCompartilhada $sala): void
     {
         Avisar::semQuebrar(new SalaCompartilhadaAtualizada($sala->id, $sala->status));
-    }
-
-    private function passageiroId(User $usuario): int
-    {
-        $id = Passageiro::where('user_id', $usuario->id)->value('id');
-
-        if ($id === null) {
-            throw new RuntimeException('Você não está nesta sala.', 404);
-        }
-
-        return (int) $id;
     }
 
     private function gerarCodigo(): string

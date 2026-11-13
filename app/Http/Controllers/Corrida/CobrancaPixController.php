@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Corrida;
 use App\Http\Controllers\Controller;
 use App\Models\CobrancaPix;
 use App\Models\Corrida;
-use App\Models\Passageiro;
 use App\Services\CobrancaPixService;
+use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -59,7 +59,7 @@ class CobrancaPixController extends Controller
 
     private function corridaDoPassageiro(Request $request, int $corrida): Corrida
     {
-        $passageiroId = Passageiro::where('user_id', $request->user()->id)->value('id');
+        $passageiroId = PerfilLogado::passageiro($request)?->id;
         $registro = $passageiroId === null
             ? null
             : Corrida::whereKey($corrida)->where('passageiro_id', $passageiroId)->first();

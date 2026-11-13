@@ -4,10 +4,13 @@ namespace App\Providers;
 
 use App\Contracts\GatewayPagamento;
 use App\Contracts\GatewaySaque;
+use App\Models\Motorista;
+use App\Models\Passageiro;
 use App\Services\AbacatePayClient;
 use App\Services\Pagamento\GatewayPagamentoAbacatePay;
 use App\Services\Pagamento\GatewayPagamentoSimulado;
 use App\Services\Saque\GatewaySaqueSimulado;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 
@@ -37,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // nas colunas que guardam o perfil (solicitante_tipo, perfil...): motorista ou passageiro
+        Relation::morphMap(['motorista' => Motorista::class, 'passageiro' => Passageiro::class]);
     }
 }

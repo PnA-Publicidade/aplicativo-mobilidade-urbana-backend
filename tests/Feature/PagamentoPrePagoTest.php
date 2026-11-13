@@ -9,7 +9,6 @@ use App\Models\CorridaFinanceiro;
 use App\Models\CotacaoCorrida;
 use App\Models\MovimentoCredito;
 use App\Models\Passageiro;
-use App\Models\User;
 use App\Services\DespachoCorridaService;
 use App\Services\Pagamento\GatewayPagamentoSimulado;
 use App\Services\PagamentoCorridaService;
@@ -37,24 +36,13 @@ afterEach(function () {
 
 function passageiroPre(): Passageiro
 {
-    $id = str_replace('-', '', (string) Str::uuid());
-    $user = User::create([
-        'name' => 'Passageiro Pré',
-        'telefone' => substr('69'.preg_replace('/\D/', '', $id).'000000000', 0, 11),
-        'cpf' => substr(preg_replace('/\D/', '', $id).'00000000000', 0, 11),
-        'data_nascimento' => '1990-01-01',
-        'email' => "pre-$id@example.test",
-        'status' => 'ativo',
-        'password' => 'senha-de-teste',
-    ]);
-
-    return Passageiro::create(['user_id' => $user->id, 'media_avaliacao' => null]);
+    return Passageiro::factory()->create(['name' => 'Passageiro Pré']);
 }
 
 function cotacaoPre(Passageiro $passageiro, float $valor = 20.0): CotacaoCorrida
 {
     return CotacaoCorrida::create([
-        'user_id' => $passageiro->user_id,
+        'passageiro_id' => $passageiro->id,
         'distancia_km' => 5,
         'tempo_min' => 12,
         'enderecos' => [
@@ -85,7 +73,7 @@ function cotacaoPre(Passageiro $passageiro, float $valor = 20.0): CotacaoCorrida
 
 function pedirCorrida(Passageiro $passageiro, string $metodo, float $valor = 20.0)
 {
-    return test()->actingAs($passageiro->user, 'jwt')->postJson('/api/corridas', [
+    return test()->actingAs($passageiro, 'passageiros')->postJson('/api/corridas', [
         'cotacao_id' => cotacaoPre($passageiro, $valor)->id,
         'produto_codigo' => 'pop',
         'metodo_pagamento' => $metodo,
@@ -168,7 +156,7 @@ it('confirmado o Pix, a corrida entra na busca de motoristas', function () {
     $passageiro = passageiroPre();
     $corridaId = pedirCorrida($passageiro, 'pix')->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson("/api/corridas/{$corridaId}/pix")
         ->assertOk()
         ->assertJsonPath('cobranca.status', 'PAID');
@@ -199,7 +187,7 @@ it('valor em aberto de corrida anterior bloqueia novo pedido até ser pago', fun
         ->assertJsonPath('pendencia.corrida_id', $anterior->id)
         ->assertJsonPath('pendencia.valor', 18);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->getJson('/api/pagamentos/situacao')
         ->assertOk()
         ->assertJsonPath('pendencia.corrida_id', $anterior->id);
@@ -326,7 +314,7 @@ it('passageiro cancela de graça enquanto o pagamento não foi feito', function 
     $passageiro = passageiroPre();
     $corridaId = pedirCorrida($passageiro, 'pix')->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corridaId}/cancelar", ['motivo' => 'desisti'])
         ->assertOk();
 
@@ -376,7 +364,7 @@ it('no pré-pagamento só aceita o método escolhido no pedido', function () {
     $passageiro = passageiroPre();
     $corridaId = pedirCorrida($passageiro, 'pix')->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corridaId}/cartao")
         ->assertStatus(409);
 });
@@ -539,7 +527,7 @@ it('corrida já paga pelo app não troca para dinheiro', function () {
     $corrida = corridaTerminada($passageiro, 'aceita', 'pix', 20.0);
     pixPago($corrida, 20.0);
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corrida->id}/pagamento", ['metodo_pagamento' => 'dinheiro'])
         ->assertStatus(409)
         ->assertJsonPath('message', 'Esta corrida já foi paga pelo app e não pode passar para dinheiro.');
@@ -553,7 +541,7 @@ it('crédito usado volta ao saldo quando a corrida é cancelada sem taxa', funct
     MovimentoCredito::create(['passageiro_id' => $passageiro->id, 'valor' => 8, 'descricao' => 'teste']);
     $corridaId = pedirCorrida($passageiro, 'pix', 20.0)->json('id');
 
-    $this->actingAs($passageiro->user, 'jwt')
+    $this->actingAs($passageiro, 'passageiros')
         ->postJson("/api/corridas/{$corridaId}/cancelar", ['motivo' => 'desisti'])
         ->assertOk();
 
@@ -567,14 +555,14 @@ it('provedor simulado: o Pix sai com QR ilustrativo e o passageiro confirma pelo
 
     $corridaId = pedirCorrida($passageiro, 'pix', 20.0)->assertCreated()->json('data.id') ?? Corrida::first()->id;
 
-    $pix = $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corridaId}/pix")->assertOk()->json('cobranca');
+    $pix = $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corridaId}/pix")->assertOk()->json('cobranca');
     expect($pix['status'])->toBe('PENDING')
         ->and($pix['dev_mode'])->toBeTrue()
         ->and($pix['br_code'])->toContain('PIX-SIMULADO')
         ->and(substr(base64_decode($pix['br_code_base64']), 1, 3))->toBe('PNG')
         ->and(Corrida::find($corridaId)->status_corrida)->toBe('aguardando_pagamento');
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corridaId}/pix/simular")
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corridaId}/pix/simular")
         ->assertOk()
         ->assertJsonPath('cobranca.status', 'PAID');
 
@@ -591,10 +579,10 @@ it('provedor simulado: cartão confirmado no app libera a busca sem checkout ext
     pedirCorrida($passageiro, 'cartao', 20.0)->assertCreated();
     $corrida = Corrida::first();
 
-    $cartao = $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk()->json('cobranca');
+    $cartao = $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/cartao")->assertOk()->json('cobranca');
     expect($cartao['url'])->toBeNull()->and($cartao['dev_mode'])->toBeTrue();
 
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/cartao/simular")
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/cartao/simular")
         ->assertOk()
         ->assertJsonPath('cobranca.status', 'PAID');
 
@@ -608,8 +596,8 @@ it('provedor simulado: cancelar corrida paga estorna sem chamar ninguém', funct
     $passageiro = passageiroPre();
     pedirCorrida($passageiro, 'pix', 20.0)->assertCreated();
     $corrida = Corrida::first();
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
-    $this->actingAs($passageiro->user, 'jwt')->postJson("/api/corridas/{$corrida->id}/pix/simular")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix")->assertOk();
+    $this->actingAs($passageiro, 'passageiros')->postJson("/api/corridas/{$corrida->id}/pix/simular")->assertOk();
 
     app(DespachoCorridaService::class)->cancelar($corrida->id, 'passageiro', $passageiro->id, 'Mudei de ideia');
 

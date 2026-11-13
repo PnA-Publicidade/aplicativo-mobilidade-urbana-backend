@@ -27,9 +27,9 @@ class HistoricoCorridaDemonstracaoSeeder extends Seeder
         }
 
         $ticket = DB::transaction(function () {
-            $passageiro = Passageiro::with('user')->whereHas('user', fn ($q) => $q->where('email', 'passageiro@example.com'))->first();
-            $vinculo = MotoristaVeiculo::with(['motorista.user', 'veiculo'])
-                ->whereHas('motorista.user', fn ($q) => $q->where('email', 'motorista@example.com'))
+            $passageiro = Passageiro::where('email', 'passageiro@example.com')->first();
+            $vinculo = MotoristaVeiculo::with(['motorista', 'veiculo'])
+                ->whereHas('motorista', fn ($q) => $q->where('email', 'motorista@example.com'))
                 ->whereHas('veiculo', fn ($q) => $q->where('categoria', 'carro'))->orderBy('id')->first();
             if (! $passageiro || ! $vinculo) {
                 throw new RuntimeException('Execute CadastroDesenvolvimentoSeeder antes da demonstração.');
@@ -90,20 +90,21 @@ class HistoricoCorridaDemonstracaoSeeder extends Seeder
                 ['motorista', 'Tudo certo. Vamos iniciar a corrida.', 150],
             ];
             foreach ($conversa as $indice => [$tipo, $conteudo, $segundos]) {
-                $usuario = $tipo === 'motorista' ? $vinculo->motorista->user : $passageiro->user;
+                $autor = $tipo === 'motorista' ? $vinculo->motorista : $passageiro;
                 CorridaMensagem::firstOrCreate([
                     'corrida_id' => $corrida->id,
                     'client_message_id' => '85b4dc52-389c-4d27-9584-'.str_pad((string) ($indice + 1), 12, '0', STR_PAD_LEFT),
                 ], [
-                    'user_id' => $usuario->id, 'autor_tipo' => $tipo, 'autor_nome' => $usuario->name,
+                    'autor_tipo' => $tipo, 'autor_nome' => $autor->name,
                     'conteudo' => $conteudo, 'created_at' => $solicitada->copy()->addMinute()->addSeconds($segundos),
                     'updated_at' => $solicitada->copy()->addMinute()->addSeconds($segundos),
                 ]);
             }
 
-            return ChamadoAjuda::where('corrida_id', $corrida->id)->where('user_id', $passageiro->user_id)
+            return ChamadoAjuda::where('corrida_id', $corrida->id)
+                ->where('solicitante_tipo', 'passageiro')->where('solicitante_id', $passageiro->id)
                 ->where('descricao', 'Demonstração do histórico da corrida: conferir os valores, o trajeto e a conversa.')->first()
-                ?? app(TicketsAjudaService::class)->criar($passageiro->user, [
+                ?? app(TicketsAjudaService::class)->criar($passageiro, [
                     'solicitante_tipo' => 'passageiro', 'corrida_id' => $corrida->id, 'motivo' => 'tarifa_incorreta',
                     'descricao' => 'Demonstração do histórico da corrida: conferir os valores, o trajeto e a conversa.',
                 ]);
