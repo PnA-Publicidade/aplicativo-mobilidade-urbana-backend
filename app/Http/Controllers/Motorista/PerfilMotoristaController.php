@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Motorista;
 
 use App\Http\Controllers\Controller;
+use App\Models\Cidade;
 use App\Services\ReputacaoService;
 use App\Services\RestricaoNotaService;
 use App\Support\PerfilLogado;
@@ -16,6 +17,26 @@ class PerfilMotoristaController extends Controller
     private const NOTAS_NO_RESUMO = 10;
 
     public function __construct(private readonly ReputacaoService $reputacao) {}
+
+    /** todos os municípios (uns 200 KB): o app baixa uma vez e filtra enquanto o motorista digita */
+    public function cidades(): JsonResponse
+    {
+        return response()->json(['data' => Cidade::query()->orderBy('nome')->get(['id', 'nome', 'uf'])]);
+    }
+
+    /** a cidade onde o motorista roda, um dos municípios do IBGE */
+    public function alterarCidade(Request $request): JsonResponse
+    {
+        $motorista = PerfilLogado::motorista($request);
+        abort_if($motorista === null, 403, 'Cadastro de motorista não encontrado.');
+
+        $motorista->update($request->validate(
+            ['cidade_id' => 'required|integer|exists:cidades,id'],
+            ['cidade_id.exists' => 'Escolha uma das cidades da lista.'],
+        ));
+
+        return response()->json(['user' => $motorista->fresh()?->dadosDoApp()]);
+    }
 
     public function mostrar(Request $request): JsonResponse
     {

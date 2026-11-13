@@ -31,6 +31,9 @@ Route::get('motorista/me/taxa-finalizacao', [MotoristaController::class, 'taxaFi
 Route::get('motorista/me/taxa-aceitacao', [MotoristaController::class, 'taxaAceitacao']);
 Route::get('motorista/me/perfil', [PerfilMotoristaController::class, 'mostrar']);
 Route::get('motorista/me/notas-agradecimento', [PerfilMotoristaController::class, 'notasDeAgradecimento']);
+// a cidade onde roda (o estado vem dela): um dos municípios do IBGE
+Route::get('motorista/cidades', [PerfilMotoristaController::class, 'cidades']);
+Route::put('motorista/me/cidade', [PerfilMotoristaController::class, 'alterarCidade']);
 // viagem compartilhada: aceitar chamadas de grupo e lugares do carro
 Route::get('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'mostrar']);
 Route::put('motorista/me/preferencias', [PreferenciasMotoristaController::class, 'atualizar']);

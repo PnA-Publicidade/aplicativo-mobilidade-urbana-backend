@@ -65,7 +65,7 @@ class MotoristaDocumentoController extends Controller
         $filtroDocumentos = fn ($query) => $query->where('ordem', 0)->where('status', $status)
             ->when($tipo, fn ($q) => $q->where('tipo_documento', $tipo));
 
-        $consulta = Motorista::query()->whereHas('user')
+        $consulta = Motorista::query()
             ->whereHas('documentos', $filtroDocumentos)
             ->withMin(['documentos as pendente_desde' => $filtroDocumentos], 'created_at')
             ->when($busca !== '', function ($query) use ($busca): void {
@@ -107,7 +107,7 @@ class MotoristaDocumentoController extends Controller
         ]);
 
         // totais por status para as abas, respeitando só a busca de tipo
-        $totais = MotoristaDocumento::query()->where('ordem', 0)->whereHas('motorista', fn ($q) => $q->whereHas('user'))
+        $totais = MotoristaDocumento::query()->where('ordem', 0)->whereHas('motorista')
             ->when($tipo, fn ($q) => $q->where('tipo_documento', $tipo))
             ->selectRaw('status, count(*) as documentos, count(distinct motorista_id) as motoristas')
             ->groupBy('status')->get()->keyBy('status');

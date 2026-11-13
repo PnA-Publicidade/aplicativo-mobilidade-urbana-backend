@@ -50,11 +50,22 @@ trait ContaDoApp
             'cpf' => $this->getAttribute('cpf'),
             'data_nascimento' => $this->getAttribute('data_nascimento')?->format('Y-m-d'),
             'foto' => $this->getAttribute('foto'),
+            'cidade' => $this->cidadeDoApp(),
             'status' => $this->getAttribute('status'),
             'perfil' => $this->perfilDoApp(),
             'motorista' => $this->perfilDoApp() === 'motorista',
             'created_at' => $this->getAttribute('created_at'),
         ];
+    }
+
+    /**
+     * Só o motorista escolhe a cidade onde roda (ver Motorista::cidadeDoApp).
+     *
+     * @return array{id: int, nome: string, uf: string, uf_id: int}|null
+     */
+    protected function cidadeDoApp(): ?array
+    {
+        return null;
     }
 
     /** arquivado, bloqueado ou inativo: não entra */
