@@ -56,6 +56,8 @@ class PerfilMotoristaController extends Controller
         return response()->json([
             'nome' => $motorista->nome,
             'foto' => $motorista->foto,
+            // a cidade onde roda, para o perfil público ("De Porto Velho - RO")
+            'cidade' => $motorista->dadosDoApp()['cidade'] ?? null,
             ...$resumo,
             'corridas_para_deixar_de_ser_novo' => ReputacaoService::corridasParaDeixarDeSerNovo(),
             // a nota é a média das últimas avaliações reais, até este número
@@ -66,11 +68,13 @@ class PerfilMotoristaController extends Controller
             // alerta, prazo ou restrição por nota baixa (em modo sombra o motorista não vê alerta)
             'situacao_nota' => app(RestricaoNotaService::class)->situacao(RestricaoNotaService::MOTORISTA, $motorista->id),
             'desde' => ($inicio = $motorista->liberado_em ?? $motorista->created_at) === null ? null : Carbon::parse($inicio)->toDateString(),
+            // momento exato do início, para o app mostrar dias e horas no primeiro mês
+            'desde_em' => $inicio === null ? null : Carbon::parse($inicio)->toIso8601String(),
             'meses_na_plataforma' => $meses,
             'distribuicao' => $distribuicao,
             // selos recebidos (vazio para conta nova) e as dicas de "Como ter mais avaliações positivas?"
             'elogios' => $elogios,
-            'dicas' => DB::table('dicas_avaliacao')->where('ativo', true)->orderBy('ordem')->orderBy('id')->get(['id', 'titulo', 'texto']),
+            'dicas' => DB::table('dicas_avaliacao')->where('perfil_alvo', 'motorista')->where('ativo', true)->orderBy('ordem')->orderBy('id')->get(['id', 'titulo', 'texto']),
             'notas_agradecimento' => $notas->items(),
             'total_notas_agradecimento' => $notas->total(),
             'selos' => $this->reputacao->selosDoMotorista($resumo['corridas'], $this->reputacao->totalDeCincoEstrelas($motorista->id), $meses),

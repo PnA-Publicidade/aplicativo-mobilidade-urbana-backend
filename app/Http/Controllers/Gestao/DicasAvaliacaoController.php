@@ -7,7 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/** "Como ter mais avaliações positivas?": as dicas que o motorista vê no perfil. */
+/** "Como ter mais avaliações positivas?": as dicas que o motorista e o passageiro veem no perfil. */
 class DicasAvaliacaoController extends Controller
 {
     public function index(): JsonResponse
@@ -27,12 +27,13 @@ class DicasAvaliacaoController extends Controller
         $dados = $request->validate([
             'titulo' => 'required|string|min:2|max:80',
             'texto' => 'required|string|min:2|max:300',
+            'perfil_alvo' => 'sometimes|in:motorista,passageiro',
             'ordem' => 'sometimes|integer|between:0,999',
             'ativo' => 'sometimes|boolean',
         ]);
         $dados['ordem'] ??= ((int) DB::table('dicas_avaliacao')->max('ordem')) + 1;
 
-        $id = DB::table('dicas_avaliacao')->insertGetId([...$dados, 'ativo' => $dados['ativo'] ?? true, 'created_at' => now(), 'updated_at' => now()]);
+        $id = DB::table('dicas_avaliacao')->insertGetId([...$dados, 'perfil_alvo' => $dados['perfil_alvo'] ?? 'motorista', 'ativo' => $dados['ativo'] ?? true, 'created_at' => now(), 'updated_at' => now()]);
 
         return response()->json(DB::table('dicas_avaliacao')->find($id), 201);
     }
@@ -46,6 +47,7 @@ class DicasAvaliacaoController extends Controller
         $dados = $request->validate([
             'titulo' => 'sometimes|string|min:2|max:80',
             'texto' => 'sometimes|string|min:2|max:300',
+            'perfil_alvo' => 'sometimes|in:motorista,passageiro',
             'ordem' => 'sometimes|integer|between:0,999',
             'ativo' => 'sometimes|boolean',
         ]);

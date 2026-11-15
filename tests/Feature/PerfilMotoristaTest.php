@@ -101,7 +101,7 @@ it('o selo de novo usuário some quando as corridas finalizadas chegam ao limite
     expect($servico->doMotorista($motorista->id)['novo'])->toBeFalse();
 });
 
-it('conta os elogios e lista só os comentários de nota 4 ou 5, com o primeiro nome de quem avaliou', function () {
+it('conta os elogios e lista os comentários de qualquer nota, com o primeiro nome de quem avaliou', function () {
     $motorista = pmMotorista();
     pmAvaliada($motorista, 5, ['comentario' => 'Excelente motorista', 'elogios' => ['boa_rota', 'respeitoso']], 'Amanda Souza');
     pmAvaliada($motorista, 4, ['comentario' => 'Muito bom', 'elogios' => ['boa_rota']], 'Deivison Lima');
@@ -121,12 +121,22 @@ it('conta os elogios e lista só os comentários de nota 4 ou 5, com o primeiro 
         ->and($elogios['otimo_papo']['quantidade'])->toBe(1);
 
     $notas = $resposta->json('notas_agradecimento');
-    expect($notas)->toHaveCount(2)
-        ->and($resposta->json('total_notas_agradecimento'))->toBe(2)
+    // comentário vazio e nota automática não entram; o de nota baixa aparece como os demais
+    expect($notas)->toHaveCount(3)
+        ->and($resposta->json('total_notas_agradecimento'))->toBe(3)
         // mais novo primeiro
-        ->and($notas[0])->toMatchArray(['autor' => 'Deivison', 'nota' => 4, 'comentario' => 'Muito bom', 'elogios' => ['Boa rota']])
-        ->and($notas[1])->toMatchArray(['autor' => 'Amanda', 'nota' => 5, 'elogios' => ['Boa rota', 'Respeitoso']])
-        ->and($notas[1]['quando'])->not->toBeNull();
+        ->and($notas[0])->toMatchArray(['autor' => 'Amanda', 'nota' => 2, 'comentario' => 'Atrasou'])
+        ->and($notas[1])->toMatchArray(['autor' => 'Deivison', 'nota' => 4, 'comentario' => 'Muito bom', 'elogios' => ['Boa rota']])
+        ->and($notas[2])->toMatchArray(['autor' => 'Amanda', 'nota' => 5, 'elogios' => ['Boa rota', 'Respeitoso']])
+        ->and($notas[2]['quando'])->not->toBeNull()
+        // cada nota traz os selos da mesma avaliação, com ícone e imagem (nula quando só há emoji)
+        ->and(collect($notas[2]['selos'])->pluck('chave')->all())->toBe(['boa_rota', 'respeitoso'])
+        ->and($notas[2]['selos'][0])->toMatchArray(['titulo' => 'Boa rota', 'icone' => '🗺️'])
+        ->and($notas[2]['selos'][0])->toHaveKey('imagem');
+
+    // avaliação sem selo vem com a lista vazia
+    $semSelo = $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/notas-agradecimento')->json('data');
+    expect(collect($semSelo)->every(fn (array $nota): bool => array_key_exists('selos', $nota)))->toBeTrue();
 });
 
 it('lista todas as notas de agradecimento com paginação', function () {
@@ -310,4 +320,16 @@ it('a gestão define os limites das faixas e a ordem deles é validada', functio
     $this->withToken($token)->putJson('/api/gestao/configuracoes', ['avaliacoes_faixa_excelente_acima' => 4.851])->assertUnprocessable();
 
     expect(app(ReputacaoService::class)->limitesDasFaixas())->toBe(['excelente_acima' => 4.9, 'alto_risco_abaixo' => 4.6]);
+});
+
+it('informa o momento exato em que o motorista entrou na plataforma', function () {
+    $this->travelTo(now()->startOfSecond());
+    $motorista = pmMotorista();
+    $motorista->forceFill(['liberado_em' => now()->subHours(5)])->save();
+
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/motorista/me/perfil')
+        ->assertOk()
+        ->assertJsonPath('desde_em', now()->subHours(5)->toIso8601String())
+        ->assertJsonPath('meses_na_plataforma', 0)
+        ->assertJsonStructure(['cidade']);
 });
