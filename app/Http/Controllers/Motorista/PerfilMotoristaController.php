@@ -10,6 +10,7 @@ use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /** Perfil do motorista no app: reputação, elogios, notas de agradecimento, selos e verificações. */
 class PerfilMotoristaController extends Controller
@@ -67,7 +68,9 @@ class PerfilMotoristaController extends Controller
             'desde' => ($inicio = $motorista->liberado_em ?? $motorista->created_at) === null ? null : Carbon::parse($inicio)->toDateString(),
             'meses_na_plataforma' => $meses,
             'distribuicao' => $distribuicao,
+            // selos recebidos (vazio para conta nova) e as dicas de "Como ter mais avaliações positivas?"
             'elogios' => $elogios,
+            'dicas' => DB::table('dicas_avaliacao')->where('ativo', true)->orderBy('ordem')->orderBy('id')->get(['id', 'titulo', 'texto']),
             'notas_agradecimento' => $notas->items(),
             'total_notas_agradecimento' => $notas->total(),
             'selos' => $this->reputacao->selosDoMotorista($resumo['corridas'], $this->reputacao->totalDeCincoEstrelas($motorista->id), $meses),

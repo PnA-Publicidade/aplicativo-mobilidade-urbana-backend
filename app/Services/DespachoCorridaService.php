@@ -156,6 +156,8 @@ class DespachoCorridaService
         $corridas = Corrida::where('status_corrida', 'solicitada')
             ->whereNull('motorista_id')
             ->when($meuPassageiroId !== null, fn (Builder $consulta) => $consulta->where('passageiro_id', '!=', $meuPassageiroId))
+            // bloqueio (de qualquer dos dois lados): a chamada nem chega a tocar
+            ->whereNotIn('passageiro_id', app(BloqueioUsuarioService::class)->passageirosBloqueadosDoMotorista($motorista->id))
             ->where(fn (Builder $consulta) => $this->queOVeiculoAtende($consulta, $veiculo))
             ->with(['corrida_destinos', 'corrida_financeiro', 'opcoes.produto', 'produto'])
             ->orderBy('tempo_solicitacao')
@@ -355,6 +357,11 @@ class DespachoCorridaService
         // a mesma pessoa nos dois apps: o CPF do passageiro é o do motorista
         if (filled($motorista->cpf) && $corrida->passageiro()->value('cpf') === $motorista->cpf) {
             throw new RuntimeException('Você não pode atender a sua própria corrida.', 409);
+        }
+
+        // bloqueio entre os dois: nem aceitar nem propor (sem dizer quem bloqueou)
+        if (app(BloqueioUsuarioService::class)->existeEntre($motorista->id, (int) $corrida->passageiro_id)) {
+            throw new RuntimeException('Esta corrida não está disponível para você.', 409);
         }
 
         // restrição por taxa de finalização: nem aceitar nem propor

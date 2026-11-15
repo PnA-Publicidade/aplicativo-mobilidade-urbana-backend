@@ -4,6 +4,7 @@
 
 use App\Http\Controllers\Corrida\AumentarOfertaNegociaController;
 use App\Http\Controllers\Corrida\AvaliacoesCorridaController;
+use App\Http\Controllers\Corrida\BloqueiosUsuariosController;
 use App\Http\Controllers\Corrida\ChatCorridaController;
 use App\Http\Controllers\Corrida\CobrancaCartaoController;
 use App\Http\Controllers\Corrida\CobrancaPixController;
@@ -73,3 +74,8 @@ Route::get('corridas-negociada', [CorridaController::class, 'simularCorridaNegoc
 Route::get('corrida-para-avaliar', [AvaliacoesCorridaController::class, 'pendente']);
 Route::apiResource('avaliacoes-corridas', AvaliacoesCorridaController::class)
     ->only(['store']);
+// selos que dá para escolher ao avaliar e bloqueio entre motorista e passageiro
+Route::get('selos-avaliacao', [BloqueiosUsuariosController::class, 'selos']);
+Route::get('bloqueios-usuarios', [BloqueiosUsuariosController::class, 'index']);
+Route::post('bloqueios-usuarios', [BloqueiosUsuariosController::class, 'store'])->middleware('throttle:30,1');
+Route::delete('bloqueios-usuarios/{bloqueio}', [BloqueiosUsuariosController::class, 'destroy'])->whereNumber('bloqueio');

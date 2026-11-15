@@ -61,6 +61,14 @@ return [
             'throw' => true,
         ],
 
+        // imagens dos selos de avaliação (enviadas na gestão ou importadas dos adesivos)
+        'selos' => [
+            'driver' => 'local',
+            'root' => public_path('images/selos'),
+            'visibility' => 'public',
+            'throw' => true,
+        ],
+
         'gestores_fotos' => [
             'driver' => 'local',
             'root' => public_path('images/gestores'),

@@ -38,7 +38,7 @@ class PermissoesGestaoService
         if (in_array($recurso, ['motoristas', 'motoristas-arquivados', 'passageiros', 'passageiros-arquivados'], true)) {
             return $consulta ? 'usuarios.consultar' : 'usuarios.gerenciar';
         }
-        if (in_array($recurso, ['configuracoes', 'taxas-motoristas', 'restricoes-motoristas', 'restricoes-nota'], true)) {
+        if (in_array($recurso, ['configuracoes', 'taxas-motoristas', 'restricoes-motoristas', 'restricoes-nota', 'selos-avaliacao', 'dicas-avaliacao'], true)) {
             return 'configuracoes.gerenciar';
         }
         if (in_array($recurso, ['tarifas', 'produtos-corridas', 'produto-categorias', 'publicidades', 'publicidades-arquivados', 'cidades', 'estimativa'], true)) {

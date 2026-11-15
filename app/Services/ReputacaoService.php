@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
-use App\Enums\ElogioMotorista;
 use App\Enums\TipoDocumentoMotorista;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
+use App\Support\ImagemDoSelo;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder;
@@ -149,9 +149,11 @@ class ReputacaoService
     }
 
     /**
-     * Quantas vezes cada elogio foi marcado nas avaliações reais.
+     * Selos que o motorista recebeu, com quantas vezes cada um foi escolhido nas
+     * avaliações reais, do mais recebido para o menos. Conta nova não tem nenhum;
+     * selo desativado na gestão continua aparecendo para quem já o recebeu.
      *
-     * @return list<array{chave: string, titulo: string, descricao: string, quantidade: int}>
+     * @return list<array{chave: string, titulo: string, descricao: string|null, icone: string, imagem: string|null, quantidade: int}>
      */
     public function elogiosDoMotorista(int $motoristaId): array
     {
@@ -163,12 +165,27 @@ class ReputacaoService
             }
         }
 
-        return array_map(fn (ElogioMotorista $elogio): array => [
-            'chave' => $elogio->value,
-            'titulo' => $elogio->titulo(),
-            'descricao' => $elogio->descricao(),
-            'quantidade' => (int) ($contagem[$elogio->value] ?? 0),
-        ], ElogioMotorista::cases());
+        if ($contagem === []) {
+            return [];
+        }
+
+        $selos = DB::table('selos_avaliacao')->where('perfil_alvo', 'motorista')->whereIn('chave', array_keys($contagem))->get()->keyBy('chave');
+
+        return collect($contagem)
+            ->filter(fn (int $quantidade, string $chave) => $selos->has($chave))
+            ->map(fn (int $quantidade, string $chave): array => [
+                'chave' => $chave,
+                'titulo' => (string) $selos[$chave]->titulo,
+                'descricao' => $selos[$chave]->descricao,
+                'icone' => (string) $selos[$chave]->icone,
+                'imagem' => ImagemDoSelo::url($selos[$chave]->imagem_path, $selos[$chave]->imagem_url),
+                'quantidade' => $quantidade,
+                '_ordem' => (int) $selos[$chave]->ordem,
+            ])
+            ->sort(fn (array $a, array $b) => [$b['quantidade'], $a['_ordem']] <=> [$a['quantidade'], $b['_ordem']])
+            ->map(fn (array $linha): array => array_diff_key($linha, ['_ordem' => 0]))
+            ->values()
+            ->all();
     }
 
     /**
@@ -189,7 +206,7 @@ class ReputacaoService
             ->select(['avaliacoes_corridas.id', 'avaliacoes_corridas.nota', 'avaliacoes_corridas.comentario', 'avaliacoes_corridas.elogios', 'avaliacoes_corridas.created_at', 'passageiros.name as autor'])
             ->paginate($porPagina);
 
-        $titulos = collect(ElogioMotorista::cases())->mapWithKeys(fn (ElogioMotorista $e) => [$e->value => $e->titulo()]);
+        $titulos = DB::table('selos_avaliacao')->where('perfil_alvo', 'motorista')->pluck('titulo', 'chave');
 
         $pagina->setCollection($pagina->getCollection()->map(fn ($linha): array => [
             'id' => (int) $linha->id,

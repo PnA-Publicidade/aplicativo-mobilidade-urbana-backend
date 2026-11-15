@@ -4,7 +4,6 @@
 
 namespace App\Http\Controllers\Corrida;
 
-use App\Enums\ElogioMotorista;
 use App\Http\Controllers\Controller;
 use App\Models\AvaliacoesCorrida;
 use App\Models\Corrida;
@@ -16,8 +15,9 @@ use App\Support\PerfilLogado;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class AvaliacoesCorridaController extends Controller
@@ -126,9 +126,9 @@ class AvaliacoesCorridaController extends Controller
             'corrida_id' => 'required|integer',
             'nota' => 'required|integer|min:1|max:5',
             'comentario' => 'nullable|string|max:1000',
-            // elogios ao motorista, marcados pelo passageiro
-            'elogios' => 'nullable|array|max:'.count(ElogioMotorista::cases()),
-            'elogios.*' => ['string', Rule::in(ElogioMotorista::valores())],
+            // selos (elogios) escolhidos: o passageiro elogia o motorista e vice-versa
+            'elogios' => 'nullable|array|max:20',
+            'elogios.*' => 'string|max:60',
         ]);
 
         $corrida = $this->corridasDoUsuario($request)
@@ -160,13 +160,25 @@ class AvaliacoesCorridaController extends Controller
             return response()->json(['message' => 'Você já avaliou esta corrida.'], 409);
         }
 
-        // elogio é do passageiro para o motorista; o motorista não elogia o passageiro
-        $elogios = $papel === 'passageiro' ? array_values(array_unique($dados['elogios'] ?? [])) : [];
+        // cada lado elogia com os selos de quem recebe (gerenciados na gestão)
+        $elogios = array_values(array_unique($dados['elogios'] ?? []));
+        $validos = DB::table('selos_avaliacao')
+            ->where('perfil_alvo', $papel === 'passageiro' ? 'motorista' : 'passageiro')
+            ->where('ativo', true)
+            ->whereIn('chave', $elogios)
+            ->pluck('chave')->all();
+
+        if (count($validos) !== count($elogios)) {
+            throw ValidationException::withMessages(['elogios' => 'Escolha apenas selos da lista.']);
+        }
+
+        // só o passageiro escreve comentário; o motorista avalia com nota e selos
+        $comentario = $papel === 'passageiro' ? ($dados['comentario'] ?? null) : null;
 
         if ($avaliacaoExistente !== null) {
             $avaliacaoExistente->update([
                 'nota' => $dados['nota'],
-                'comentario' => $dados['comentario'] ?? null,
+                'comentario' => $comentario,
                 'elogios' => $elogios === [] ? null : $elogios,
                 'automatica' => false,
             ]);
@@ -181,7 +193,7 @@ class AvaliacoesCorridaController extends Controller
             'avaliador_id' => PerfilLogado::de($request)->id,
             'tipo_usuario' => $papel,
             'nota' => $dados['nota'],
-            'comentario' => $dados['comentario'] ?? null,
+            'comentario' => $comentario,
             'elogios' => $elogios === [] ? null : $elogios,
             'automatica' => false,
         ]);
