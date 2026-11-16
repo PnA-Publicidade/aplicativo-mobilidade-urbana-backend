@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Passageiro\PerfilPassageiroController;
 use App\Http\Controllers\Usuario\LocaisPopularesController;
 use App\Http\Controllers\Usuario\LocaisSalvosController;
 use App\Http\Controllers\Usuario\PerfilController;
@@ -8,6 +9,8 @@ use Illuminate\Support\Facades\Route;
 
 // já dentro do grupo dos apps (ver routes/api.php): o perfil logado, motorista ou passageiro
 Route::get('usuario-logado', [PerfilController::class, 'usuarioLogado']);
+// perfil do passageiro: nota, selos recebidos, conquistas e verificações (também alimenta o perfil público)
+Route::get('passageiro/me/perfil', [PerfilPassageiroController::class, 'mostrar']);
 Route::put('usuario-alterar-foto-perfil/{id}', [PerfilController::class, 'alterarFotoPerfil']);
 Route::delete('usuario-remover-foto-perfil/{id}', [PerfilController::class, 'removerFotoPerfil']);
 // telefone e e-mail: código primeiro, troca depois

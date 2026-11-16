@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
-use App\Enums\ElogioMotorista;
 use App\Enums\TipoDocumentoMotorista;
 use App\Models\Motorista;
 use App\Models\MotoristaDocumento;
+use App\Models\Passageiro;
+use App\Support\ImagemDoSelo;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder;
@@ -24,9 +25,6 @@ use Illuminate\Support\Facades\DB;
  */
 class ReputacaoService
 {
-    /** Notas mínimas para um comentário aparecer como nota de agradecimento. */
-    private const NOTA_MINIMA_DO_AGRADECIMENTO = 4;
-
     public static function notaBase(): float
     {
         return (float) config('avaliacoes.nota_base', 5.0);
@@ -129,7 +127,23 @@ class ReputacaoService
      */
     public function distribuicaoDoMotorista(int $motoristaId): array
     {
-        $ultimas = $this->avaliacoesReaisDoMotorista($motoristaId)
+        return $this->distribuicaoDe($this->avaliacoesReaisDoMotorista($motoristaId));
+    }
+
+    /**
+     * O mesmo gráfico de estrelas para o passageiro: as notas que os motoristas deram a ele.
+     *
+     * @return array<int, int> nota => quantidade
+     */
+    public function distribuicaoDoPassageiro(int $passageiroId): array
+    {
+        return $this->distribuicaoDe($this->avaliacoesReaisDoPassageiro($passageiroId));
+    }
+
+    /** @return array<int, int> */
+    private function distribuicaoDe(Builder $avaliacoes): array
+    {
+        $ultimas = $avaliacoes
             ->orderByDesc('avaliacoes_corridas.id')
             ->limit($this->janelaDaMedia())
             ->select('avaliacoes_corridas.nota');
@@ -149,30 +163,65 @@ class ReputacaoService
     }
 
     /**
-     * Quantas vezes cada elogio foi marcado nas avaliações reais.
+     * Selos que o motorista recebeu, com quantas vezes cada um foi escolhido nas
+     * avaliações reais, do mais recebido para o menos. Conta nova não tem nenhum;
+     * selo desativado na gestão continua aparecendo para quem já o recebeu.
      *
-     * @return list<array{chave: string, titulo: string, descricao: string, quantidade: int}>
+     * @return list<array{chave: string, titulo: string, descricao: string|null, icone: string, imagem: string|null, quantidade: int}>
      */
     public function elogiosDoMotorista(int $motoristaId): array
     {
+        return $this->elogiosDe($this->avaliacoesReaisDoMotorista($motoristaId), 'motorista');
+    }
+
+    /**
+     * Os selos que os motoristas deram ao passageiro, do mais recebido para o menos.
+     *
+     * @return list<array{chave: string, titulo: string, descricao: string|null, icone: string, imagem: string|null, quantidade: int}>
+     */
+    public function elogiosDoPassageiro(int $passageiroId): array
+    {
+        return $this->elogiosDe($this->avaliacoesReaisDoPassageiro($passageiroId), 'passageiro');
+    }
+
+    /**
+     * @return list<array{chave: string, titulo: string, descricao: string|null, icone: string, imagem: string|null, quantidade: int}>
+     */
+    private function elogiosDe(Builder $avaliacoes, string $perfilAlvo): array
+    {
         $contagem = [];
 
-        foreach ($this->avaliacoesReaisDoMotorista($motoristaId)->whereNotNull('avaliacoes_corridas.elogios')->pluck('avaliacoes_corridas.elogios') as $elogios) {
+        foreach ($avaliacoes->whereNotNull('avaliacoes_corridas.elogios')->pluck('avaliacoes_corridas.elogios') as $elogios) {
             foreach ((array) json_decode((string) $elogios, true) as $chave) {
                 $contagem[$chave] = ($contagem[$chave] ?? 0) + 1;
             }
         }
 
-        return array_map(fn (ElogioMotorista $elogio): array => [
-            'chave' => $elogio->value,
-            'titulo' => $elogio->titulo(),
-            'descricao' => $elogio->descricao(),
-            'quantidade' => (int) ($contagem[$elogio->value] ?? 0),
-        ], ElogioMotorista::cases());
+        if ($contagem === []) {
+            return [];
+        }
+
+        $selos = DB::table('selos_avaliacao')->where('perfil_alvo', $perfilAlvo)->whereIn('chave', array_keys($contagem))->get()->keyBy('chave');
+
+        return collect($contagem)
+            ->filter(fn (int $quantidade, string $chave) => $selos->has($chave))
+            ->map(fn (int $quantidade, string $chave): array => [
+                'chave' => $chave,
+                'titulo' => (string) $selos[$chave]->titulo,
+                'descricao' => $selos[$chave]->descricao,
+                'icone' => (string) $selos[$chave]->icone,
+                'imagem' => ImagemDoSelo::url($selos[$chave]->imagem_path, $selos[$chave]->imagem_url),
+                'quantidade' => $quantidade,
+                '_ordem' => (int) $selos[$chave]->ordem,
+            ])
+            ->sort(fn (array $a, array $b) => [$b['quantidade'], $a['_ordem']] <=> [$a['quantidade'], $b['_ordem']])
+            ->map(fn (array $linha): array => array_diff_key($linha, ['_ordem' => 0]))
+            ->values()
+            ->all();
     }
 
     /**
-     * Comentários de quem deu nota 4 ou 5, do mais novo para o mais antigo. Só o
+     * Comentários que os passageiros deixaram ao avaliar (de qualquer nota), do mais novo para o mais antigo. Só o
      * primeiro nome de quem avaliou aparece.
      *
      * @return LengthAwarePaginator<int, mixed>
@@ -181,7 +230,6 @@ class ReputacaoService
     {
         $pagina = $this->avaliacoesReaisDoMotorista($motoristaId)
             ->join('passageiros', 'passageiros.id', '=', 'corridas.passageiro_id')
-            ->where('avaliacoes_corridas.nota', '>=', self::NOTA_MINIMA_DO_AGRADECIMENTO)
             ->whereNotNull('avaliacoes_corridas.comentario')
             ->where('avaliacoes_corridas.comentario', '!=', '')
             ->orderByDesc('avaliacoes_corridas.created_at')
@@ -189,15 +237,24 @@ class ReputacaoService
             ->select(['avaliacoes_corridas.id', 'avaliacoes_corridas.nota', 'avaliacoes_corridas.comentario', 'avaliacoes_corridas.elogios', 'avaliacoes_corridas.created_at', 'passageiros.name as autor'])
             ->paginate($porPagina);
 
-        $titulos = collect(ElogioMotorista::cases())->mapWithKeys(fn (ElogioMotorista $e) => [$e->value => $e->titulo()]);
+        $selos = DB::table('selos_avaliacao')->where('perfil_alvo', 'motorista')->get()->keyBy('chave');
 
         $pagina->setCollection($pagina->getCollection()->map(fn ($linha): array => [
             'id' => (int) $linha->id,
             'autor' => $this->primeiroNome((string) $linha->autor),
             'nota' => (int) $linha->nota,
             'comentario' => (string) $linha->comentario,
+            // os selos que a mesma avaliação recebeu: títulos e, para o app mostrar como no perfil, ícone e imagem
             'elogios' => collect((array) json_decode((string) $linha->elogios, true))
-                ->map(fn ($chave) => $titulos[$chave] ?? null)->filter()->values()->all(),
+                ->map(fn ($chave) => $selos[$chave]->titulo ?? null)->filter()->values()->all(),
+            'selos' => collect((array) json_decode((string) $linha->elogios, true))
+                ->filter(fn ($chave) => $selos->has($chave))
+                ->map(fn ($chave): array => [
+                    'chave' => (string) $chave,
+                    'titulo' => (string) $selos[$chave]->titulo,
+                    'icone' => (string) $selos[$chave]->icone,
+                    'imagem' => ImagemDoSelo::url($selos[$chave]->imagem_path, $selos[$chave]->imagem_url),
+                ])->values()->all(),
             'quando' => $linha->created_at === null ? null : Carbon::parse($linha->created_at)->toIso8601String(),
         ]));
 
@@ -227,6 +284,48 @@ class ReputacaoService
         }
 
         return $selos;
+    }
+
+    /**
+     * Conquistas do passageiro; de cada tipo vale só o maior nível.
+     *
+     * @return list<array{chave: string, titulo: string, subtitulo: string, icone: string}>
+     */
+    public function selosDoPassageiro(int $corridas, int $mesesNaConta): array
+    {
+        $selos = [];
+
+        if (($n = $this->maiorNivel($corridas, [10, 50, 100, 500, 1000])) !== null) {
+            $selos[] = ['chave' => "corridas_$n", 'titulo' => "$n corridas finalizadas", 'subtitulo' => 'Passageiro frequente', 'icone' => 'car'];
+        }
+
+        if (($n = $this->maiorNivel($mesesNaConta, [6, 12, 24, 36])) !== null) {
+            $titulo = $n < 12 ? "$n meses no app" : ($n === 12 ? '1 ano no app' : ($n / 12).' anos no app');
+            $selos[] = ['chave' => "tempo_$n", 'titulo' => $titulo, 'subtitulo' => 'Passageiro de casa', 'icone' => 'medal'];
+        }
+
+        return $selos;
+    }
+
+    /**
+     * O que o app sabe conferir do passageiro: o que ele já cadastrou.
+     *
+     * @return list<array{chave: string, titulo: string, descricao: string, icone: string, ok: bool}>
+     */
+    public function verificacoesDoPassageiro(Passageiro $passageiro): array
+    {
+        return [
+            ['chave' => 'telefone', 'titulo' => 'Telefone cadastrado', 'icone' => 'call-outline', 'descricao' => 'O motorista pode falar com você durante a corrida', 'ok' => filled($passageiro->telefone)],
+            ['chave' => 'email', 'titulo' => 'E-mail cadastrado', 'icone' => 'mail-outline', 'descricao' => 'Recibos e avisos chegam no seu e-mail', 'ok' => filled($passageiro->email)],
+            ['chave' => 'foto', 'titulo' => 'Foto de perfil', 'icone' => 'image-outline', 'descricao' => 'O motorista reconhece você no embarque', 'ok' => filled($passageiro->foto)],
+            ['chave' => 'cpf', 'titulo' => 'CPF informado', 'icone' => 'id-card-outline', 'descricao' => 'Identificação da conta', 'ok' => filled($passageiro->cpf)],
+        ];
+    }
+
+    /** Meses completos desde que a conta do passageiro foi criada. */
+    public function mesesNaConta(Passageiro $passageiro, ?CarbonInterface $agora = null): int
+    {
+        return $passageiro->created_at === null ? 0 : (int) Carbon::parse($passageiro->created_at)->diffInMonths($agora ?? now());
     }
 
     /**
@@ -279,6 +378,16 @@ class ReputacaoService
     public function totalDeCincoEstrelas(int $motoristaId): int
     {
         return $this->avaliacoesReaisDoMotorista($motoristaId)->where('avaliacoes_corridas.nota', 5)->count();
+    }
+
+    /** As notas que os motoristas deram ao passageiro (tipo_usuario "motorista"), sem as automáticas. */
+    private function avaliacoesReaisDoPassageiro(int $passageiroId): Builder
+    {
+        return DB::table('avaliacoes_corridas')
+            ->join('corridas', 'corridas.id', '=', 'avaliacoes_corridas.corrida_id')
+            ->where('avaliacoes_corridas.tipo_usuario', 'motorista')
+            ->where('avaliacoes_corridas.automatica', false)
+            ->where('corridas.passageiro_id', $passageiroId);
     }
 
     private function avaliacoesReaisDoMotorista(int $motoristaId): Builder

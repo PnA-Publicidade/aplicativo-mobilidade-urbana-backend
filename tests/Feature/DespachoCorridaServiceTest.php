@@ -15,6 +15,7 @@ use App\Models\Passageiro;
 use App\Models\StatusBusca;
 use App\Models\Tarifa;
 use App\Models\Veiculo;
+use App\Services\BloqueioUsuarioService;
 use App\Services\DespachoCorridaService;
 use App\Services\EstimarChegadaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -896,4 +897,37 @@ it('aceita registrar_padrao=true na query, como o axios do app envia', function 
         ->getJson('/api/corrida-para-avaliar?perfil=passageiro&registrar_padrao=true')
         ->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id);
+});
+
+it('a chamada de um passageiro bloqueado pelo motorista não toca nem pode ser aceita', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $bloqueado = criarPassageiroDespacho();
+    $outro = criarPassageiroDespacho();
+    $corridaBloqueada = criarCorridaDespacho($bloqueado);
+    $corridaLivre = criarCorridaDespacho($outro);
+
+    // o bloqueio nasce na avaliação de uma corrida finalizada entre os dois
+    $feita = criarCorridaDespacho($bloqueado, status: 'finalizada', motoristaId: $motorista->id);
+    app(BloqueioUsuarioService::class)->bloquear('motorista', $motorista->id, $feita->id);
+
+    $servico = app(DespachoCorridaService::class);
+    $ids = $servico->ofertasPara($motorista)->pluck('corrida_id');
+
+    expect($ids->contains($corridaBloqueada->id))->toBeFalse()
+        ->and($ids->contains($corridaLivre->id))->toBeTrue();
+    expect(fn () => $servico->validarMotoristaParaCorrida($motorista, $corridaBloqueada))
+        ->toThrow(RuntimeException::class, 'não está disponível');
+});
+
+it('o motorista bloqueado pelo passageiro deixa de receber as chamadas dele', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $passageiro = criarPassageiroDespacho();
+    $corrida = criarCorridaDespacho($passageiro);
+    $feita = criarCorridaDespacho($passageiro, status: 'finalizada', motoristaId: $motorista->id);
+
+    expect(app(DespachoCorridaService::class)->ofertasPara($motorista)->pluck('corrida_id')->contains($corrida->id))->toBeTrue();
+
+    app(BloqueioUsuarioService::class)->bloquear('passageiro', $passageiro->id, $feita->id);
+
+    expect(app(DespachoCorridaService::class)->ofertasPara($motorista)->pluck('corrida_id')->contains($corrida->id))->toBeFalse();
 });
