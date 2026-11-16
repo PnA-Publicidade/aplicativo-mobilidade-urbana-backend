@@ -37,7 +37,17 @@ class ConfiguracoesController extends Controller
             'restricao_nota_motorista_duracoes_dias' => ['sometimes', 'string', 'regex:/^[1-9]\d{0,2}(,[1-9]\d{0,2}){0,5}$/'],
             'restricao_nota_passageiro_suspensao_dias' => 'sometimes|integer|between:1,365',
             'restricao_nota_passageiro_bloqueio_apos' => 'sometimes|integer|between:0,20',
+            'gorjeta_ativa' => 'sometimes|boolean',
+            'gorjeta_sugestoes' => 'sometimes|array|size:3',
+            'gorjeta_sugestoes.*' => 'required|numeric|decimal:0,2|between:0.5,500|distinct',
         ]);
+
+        if (isset($dados['gorjeta_ativa']) || isset($dados['gorjeta_sugestoes'])) {
+            $this->configuracoes->definirGorjeta(
+                isset($dados['gorjeta_ativa']) ? $request->boolean('gorjeta_ativa') : null,
+                $dados['gorjeta_sugestoes'] ?? null,
+            );
+        }
 
         foreach (['restricao_nota_minimo_avaliacoes', 'restricao_nota_prazo_dias', 'restricao_nota_passageiro_suspensao_dias', 'restricao_nota_passageiro_bloqueio_apos'] as $chave) {
             if (isset($dados[$chave])) {
@@ -107,11 +117,14 @@ class ConfiguracoesController extends Controller
     }
 
     /**
-     * @return array<string, int|float|bool|string>
+     * @return array<string, int|float|bool|string|array<int, float>>
      */
     private function resposta(): array
     {
         return [
+            'gorjeta_ativa' => $this->configuracoes->gorjetaAtiva(),
+            'gorjeta_sugestoes' => $this->configuracoes->gorjetaSugestoes(),
+            'gorjeta_sugestoes_padrao' => array_map('floatval', explode(',', ConfiguracaoPlataformaService::GORJETA_SUGESTOES_PADRAO)),
             'taxa_finalizacao_minima' => $this->configuracoes->taxaFinalizacaoMinima(),
             'taxa_finalizacao_minima_padrao' => ConfiguracaoPlataformaService::TAXA_FINALIZACAO_MINIMA_PADRAO,
             'taxas_cancelamento_passageiro_segundos' => $this->configuracoes->cancelamentoPassageiroSegundos(),

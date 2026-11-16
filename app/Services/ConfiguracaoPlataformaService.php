@@ -200,6 +200,46 @@ class ConfiguracaoPlataformaService
         return $dias === [] ? [5, 10, 15] : $dias;
     }
 
+    // gorjeta que o passageiro deixa ao avaliar: liga/desliga e 3 valores sugeridos (R$)
+    public const GORJETA_ATIVA = 'gorjeta_ativa';
+
+    public const GORJETA_SUGESTOES = 'gorjeta_sugestoes';
+
+    public const GORJETA_SUGESTOES_PADRAO = '2,5,10';
+
+    public function gorjetaAtiva(): bool
+    {
+        return $this->inteiro(self::GORJETA_ATIVA, 0) === 1;
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    public function gorjetaSugestoes(): array
+    {
+        $texto = DB::table('configuracoes_plataforma')->where('chave', self::GORJETA_SUGESTOES)->value('valor')
+            ?? self::GORJETA_SUGESTOES_PADRAO;
+
+        return array_map(fn (string $valor): float => round((float) $valor, 2), explode(',', (string) $texto));
+    }
+
+    /**
+     * @param  array<int, float|int|string>  $sugestoes
+     */
+    public function definirGorjeta(?bool $ativa, ?array $sugestoes): void
+    {
+        if ($ativa !== null) {
+            $this->definir(self::GORJETA_ATIVA, $ativa ? 1 : 0);
+        }
+
+        if ($sugestoes !== null) {
+            $this->definirTexto(
+                self::GORJETA_SUGESTOES,
+                implode(',', array_map(fn ($valor): string => number_format((float) $valor, 2, '.', ''), $sugestoes)),
+            );
+        }
+    }
+
     public function definirTexto(string $chave, string $valor): void
     {
         DB::table('configuracoes_plataforma')->updateOrInsert(
