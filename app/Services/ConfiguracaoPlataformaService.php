@@ -11,6 +11,21 @@ class ConfiguracaoPlataformaService
     // sem ajuste salvo, vale o padrão da operação
     public const TAXA_FINALIZACAO_MINIMA_PADRAO = 70;
 
+    // preço dinâmico: tamanho (raio, em metros) do hexágono da grade de demanda
+    public const DINAMICA_TAMANHO_CELULA_METROS = 'dinamica_tamanho_celula_metros';
+
+    public const DINAMICA_TAMANHO_CELULA_METROS_PADRAO = 600;
+
+    public function dinamicaTamanhoCelulaMetros(): int
+    {
+        return max(200, $this->inteiro(self::DINAMICA_TAMANHO_CELULA_METROS, self::DINAMICA_TAMANHO_CELULA_METROS_PADRAO));
+    }
+
+    public function definirDinamicaTamanhoCelulaMetros(int $metros): void
+    {
+        $this->definir(self::DINAMICA_TAMANHO_CELULA_METROS, $metros);
+    }
+
     public function taxaFinalizacaoMinima(): int
     {
         $valor = DB::table('configuracoes_plataforma')

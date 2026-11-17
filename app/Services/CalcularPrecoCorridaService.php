@@ -9,6 +9,7 @@ class CalcularPrecoCorridaService
     private const TAXA_MAXIMA = 0.95;
 
     /**
+     * @param  array{modo?: string, multiplicador?: float|int|string, valor_adicional?: float|int|string}|null  $dinamica  preço dinâmico da origem (ver DinamicaService)
      * @return array<string, mixed>
      */
     public function executar(
@@ -16,7 +17,8 @@ class CalcularPrecoCorridaService
         float $distanciaKm,
         float $tempoMin,
         float $tempoEsperaMin = 0.0,
-        float $diferencaNegociada = 0.0
+        float $diferencaNegociada = 0.0,
+        ?array $dinamica = null
     ): array {
         $distanciaKm = max($distanciaKm, 0.0);
         $tempoMin = max($tempoMin, 0.0);
@@ -34,8 +36,24 @@ class CalcularPrecoCorridaService
 
         $valorCorridaCentavos = max($subtotalCentavos, $minimoCentavos);
 
+        // preço dinâmico: sobre o valor da corrida (já com o mínimo), antes da diferença negociada
+        $dinamicaCentavos = 0;
+        $multiplicadorDinamico = null;
+        $modoDinamico = null;
+
+        if ($dinamica !== null) {
+            if (($dinamica['modo'] ?? null) === 'valor_fixo') {
+                $dinamicaCentavos = max($this->centavos((float) ($dinamica['valor_adicional'] ?? 0)), 0);
+                $modoDinamico = 'valor_fixo';
+            } else {
+                $multiplicadorDinamico = max((float) ($dinamica['multiplicador'] ?? 1), 1.0);
+                $dinamicaCentavos = (int) round($valorCorridaCentavos * ($multiplicadorDinamico - 1));
+                $modoDinamico = 'multiplicador';
+            }
+        }
+
         $valorMotoristaCentavos = max(
-            $valorCorridaCentavos + $this->centavos($diferencaNegociada),
+            $valorCorridaCentavos + $dinamicaCentavos + $this->centavos($diferencaNegociada),
             0
         );
 
@@ -69,6 +87,9 @@ class CalcularPrecoCorridaService
                 'subtotal' => $this->reais($subtotalCentavos),
                 'valor_minimo_corrida' => $this->reais($minimoCentavos),
                 'aplicou_minimo' => $aplicouMinimo,
+                'valor_dinamico' => $this->reais($dinamicaCentavos),
+                'multiplicador_dinamico' => $multiplicadorDinamico,
+                'modo_dinamico' => $dinamicaCentavos > 0 ? $modoDinamico : null,
                 'diferenca_negociada' => round($diferencaNegociada, 2),
             ],
             'valores' => [

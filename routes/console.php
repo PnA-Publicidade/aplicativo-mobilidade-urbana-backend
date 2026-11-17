@@ -5,6 +5,7 @@
 use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Services\Compartilhada\SalaCompartilhadaService;
 use App\Services\DespachoCorridaService;
+use App\Services\DinamicaService;
 use App\Services\PagamentoCorridaService;
 use App\Services\RestricaoNotaService;
 use App\Services\RestricaoTaxaService;
@@ -39,6 +40,12 @@ Schedule::call(fn () => app(SalaCompartilhadaService::class)->processar())
 Schedule::call(fn () => app(GrupoCompartilhadoService::class)->dissolverSemMotorista())
     ->name('compartilhada:dissolver-sem-motorista')
     ->everyTenSeconds()
+    ->withoutOverlapping();
+
+// preço dinâmico: refaz os hexágonos de alta demanda a cada minuto
+Schedule::call(fn () => app(DinamicaService::class)->recalcularTodas())
+    ->name('dinamica:recalcular')
+    ->everyMinute()
     ->withoutOverlapping();
 
 // estornos que ficaram sem resposta da AbacatePay
