@@ -104,6 +104,7 @@ class SolicitarCorridaService
                 'convidado_nome' => $convidado['nome'] ?? null,
                 'convidado_telefone' => $convidado['telefone'] ?? null,
                 'cidade_id' => $cotacao->cidade_id,
+                'multiplicador_dinamico' => $categoria['composicao']['multiplicador_dinamico'] ?? null,
                 // pré-pago: invisível aos motoristas até o pagamento ser confirmado
                 'status_corrida' => $prePago ? 'aguardando_pagamento' : 'solicitada',
                 'status_negociacao' => $negociada ? 'em_negociacao' : null,
@@ -312,6 +313,7 @@ class SolicitarCorridaService
             'valor_por_minuto_espera' => $composicao['valor_por_minuto_espera'] ?? 0,
             'taxa_espera' => 0,
             'valor_sem_dinamica' => $composicao['subtotal'],
+            'valor_dinamico_aplicado' => $composicao['valor_dinamico'] ?? 0,
             'valor_base_calculado' => $composicao['subtotal'],
             'valor_ajuste_negociado' => $composicao['diferenca_negociada'],
             'valor_pago_passageiro' => $valores['valor_passageiro'],

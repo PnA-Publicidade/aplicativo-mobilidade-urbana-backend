@@ -446,7 +446,13 @@ class AlterarCorridaService
             throw new RuntimeException('Não foi possível calcular a rota até o novo destino.', 422);
         }
 
-        $preco = $this->calcularPrecoCorridaService->executar($tarifa, $distanciaKm, $tempoMin);
+        // a corrida mantém o preço dinâmico com que foi pedida
+        $preco = $this->calcularPrecoCorridaService->executar(
+            $tarifa,
+            $distanciaKm,
+            $tempoMin,
+            dinamica: app(DinamicaService::class)->daCorrida($corrida),
+        );
         $financeiro = $corrida->corrida_financeiro()->first();
 
         $esperaMotoristaCentavos = (int) round((float) ($financeiro->taxa_espera ?? 0) * 100);
@@ -481,7 +487,12 @@ class AlterarCorridaService
                 continue;
             }
 
-            $preco = $this->calcularPrecoCorridaService->executar($tarifa, $distanciaKm, $tempoMin);
+            $preco = $this->calcularPrecoCorridaService->executar(
+                $tarifa,
+                $distanciaKm,
+                $tempoMin,
+                dinamica: app(DinamicaService::class)->daCorrida($corrida),
+            );
 
             $opcao->update([
                 'valor_passageiro' => $preco['valores']['valor_passageiro'],

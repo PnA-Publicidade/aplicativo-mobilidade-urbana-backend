@@ -3,6 +3,7 @@
 // CODEX: 4 linhas alteradas; publica as rotas autenticadas dos veículos da própria conta.
 
 use App\Http\Controllers\Motorista\CarteiraMotoristaController;
+use App\Http\Controllers\Motorista\DinamicaController;
 use App\Http\Controllers\Motorista\GanhosController;
 use App\Http\Controllers\Motorista\MetodosResgateController;
 use App\Http\Controllers\Motorista\MotoristaCadastroController;
@@ -26,6 +27,7 @@ Route::get('motorista/me/veiculos', [MotoristaController::class, 'meusVeiculos']
 Route::put('motorista/me/veiculo-ativo', [MotoristaController::class, 'selecionarMeuVeiculo']);
 Route::post('motorista/me/veiculos', [MotoristaController::class, 'cadastrarMeuVeiculo']);
 Route::delete('motorista/me/veiculos/{veiculo}', [MotoristaController::class, 'removerMeuVeiculo'])->whereNumber('veiculo');
+Route::get('motorista/me/dinamica', [DinamicaController::class, 'mostrar']);
 Route::get('motorista/me/estatisticas', [MotoristaController::class, 'estatisticas']);
 Route::get('motorista/me/taxa-finalizacao', [MotoristaController::class, 'taxaFinalizacao']);
 Route::get('motorista/me/taxa-aceitacao', [MotoristaController::class, 'taxaAceitacao']);

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Gorjeta;
 use App\Models\Motorista;
 use App\Models\Saque;
 use Illuminate\Database\Query\Builder;
@@ -38,7 +39,10 @@ class CarteiraMotoristaService
         $taxasDeCancelamento = (float) $this->canceladasComTaxa($motorista)
             ->sum('corrida_financeiros.valor_liquido_motorista');
 
-        return round($creditos + $taxasDeCancelamento - $taxasEmDinheiro - $sacado, 2);
+        // gorjeta vai inteira para o motorista, em qualquer forma de pagamento da corrida
+        $gorjetas = (float) Gorjeta::where('motorista_id', $motorista->id)->sum('valor');
+
+        return round($creditos + $taxasDeCancelamento + $gorjetas - $taxasEmDinheiro - $sacado, 2);
     }
 
     /**
@@ -132,11 +136,26 @@ class CarteiraMotoristaService
                 'quando' => (string) $saque->created_at,
             ]);
 
+        $gorjetas = Gorjeta::where('motorista_id', $motorista->id)
+            ->latest('id')
+            ->limit($limite)
+            ->get()
+            ->map(fn (Gorjeta $gorjeta): array => [
+                'tipo' => 'gorjeta',
+                'id' => $gorjeta->id,
+                'descricao' => 'Gorjeta',
+                'detalhe' => 'Deixada pelo passageiro',
+                'valor' => round((float) $gorjeta->valor, 2),
+                'recebido_em_maos' => null,
+                'status' => null,
+                'quando' => (string) $gorjeta->created_at,
+            ]);
+
         // extrato: do mais novo para o mais velho, cada linha com o saldo que
         // ficou depois dela (o mais novo termina no saldo atual)
         $saldo = $this->saldo($motorista);
 
-        return $corridas->concat($cancelamentos)->concat($saques)
+        return $corridas->concat($cancelamentos)->concat($gorjetas)->concat($saques)
             ->sortByDesc('quando')
             ->take($limite)
             ->values()

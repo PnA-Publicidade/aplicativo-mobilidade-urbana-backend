@@ -11,6 +11,21 @@ class ConfiguracaoPlataformaService
     // sem ajuste salvo, vale o padrão da operação
     public const TAXA_FINALIZACAO_MINIMA_PADRAO = 70;
 
+    // preço dinâmico: tamanho (raio, em metros) do hexágono da grade de demanda
+    public const DINAMICA_TAMANHO_CELULA_METROS = 'dinamica_tamanho_celula_metros';
+
+    public const DINAMICA_TAMANHO_CELULA_METROS_PADRAO = 600;
+
+    public function dinamicaTamanhoCelulaMetros(): int
+    {
+        return max(200, $this->inteiro(self::DINAMICA_TAMANHO_CELULA_METROS, self::DINAMICA_TAMANHO_CELULA_METROS_PADRAO));
+    }
+
+    public function definirDinamicaTamanhoCelulaMetros(int $metros): void
+    {
+        $this->definir(self::DINAMICA_TAMANHO_CELULA_METROS, $metros);
+    }
+
     public function taxaFinalizacaoMinima(): int
     {
         $valor = DB::table('configuracoes_plataforma')
@@ -198,6 +213,46 @@ class ConfiguracaoPlataformaService
         $dias = array_values(array_filter(array_map('intval', explode(',', (string) ($texto ?? self::RESTRICAO_DURACOES_DIAS_PADRAO))), fn (int $d) => $d > 0));
 
         return $dias === [] ? [5, 10, 15] : $dias;
+    }
+
+    // gorjeta que o passageiro deixa ao avaliar: liga/desliga e 3 valores sugeridos (R$)
+    public const GORJETA_ATIVA = 'gorjeta_ativa';
+
+    public const GORJETA_SUGESTOES = 'gorjeta_sugestoes';
+
+    public const GORJETA_SUGESTOES_PADRAO = '2,5,10';
+
+    public function gorjetaAtiva(): bool
+    {
+        return $this->inteiro(self::GORJETA_ATIVA, 0) === 1;
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    public function gorjetaSugestoes(): array
+    {
+        $texto = DB::table('configuracoes_plataforma')->where('chave', self::GORJETA_SUGESTOES)->value('valor')
+            ?? self::GORJETA_SUGESTOES_PADRAO;
+
+        return array_map(fn (string $valor): float => round((float) $valor, 2), explode(',', (string) $texto));
+    }
+
+    /**
+     * @param  array<int, float|int|string>  $sugestoes
+     */
+    public function definirGorjeta(?bool $ativa, ?array $sugestoes): void
+    {
+        if ($ativa !== null) {
+            $this->definir(self::GORJETA_ATIVA, $ativa ? 1 : 0);
+        }
+
+        if ($sugestoes !== null) {
+            $this->definirTexto(
+                self::GORJETA_SUGESTOES,
+                implode(',', array_map(fn ($valor): string => number_format((float) $valor, 2, '.', ''), $sugestoes)),
+            );
+        }
     }
 
     public function definirTexto(string $chave, string $valor): void

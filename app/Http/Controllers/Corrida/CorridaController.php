@@ -18,6 +18,7 @@ use App\Services\Compartilhada\GrupoCompartilhadoService;
 use App\Services\Compartilhada\SalaCompartilhadaService;
 use App\Services\ContabilizarEsperaCorridaService;
 use App\Services\DespachoCorridaService;
+use App\Services\DinamicaService;
 use App\Services\EstimarChegadaService;
 use App\Services\EstimarRotaService;
 use App\Services\ObterNavegacaoService;
@@ -943,12 +944,20 @@ class CorridaController extends Controller
             return response()->json(['message' => 'Nenhuma tarifa ativa para este momento.'], 422);
         }
 
+        // preço dinâmico: vale o do hexágono de onde a corrida sai
+        $origem = collect($dados['enderecos'])->sortBy('order')->first();
+        $dinamica = app(DinamicaService::class)->paraOrigem(
+            (float) $origem['latitude'],
+            (float) $origem['longitude'],
+        );
+
         $categorias = $tarifas
             ->map(fn ($tarifa) => $this->calcularPrecoCorridaService->executar(
                 tarifa: $tarifa,
                 distanciaKm: $distanciaKm,
                 tempoMin: $tempoMin,
-                tempoEsperaMin: (float) ($dados['tempo_espera_min'] ?? 0)
+                tempoEsperaMin: (float) ($dados['tempo_espera_min'] ?? 0),
+                dinamica: $dinamica,
             ))
             ->values();
 

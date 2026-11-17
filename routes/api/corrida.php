@@ -10,6 +10,7 @@ use App\Http\Controllers\Corrida\CobrancaCartaoController;
 use App\Http\Controllers\Corrida\CobrancaPixController;
 use App\Http\Controllers\Corrida\CorridaController;
 use App\Http\Controllers\Corrida\CorridaMotoristaController;
+use App\Http\Controllers\Corrida\GorjetaController;
 use App\Http\Controllers\Corrida\NegociacaoCorridaController;
 use Illuminate\Support\Facades\Route;
 
@@ -74,6 +75,9 @@ Route::get('corridas-negociada', [CorridaController::class, 'simularCorridaNegoc
 Route::get('corrida-para-avaliar', [AvaliacoesCorridaController::class, 'pendente']);
 Route::apiResource('avaliacoes-corridas', AvaliacoesCorridaController::class)
     ->only(['store']);
+// gorjeta ao avaliar: configuração (ligada? valores sugeridos) e envio pelo passageiro
+Route::get('gorjeta-configuracao', [GorjetaController::class, 'configuracao']);
+Route::post('corridas/{corrida}/gorjeta', [GorjetaController::class, 'store'])->whereNumber('corrida')->middleware('throttle:20,1');
 // selos que dá para escolher ao avaliar e bloqueio entre motorista e passageiro
 Route::get('selos-avaliacao', [BloqueiosUsuariosController::class, 'selos']);
 Route::get('bloqueios-usuarios', [BloqueiosUsuariosController::class, 'index']);
