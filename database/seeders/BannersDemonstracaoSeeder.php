@@ -43,8 +43,8 @@ class BannersDemonstracaoSeeder extends Seeder
         }
 
         foreach (self::BANNERS as $banner) {
-            $jaExiste = BannerPublicidade::where('cidade_id', $cidade->id)
-                ->where('titulo', $banner['titulo'])
+            $jaExiste = BannerPublicidade::where('titulo', $banner['titulo'])
+                ->whereHas('cidades', fn ($consulta) => $consulta->whereKey($cidade->id))
                 ->exists();
 
             if ($jaExiste) {
@@ -55,8 +55,7 @@ class BannersDemonstracaoSeeder extends Seeder
             $caminho = config('publicidade.pasta').'/'.Str::uuid().'.png';
             Storage::disk($disco)->put($caminho, (string) file_get_contents($origem), 'public');
 
-            BannerPublicidade::create([
-                'cidade_id' => $cidade->id,
+            $criado = BannerPublicidade::create([
                 'titulo' => $banner['titulo'],
                 'name' => $banner['arquivo'],
                 'type' => 'png',
@@ -64,6 +63,7 @@ class BannersDemonstracaoSeeder extends Seeder
                 'size' => (int) filesize($origem),
                 'path' => $caminho,
             ]);
+            $criado->cidades()->attach($cidade->id);
         }
     }
 

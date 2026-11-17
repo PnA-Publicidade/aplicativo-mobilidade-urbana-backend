@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\BannerPublicidade;
-use App\Models\Cidade;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -18,7 +17,6 @@ class BannerPublicidadeFactory extends Factory
     public function definition(): array
     {
         return [
-            'cidade_id' => Cidade::factory(),
             'titulo' => fake()->sentence(4),
             'name' => 'banner.png',
             'type' => 'png',

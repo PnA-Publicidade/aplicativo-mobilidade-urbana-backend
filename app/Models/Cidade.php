@@ -6,7 +6,7 @@ use Database\Factories\CidadeFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * Município do IBGE: tarifa por cidade, corrida, publicidade e a cidade do motorista.
@@ -62,10 +62,10 @@ class Cidade extends Model
     }
 
     /**
-     * @return HasMany<BannerPublicidade, $this>
+     * @return BelongsToMany<BannerPublicidade, $this>
      */
-    public function banners(): HasMany
+    public function banners(): BelongsToMany
     {
-        return $this->hasMany(BannerPublicidade::class);
+        return $this->belongsToMany(BannerPublicidade::class, 'banner_publicidade_cidade')->withTimestamps();
     }
 }

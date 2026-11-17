@@ -16,10 +16,16 @@ it('mostra ao app só os banners da cidade onde o usuário está', function () {
     // os municípios do IBGE já vêm da migration
     $portoVelho = Cidade::where('ibge', 1100205)->firstOrFail();
     $ariquemes = Cidade::where('ibge', 1100023)->firstOrFail();
-    $antigo = BannerPublicidade::factory()->create(['cidade_id' => $portoVelho->id, 'titulo' => 'Antigo']);
-    $novo = BannerPublicidade::factory()->create(['cidade_id' => $portoVelho->id, 'titulo' => 'Novo']);
-    BannerPublicidade::factory()->create(['cidade_id' => $ariquemes->id]);
-    BannerPublicidade::factory()->create(['cidade_id' => $portoVelho->id])->delete();
+    $antigo = BannerPublicidade::factory()->create(['titulo' => 'Antigo']);
+    $antigo->cidades()->attach($portoVelho->id);
+    $novo = BannerPublicidade::factory()->create(['titulo' => 'Novo']);
+    $novo->cidades()->attach([$portoVelho->id, $ariquemes->id]);
+    BannerPublicidade::factory()->create()->cidades()->attach($ariquemes->id);
+    $apagado = BannerPublicidade::factory()->create();
+    $apagado->cidades()->attach($portoVelho->id);
+    $apagado->delete();
+    // sem cidade nenhuma, não aparece em lugar algum
+    BannerPublicidade::factory()->create();
 
     $this->actingAs(Passageiro::factory()->create(), 'passageiros')
         ->getJson('/api/banners?cidade=porto velho&uf=ro')
@@ -31,9 +37,20 @@ it('mostra ao app só os banners da cidade onde o usuário está', function () {
         ->assertJsonPath('data.1.id', $antigo->id);
 });
 
+it('o mesmo banner aparece em todas as cidades dele', function () {
+    $portoVelho = Cidade::where('ibge', 1100205)->firstOrFail();
+    $ariquemes = Cidade::where('ibge', 1100023)->firstOrFail();
+    $banner = BannerPublicidade::factory()->create();
+    $banner->cidades()->attach([$portoVelho->id, $ariquemes->id]);
+    $this->actingAs(Passageiro::factory()->create(), 'passageiros');
+
+    $this->getJson('/api/banners?cidade=Porto Velho')->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $banner->id);
+    $this->getJson('/api/banners?cidade=Ariquemes')->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $banner->id);
+});
+
 it('cidade fora do cadastro ou de outra UF não tem banner', function () {
     $cidade = Cidade::where('ibge', 1100205)->firstOrFail();
-    BannerPublicidade::factory()->create(['cidade_id' => $cidade->id]);
+    BannerPublicidade::factory()->create()->cidades()->attach($cidade->id);
     $this->actingAs(Passageiro::factory()->create(), 'passageiros');
 
     $this->getJson('/api/banners?cidade=Manaus')->assertOk()->assertJsonCount(0, 'data');

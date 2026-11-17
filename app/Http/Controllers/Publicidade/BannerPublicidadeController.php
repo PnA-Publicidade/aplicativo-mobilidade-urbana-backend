@@ -43,7 +43,7 @@ class BannerPublicidadeController extends Controller
 
         return response()->json([
             'message' => 'Banner restaurado.',
-            'data' => $banner->load('cidade:id,nome,uf'),
+            'data' => $banner->load('cidades:id,nome,uf'),
         ]);
     }
 
@@ -59,14 +59,15 @@ class BannerPublicidadeController extends Controller
         ]);
 
         return $consulta
-            ->with('cidade:id,nome,uf')
-            ->when(isset($filtros['cidade_id']), fn (Builder $filtrada) => $filtrada->where('cidade_id', $filtros['cidade_id']))
+            ->with('cidades:id,nome,uf')
+            ->when(isset($filtros['cidade_id']), fn (Builder $filtrada) => $filtrada->whereHas('cidades', fn (Builder $cidade) => $cidade->whereKey($filtros['cidade_id'])))
             ->latest('id')
             ->paginate($filtros['per_page'] ?? 15);
     }
 
     /**
-     * multipart/form-data: cidade_id, titulo e arquivo (imagem).
+     * multipart/form-data: titulo e arquivo (imagem). As cidades vão depois,
+     * por PUT publicidades/{banner}/cidades.
      */
     public function store(StoreBannerPublicidadeRequest $request): JsonResponse
     {
@@ -74,20 +75,19 @@ class BannerPublicidadeController extends Controller
         $arquivo = $request->file('arquivo');
 
         $banner = BannerPublicidade::create([
-            'cidade_id' => $request->integer('cidade_id'),
             'titulo' => $request->string('titulo')->trim()->toString(),
             ...$this->guardarImagem($arquivo),
         ]);
 
         return response()->json([
             'message' => 'Banner cadastrado.',
-            'data' => $banner->load('cidade:id,nome,uf'),
+            'data' => $banner->load('cidades:id,nome,uf'),
         ], 201);
     }
 
     public function show(BannerPublicidade $banner): BannerPublicidade
     {
-        return $banner->load('cidade:id,nome,uf');
+        return $banner->load('cidades:id,nome,uf');
     }
 
     /**
@@ -95,7 +95,7 @@ class BannerPublicidadeController extends Controller
      */
     public function update(UpdateBannerPublicidadeRequest $request, BannerPublicidade $banner): JsonResponse
     {
-        $dados = $request->safe()->only(['cidade_id', 'titulo']);
+        $dados = $request->safe()->only(['titulo']);
         $imagemAntiga = null;
 
         if ($request->hasFile('arquivo')) {
@@ -114,7 +114,26 @@ class BannerPublicidadeController extends Controller
 
         return response()->json([
             'message' => 'Banner atualizado.',
-            'data' => $banner->load('cidade:id,nome,uf'),
+            'data' => $banner->load('cidades:id,nome,uf'),
+        ]);
+    }
+
+    /**
+     * Define de uma vez as cidades onde o banner aparece (troca a lista
+     * inteira; lista vazia tira o banner de todas).
+     */
+    public function definirCidades(Request $request, BannerPublicidade $banner): JsonResponse
+    {
+        $dados = $request->validate([
+            'cidade_ids' => 'present|array',
+            'cidade_ids.*' => 'integer|distinct|exists:cidades,id',
+        ]);
+
+        $banner->cidades()->sync($dados['cidade_ids']);
+
+        return response()->json([
+            'message' => 'Cidades do banner atualizadas.',
+            'data' => $banner->load('cidades:id,nome,uf'),
         ]);
     }
 

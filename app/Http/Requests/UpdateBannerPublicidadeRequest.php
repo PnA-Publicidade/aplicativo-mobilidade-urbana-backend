@@ -25,7 +25,6 @@ class UpdateBannerPublicidadeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'cidade_id' => 'sometimes|required|integer|exists:cidades,id',
             'titulo' => 'sometimes|required|string|max:120',
             'arquivo' => 'sometimes|required|file|mimes:jpg,jpeg,png,webp|max:'.config('publicidade.tamanho_maximo_kb'),
         ];
