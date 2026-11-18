@@ -16,6 +16,7 @@ use App\Http\Controllers\Gestao\RestricoesMotoristasController;
 use App\Http\Controllers\Gestao\RestricoesNotaController;
 use App\Http\Controllers\Gestao\SaldoMotoristasController;
 use App\Http\Controllers\Gestao\SelosAvaliacaoController;
+use App\Http\Controllers\Gestao\SimulacaoChamadasController;
 use App\Http\Controllers\Gestao\TaxasMotoristasController;
 use App\Http\Controllers\Gestao\VeiculoUsuariosController;
 use App\Http\Controllers\Gestor\GestorController;
@@ -73,6 +74,11 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::post('dinamica/cidades/{cidade}/regioes', [DinamicaController::class, 'forcarRegiao'])->whereNumber('cidade')->middleware('throttle:30,1');
             Route::delete('dinamica/cidades/{cidade}/regioes/{regiao}', [DinamicaController::class, 'removerRegiao'])->whereNumber(['cidade', 'regiao']);
             Route::post('dinamica/cidades/{cidade}/recalcular', [DinamicaController::class, 'recalcular'])->whereNumber('cidade')->middleware('throttle:20,1');
+            // simulação de pedidos em Porto Velho para testar dinâmico e demanda (fora de produção)
+            Route::post('dinamica/simulacao/iniciar', [SimulacaoChamadasController::class, 'iniciar']);
+            Route::post('dinamica/simulacao/rodada', [SimulacaoChamadasController::class, 'rodada']);
+            Route::post('dinamica/simulacao/parar', [SimulacaoChamadasController::class, 'parar']);
+            Route::get('dinamica/simulacao/situacao', [SimulacaoChamadasController::class, 'situacao']);
             Route::get('configuracoes', [ConfiguracoesController::class, 'index']);
             Route::put('configuracoes', [ConfiguracoesController::class, 'update'])->middleware('throttle:20,1');
             Route::get('restricoes-motoristas', [RestricoesMotoristasController::class, 'index']);
