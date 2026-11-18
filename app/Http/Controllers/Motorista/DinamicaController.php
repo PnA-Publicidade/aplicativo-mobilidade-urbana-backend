@@ -32,6 +32,7 @@ class DinamicaController extends Controller
                 'modo' => null,
                 'raio_metros' => $this->dinamica->tamanhoCelula(),
                 'regioes' => [],
+                'demandas' => [],
             ]);
         }
 
@@ -40,6 +41,7 @@ class DinamicaController extends Controller
             'modo' => $cidade->modo,
             'raio_metros' => $this->dinamica->tamanhoCelula(),
             'regioes' => $this->dinamica->regioesParaMapa($cidade),
+            'demandas' => $this->dinamica->demandaParaMapa($cidade),
             'atualizado_em' => now()->toIso8601String(),
         ]);
     }

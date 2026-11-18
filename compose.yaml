@@ -76,6 +76,8 @@ services:
             TZ: '${CONTAINER_TIMEZONE:-America/Porto_Velho}'
             WWWUSER: '${WWWUSER}'
             LARAVEL_SAIL: 1
+            # o Reverb roda no container laravel.test, não neste: sem isto o aviso do mapa dinâmico (recalculado a cada minuto aqui) não sai
+            REVERB_HOST: laravel.test
         dns:
             - '1.1.1.1'
             - '8.8.8.8'

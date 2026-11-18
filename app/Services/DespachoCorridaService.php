@@ -876,6 +876,8 @@ class DespachoCorridaService
             'distancia_ate_origem_km' => round($distancia, 2),
             'distancia_corrida_km' => (float) $corrida->distancia_total,
             'valor_motorista' => $opcao->valor_motorista ?? (float) ($corrida->corrida_financeiro->valor_motorista ?? 0),
+            // chamada de região com preço dinâmico: quanto do valor vem do dinâmico (null = sem dinâmico)
+            'dinamico' => $this->dinamicoDaOferta($corrida, $opcao),
             'categoria' => $opcao?->produto?->nome,
             'prioritaria' => (bool) ($opcao->produto->prioritario ?? $corrida->produto->prioritario ?? false),
             'metodo_pagamento' => $corrida->metodo_pagamento,
@@ -901,6 +903,31 @@ class DespachoCorridaService
                 'passageiro_corridas' => 0,
                 'passageiro_novo' => true,
             ]),
+        ];
+    }
+
+    /**
+     * O dinâmico embutido no valor da chamada: o multiplicador e o valor em R$
+     * que ele soma. Com várias categorias no pedido vale o da categoria do
+     * motorista; sem dinâmico, null.
+     *
+     * @return array{multiplicador: float|null, valor: float}|null
+     */
+    private function dinamicoDaOferta(Corrida $corrida, ?CorridaOpcao $opcao): ?array
+    {
+        $composicao = is_array($opcao?->categoria) ? ($opcao->categoria['composicao'] ?? []) : [];
+
+        $valor = (float) ($composicao['valor_dinamico'] ?? $corrida->corrida_financeiro->valor_dinamico_aplicado ?? 0);
+
+        if ($valor <= 0) {
+            return null;
+        }
+
+        $multiplicador = $composicao['multiplicador_dinamico'] ?? $corrida->multiplicador_dinamico;
+
+        return [
+            'multiplicador' => $multiplicador === null ? null : round((float) $multiplicador, 2),
+            'valor' => round($valor, 2),
         ];
     }
 
