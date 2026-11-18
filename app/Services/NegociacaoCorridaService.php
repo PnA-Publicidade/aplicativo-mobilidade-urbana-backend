@@ -38,30 +38,35 @@ class NegociacaoCorridaService
     /**
      * @return array{valor_passageiro: float, valor_motorista: float, taxa_plataforma: float}
      */
-    public static function valoresPeloPassageiro(float $valorPassageiro, float $taxaPercentual): array
+    public static function valoresPeloPassageiro(float $valorPassageiro, float $taxaPercentual, float $taxaRegulacao = 0.0): array
     {
         $passageiro = (int) round($valorPassageiro * 100);
-        $motorista = (int) round($passageiro * (1 - self::taxa($taxaPercentual)));
+        $regulacao = min(max((int) round($taxaRegulacao * 100), 0), $passageiro);
+        // a regulação é paga por cima: o ganho do motorista sai do que sobra
+        $motorista = (int) round(($passageiro - $regulacao) * (1 - self::taxa($taxaPercentual)));
 
         return [
             'valor_passageiro' => $passageiro / 100,
             'valor_motorista' => $motorista / 100,
-            'taxa_plataforma' => ($passageiro - $motorista) / 100,
+            'taxa_plataforma' => ($passageiro - $regulacao - $motorista) / 100,
+            'taxa_regulacao' => $regulacao / 100,
         ];
     }
 
     /**
      * @return array{valor_passageiro: float, valor_motorista: float, taxa_plataforma: float}
      */
-    public static function valoresPeloMotorista(float $valorMotorista, float $taxaPercentual): array
+    public static function valoresPeloMotorista(float $valorMotorista, float $taxaPercentual, float $taxaRegulacao = 0.0): array
     {
         $motorista = (int) round($valorMotorista * 100);
-        $passageiro = (int) round($motorista / (1 - self::taxa($taxaPercentual)));
+        $regulacao = max((int) round($taxaRegulacao * 100), 0);
+        $semRegulacao = (int) round($motorista / (1 - self::taxa($taxaPercentual)));
 
         return [
-            'valor_passageiro' => $passageiro / 100,
+            'valor_passageiro' => ($semRegulacao + $regulacao) / 100,
             'valor_motorista' => $motorista / 100,
-            'taxa_plataforma' => ($passageiro - $motorista) / 100,
+            'taxa_plataforma' => ($semRegulacao - $motorista) / 100,
+            'taxa_regulacao' => $regulacao / 100,
         ];
     }
 
@@ -86,7 +91,11 @@ class NegociacaoCorridaService
             ), 422);
         }
 
-        $valores = self::valoresPeloPassageiro($valorOferecido, (float) $categoria['valores']['taxa_plataforma_percentual']);
+        $valores = self::valoresPeloPassageiro(
+            $valorOferecido,
+            (float) $categoria['valores']['taxa_plataforma_percentual'],
+            (float) ($categoria['valores']['taxa_regulacao'] ?? 0)
+        );
         $categoria['composicao']['diferenca_negociada'] = round(
             $valores['valor_motorista'] - (float) $categoria['valores']['valor_motorista'],
             2
@@ -119,7 +128,11 @@ class NegociacaoCorridaService
                 throw new RuntimeException('A proposta pode ser de até o dobro da oferta do passageiro.', 422);
             }
 
-            $valores = self::valoresPeloMotorista($valor, (float) $financeiro->taxa_plataforma_percentual);
+            $valores = self::valoresPeloMotorista(
+                $valor,
+                (float) $financeiro->taxa_plataforma_percentual,
+                (float) $financeiro->taxa_regulacao
+            );
 
             return CorridaNegociacoes::updateOrCreate(
                 ['corrida_id' => $corrida->id, 'motorista_id' => $motorista->id],
@@ -350,8 +363,8 @@ class NegociacaoCorridaService
                 'valor_pago_passageiro' => $proposta->valor_passageiro,
                 'valor_motorista' => $valorMotorista,
                 'valor_liquido_motorista' => $valorMotorista,
-                'taxa_plataforma_valor' => round((float) $proposta->valor_passageiro - $valorMotorista, 2),
-                'valor_repassado_plataforma' => round((float) $proposta->valor_passageiro - $valorMotorista, 2),
+                'taxa_plataforma_valor' => round((float) $proposta->valor_passageiro - (float) $financeiro->taxa_regulacao - $valorMotorista, 2),
+                'valor_repassado_plataforma' => round((float) $proposta->valor_passageiro - (float) $financeiro->taxa_regulacao - $valorMotorista, 2),
                 'valor_ajuste_negociado' => round($valorMotorista - (float) $financeiro->valor_base_calculado, 2),
             ]);
 

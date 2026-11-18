@@ -319,6 +319,7 @@ class SolicitarCorridaService
             'valor_pago_passageiro' => $valores['valor_passageiro'],
             'taxa_plataforma_valor' => $valores['taxa_plataforma'],
             'taxa_plataforma_percentual' => $valores['taxa_plataforma_percentual'],
+            'taxa_regulacao' => $valores['taxa_regulacao'] ?? 0,
             'valor_motorista' => $valores['valor_motorista'],
             'valor_liquido_motorista' => $valores['valor_motorista'],
             'valor_repassado_plataforma' => $valores['taxa_plataforma'],

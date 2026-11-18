@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Cidade;
 use App\Models\Tarifa;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -13,14 +14,25 @@ class ResolverTarifaService
      */
     public function paraTodosOsProdutos(?int $cidadeId, CarbonInterface $momento): Collection
     {
+        $estadoId = $cidadeId === null ? null : Cidade::query()->whereKey($cidadeId)->value('uf_id');
+
         return Tarifa::query()
             ->where('ativo', true)
             ->whereNotNull('produto_id')
-            ->where(fn ($q) => $q->where('cidade_id', $cidadeId)->orWhereNull('cidade_id'))
+            // cidade, estado da cidade ou geral (sem cidade e sem estado)
+            ->where(fn ($q) => $q
+                ->where('cidade_id', $cidadeId)
+                ->orWhere(fn ($q) => $q->whereNull('cidade_id')->where('estado_id', $estadoId))
+                ->orWhere(fn ($q) => $q->whereNull('cidade_id')->whereNull('estado_id')))
             ->with('produto')
             ->get()
             ->filter(fn (Tarifa $tarifa) => $this->valeAgora($tarifa, $momento))
-            ->sortByDesc(fn (Tarifa $tarifa) => $tarifa->cidade_id === null ? 0 : 1)
+            // a cidade tem prioridade absoluta sobre o estado, e o estado sobre o geral
+            ->sortByDesc(fn (Tarifa $tarifa) => match (true) {
+                $tarifa->cidade_id !== null => 2,
+                $tarifa->estado_id !== null => 1,
+                default => 0,
+            })
             ->groupBy('produto_id')
             ->map(fn (Collection $doProduto) => $doProduto->first())
             ->sortBy(fn (Tarifa $tarifa) => $tarifa->produto->ordem)

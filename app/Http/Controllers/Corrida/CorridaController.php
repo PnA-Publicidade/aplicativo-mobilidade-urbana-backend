@@ -143,6 +143,11 @@ class CorridaController extends Controller
             'per_page' => 'sometimes|integer|min:1|max:50',
         ]);
 
+        $ehMotorista = PerfilLogado::motorista($request) !== null;
+        $colunasFinanceiro = 'id,corrida_id,valor_pago_passageiro,tarifa_base,taxa_cancelamento,taxa_plataforma_valor,taxa_plataforma_percentual,valor_motorista,valor_liquido_motorista,metodo_pagamento'
+            // o detalhamento do ganho só vai para o motorista
+            .($ehMotorista ? ',valor_bruto,valor_por_km,valor_por_minuto,valor_dinamico_aplicado,taxa_espera,valor_ajuste_negociado,subsidiado_plataforma' : '');
+
         $pagina = $this->doUsuario($request)
             ->with([
                 'produto:id,nome',
@@ -150,12 +155,19 @@ class CorridaController extends Controller
                 'passageiro:id,name,foto',
                 'veiculo:id,modelo,cor,placa',
                 'corrida_destinos:id,corrida_id,tipo,ordem,endereco',
-                'corrida_financeiro:id,corrida_id,valor_pago_passageiro,tarifa_base,taxa_cancelamento,taxa_plataforma_valor,taxa_plataforma_percentual,valor_motorista,valor_liquido_motorista,metodo_pagamento',
+                'corrida_financeiro:'.$colunasFinanceiro,
             ])
             ->orderByDesc('id')
             ->paginate($dados['per_page'] ?? 20);
 
-        $pagina->getCollection()->each(fn (Corrida $corrida) => $this->reduzirNomes($corrida));
+        $pagina->getCollection()->each(function (Corrida $corrida) use ($ehMotorista) {
+            $this->reduzirNomes($corrida);
+
+            // o passageiro não recebe o detalhamento do ganho do motorista
+            if ($ehMotorista && $corrida->corrida_financeiro !== null) {
+                $corrida->setAttribute('detalhamento_motorista', $corrida->corrida_financeiro->detalhamentoParaMotorista());
+            }
+        });
 
         return $pagina;
     }
