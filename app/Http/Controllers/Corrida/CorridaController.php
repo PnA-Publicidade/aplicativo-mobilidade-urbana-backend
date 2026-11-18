@@ -579,6 +579,8 @@ class CorridaController extends Controller
             // Negocia: escolhe sozinho o primeiro motorista que aceitar a oferta
             'aceite_automatico' => 'nullable|boolean',
             'metodo_pagamento' => 'nullable|in:dinheiro,cartao,pix',
+            // cupom da carteira do passageiro (id de GET /cupons)
+            'cupom_id' => 'nullable|integer|min:1',
             'convidado' => 'nullable|array',
             'convidado.nome' => 'required_with:convidado|string|min:2|max:60',
             'convidado.telefone' => ['required_with:convidado', 'string', 'regex:/^\d{10,11}$/'],
@@ -608,7 +610,8 @@ class CorridaController extends Controller
                 metodoPagamento: $dados['metodo_pagamento'] ?? null,
                 convidado: $dados['convidado'] ?? null,
                 valorOferecido: isset($dados['valor_oferecido']) ? (float) $dados['valor_oferecido'] : null,
-                aceiteAutomatico: $request->boolean('aceite_automatico')
+                aceiteAutomatico: $request->boolean('aceite_automatico'),
+                cupomPassageiroId: isset($dados['cupom_id']) ? (int) $dados['cupom_id'] : null
             );
         } catch (RuntimeException $excecao) {
             $status = $excecao->getCode() === 409 ? 409 : 422;

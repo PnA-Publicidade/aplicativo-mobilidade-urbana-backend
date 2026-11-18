@@ -219,6 +219,9 @@ class PagamentoCorridaService
             return;
         }
 
+        // finalizada consome o cupom; cancelada sem taxa devolve à carteira
+        app(CupomService::class)->aoLiquidar($corrida);
+
         $cobrado = $this->valorCobrado($corrida);
         $pago = $this->valorPago($corrida);
         $saldo = round($cobrado - $pago, 2);
