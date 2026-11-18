@@ -163,6 +163,27 @@ class DespachoCorridaService
             ->orderBy('tempo_solicitacao')
             ->get();
 
+        // fila de prioridade: cada corrida toca para UM motorista por vez (o
+        // primeiro da fila, pelas regras da gestão); quem não está com a vez
+        // não vê a chamada, nem na lista
+        $fila = app(FilaDespachoService::class);
+        $vezes = collect();
+
+        if ($fila->ativa()) {
+            $raiosDaFila = $this->raiosDasTarifas($corridas);
+            $daFila = $corridas->filter(fn (Corrida $corrida) => $fila->seguePelaFila($corrida)
+                && $this->estaNoRaioAtual($corrida, $status, $raiosDaFila));
+
+            foreach ($daFila as $corrida) {
+                $fila->garantirVez($corrida);
+            }
+
+            $vezes = $fila->vezesDoMotorista($motorista->id, $daFila->pluck('id')->all());
+            $corridas = $corridas
+                ->filter(fn (Corrida $corrida) => ! $fila->seguePelaFila($corrida) || $vezes->has($corrida->id))
+                ->values();
+        }
+
         // no Negocia o motorista vê se já mandou proposta e de quanto
         if ($corridas->contains(fn (Corrida $corrida) => $corrida->status_negociacao === 'em_negociacao')) {
             $corridas->load(['negociacoes' => fn ($proposta) => $proposta->where('motorista_id', $motorista->id)]);
@@ -191,6 +212,36 @@ class DespachoCorridaService
                 fn (array $a, array $b) => $a['distancia_ate_origem_km'] <=> $b['distancia_ate_origem_km'],
             ])
             ->values();
+
+        if ($vezes->isNotEmpty()) {
+            // o cartão sabe até quando toca; a vez que não virou chamada (veículo
+            // que não atende, por exemplo) passa adiante sem pesar no motorista
+            foreach ($vezes as $corridaId => $vez) {
+                if (! $ofertas->contains('corrida_id', $corridaId)) {
+                    $fila->descartar($vez);
+                    $corridaDaVez = $corridas->firstWhere('id', $corridaId);
+
+                    if ($corridaDaVez !== null) {
+                        $fila->garantirVez($corridaDaVez);
+                    }
+                }
+            }
+
+            $ofertas = $ofertas->map(function (array $oferta) use ($vezes) {
+                $vez = $vezes->get($oferta['corrida_id']);
+
+                if ($vez === null) {
+                    return $oferta;
+                }
+
+                $expiraEm = Carbon::parse($vez->expira_em);
+
+                return $oferta + [
+                    'chamada_expira_em' => $expiraEm->toIso8601String(),
+                    'chamada_segundos' => max(0, (int) now()->diffInSeconds($expiraEm, false)),
+                ];
+            });
+        }
 
         // base da taxa de aceitação: cada corrida conta uma vez por motorista
         if ($ofertas->isNotEmpty()) {
@@ -224,6 +275,15 @@ class DespachoCorridaService
         if ($recusadas > 0) {
             app(TaxasMotoristaService::class)->registrarRecusa($motorista->id, $corridaId);
         }
+
+        // a vez passa para o próximo da fila, e este motorista descansa um pouco
+        app(FilaDespachoService::class)->recusou($motorista->id, $corridaId);
+    }
+
+    /** Raio de busca da corrida neste momento (cresce enquanto ela espera motorista). */
+    public function raioDeBuscaKm(Corrida $corrida): float
+    {
+        return $this->raioAtualKm($corrida, $this->raiosDasTarifas(collect([$corrida])));
     }
 
     /**
@@ -268,6 +328,8 @@ class DespachoCorridaService
                 ]);
                 CorridaFinanceiro::where('corrida_id', $corrida->id)
                     ->update(SolicitarCorridaService::valoresDaCategoria($opcao->categoria));
+                // o financeiro voltou ao valor cheio: o cupom, se houver, refaz o desconto
+                app(CupomService::class)->reaplicar($corrida);
             }
 
             $corrida->update([
@@ -284,6 +346,7 @@ class DespachoCorridaService
             $this->cancelarPropostasPendentes($motorista->id, $corrida->id);
 
             app(TaxasMotoristaService::class)->registrarAceite($corrida, $motorista->id);
+            app(FilaDespachoService::class)->aceitou($motorista->id, $corrida->id);
 
             $this->notificarPassageiro($corrida, 'Motorista a caminho', 'Seu motorista aceitou a corrida e está indo até o embarque.');
 
@@ -1272,8 +1335,23 @@ class DespachoCorridaService
         ]);
     }
 
+    /**
+     * Passageiro da massa de simulação: o embarque é fictício e o motorista de
+     * teste está longe dele, então a conferência de GPS não se aplica (nunca em
+     * produção).
+     */
+    private function ehPassageiroDeSimulacao(Corrida $corrida): bool
+    {
+        return ! app()->isProduction()
+            && str_ends_with((string) $corrida->passageiro()->value('email'), '@simulacao.test');
+    }
+
     private function validarChegadaNoEmbarque(Corrida $corrida, int $motoristaId): void
     {
+        if ($this->ehPassageiroDeSimulacao($corrida)) {
+            return;
+        }
+
         $origem = $corrida->corrida_destinos()->where('tipo', 'origem')->first();
         $posicao = StatusBusca::where('motorista_id', $motoristaId)->lockForUpdate()->first();
         $validadeSegundos = max(

@@ -12,6 +12,7 @@ use App\Http\Controllers\Gestao\GanhosMotoristasController;
 use App\Http\Controllers\Gestao\HistoricoCorridaSaldoController;
 use App\Http\Controllers\Gestao\PlataformaLucrosController;
 use App\Http\Controllers\Gestao\RegrasAcessoController;
+use App\Http\Controllers\Gestao\RegrasDespachoController;
 use App\Http\Controllers\Gestao\RestricoesMotoristasController;
 use App\Http\Controllers\Gestao\RestricoesNotaController;
 use App\Http\Controllers\Gestao\SaldoMotoristasController;
@@ -67,6 +68,9 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::post('ajuda/tickets/{ticket}/leitura', [TicketsController::class, 'leitura'])->whereNumber('ticket')->middleware('throttle:120,1');
             Route::post('ajuda/tickets/{ticket}/assumir', [TicketsController::class, 'assumir'])->whereNumber('ticket');
             Route::patch('ajuda/tickets/{ticket}/status', [TicketsController::class, 'status'])->whereNumber('ticket');
+            Route::get('despacho/regras', [RegrasDespachoController::class, 'index']);
+            Route::put('despacho/regras', [RegrasDespachoController::class, 'update'])->middleware('throttle:30,1');
+            Route::get('despacho/painel', [RegrasDespachoController::class, 'painel']);
             Route::get('dinamica', [DinamicaController::class, 'index']);
             Route::put('dinamica/geral', [DinamicaController::class, 'atualizarGeral'])->middleware('throttle:20,1');
             Route::put('dinamica/cidades/{cidade}', [DinamicaController::class, 'salvarCidade'])->whereNumber('cidade')->middleware('throttle:30,1');
@@ -75,6 +79,7 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::delete('dinamica/cidades/{cidade}/regioes/{regiao}', [DinamicaController::class, 'removerRegiao'])->whereNumber(['cidade', 'regiao']);
             Route::post('dinamica/cidades/{cidade}/recalcular', [DinamicaController::class, 'recalcular'])->whereNumber('cidade')->middleware('throttle:20,1');
             // simulação de pedidos em Porto Velho para testar dinâmico e demanda (fora de produção)
+            Route::get('dinamica/simulacao/cenarios', [SimulacaoChamadasController::class, 'cenarios']);
             Route::post('dinamica/simulacao/iniciar', [SimulacaoChamadasController::class, 'iniciar']);
             Route::post('dinamica/simulacao/rodada', [SimulacaoChamadasController::class, 'rodada']);
             Route::post('dinamica/simulacao/parar', [SimulacaoChamadasController::class, 'parar']);

@@ -11,6 +11,7 @@ use App\Models\Passageiro;
 use App\Support\Avisar;
 use App\Support\BairrosPortoVelho;
 use App\Support\GradeHexagonal;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -45,6 +46,43 @@ class SimulacaoChamadasService
     // quantas regiões quentes ao mesmo tempo, no máximo
     private const MAXIMO_DE_EVENTOS = 6;
 
+    /**
+     * Cenários de despacho: o que muda para o motorista em foco é quantas
+     * chamadas surgem, quantos concorrentes (motoristas simulados) estão por
+     * perto na fila de prioridade e quantos deles aceitam a chamada que recebem.
+     * Com poucos concorrentes a chamada toca mais para o foco; com muitos, ela
+     * costuma ser aceita por outro antes de chegar nele.
+     *
+     * @var array<string, array{nome: string, descricao: string, quantidade: int, foco_percentual: int, vida_pedido_min: int, concorrentes: int, aceitacao_concorrentes: int}>
+     */
+    public const CENARIOS = [
+        'madrugada' => [
+            'nome' => 'Madrugada',
+            'descricao' => 'Poucos pedidos e quase nenhum motorista por perto: quase toda chamada toca para o motorista em foco.',
+            'quantidade' => 4, 'foco_percentual' => 70, 'vida_pedido_min' => 4, 'concorrentes' => 1, 'aceitacao_concorrentes' => 20,
+        ],
+        'tranquilo' => [
+            'nome' => 'Dia tranquilo',
+            'descricao' => 'Movimento baixo e poucos concorrentes: uma chamada de vez em quando.',
+            'quantidade' => 8, 'foco_percentual' => 60, 'vida_pedido_min' => 3, 'concorrentes' => 3, 'aceitacao_concorrentes' => 30,
+        ],
+        'normal' => [
+            'nome' => 'Movimento normal',
+            'descricao' => 'Dia comum: a chamada passa por alguns concorrentes antes de chegar no foco, e uns aceitam.',
+            'quantidade' => 25, 'foco_percentual' => 45, 'vida_pedido_min' => 2, 'concorrentes' => 6, 'aceitacao_concorrentes' => 40,
+        ],
+        'pico' => [
+            'nome' => 'Horário de pico',
+            'descricao' => 'Muitos pedidos e muitos motoristas disputando: a fila anda rápido e a maioria é aceita por outros.',
+            'quantidade' => 60, 'foco_percentual' => 50, 'vida_pedido_min' => 2, 'concorrentes' => 12, 'aceitacao_concorrentes' => 65,
+        ],
+        'evento' => [
+            'nome' => 'Saída de evento',
+            'descricao' => 'Explosão de demanda numa região com dinâmico alto e muita concorrência.',
+            'quantidade' => 90, 'foco_percentual' => 70, 'vida_pedido_min' => 1, 'concorrentes' => 16, 'aceitacao_concorrentes' => 75,
+        ],
+    ];
+
     public function __construct(
         private readonly SolicitarCorridaService $solicitar,
         private readonly CalcularPrecoCorridaService $preco,
@@ -55,11 +93,12 @@ class SimulacaoChamadasService
     /**
      * Liga o dinâmico em Porto Velho e deixa só parte da frota da massa online,
      * repartida pelos bairros: com os 4 mil motoristas livres a demanda nunca
-     * passaria da oferta.
+     * passaria da oferta. Com um cenário, põe os concorrentes dele ao redor do
+     * motorista em foco e define quantos aceitam as chamadas.
      *
      * @return array<string, mixed>
      */
-    public function preparar(int $motoristasOnline, ?int $motoristaFocoId = null): array
+    public function preparar(int $motoristasOnline, ?int $motoristaFocoId = null, ?string $cenario = null): array
     {
         $this->exigirAmbienteDeTeste();
 
@@ -107,7 +146,49 @@ class SimulacaoChamadasService
         Cache::put(self::CHAVE_RODADA, 0, now()->addHours(6));
         Cache::forget(self::CHAVE_EVENTOS);
 
-        return ['dinamica_ativa' => true, 'motoristas_online' => min($motoristasOnline, $ids->count())];
+        $concorrentes = $this->posicionarConcorrentes($ids->take($motoristasOnline), $motoristaFocoId, self::CENARIOS[$cenario] ?? null);
+
+        return ['dinamica_ativa' => true, 'motoristas_online' => min($motoristasOnline, $ids->count()), 'concorrentes' => $concorrentes];
+    }
+
+    /**
+     * Junta os concorrentes do cenário num raio de ~1,5 km do motorista em foco
+     * e define a chance de aceitarem. Sem cenário, volta ao padrão.
+     *
+     * @param  Collection<int, int>  $online
+     * @param  array<string, mixed>|null  $cenario
+     */
+    private function posicionarConcorrentes($online, ?int $motoristaFocoId, ?array $cenario): int
+    {
+        Cache::put(
+            FilaDespachoService::CHAVE_ACEITACAO_SIMULADA,
+            $cenario['aceitacao_concorrentes'] ?? FilaDespachoService::ACEITACAO_SIMULADA_PADRAO,
+            now()->addHours(6),
+        );
+
+        $foco = $motoristaFocoId === null
+            ? null
+            : DB::table('status_buscas')->where('motorista_id', $motoristaFocoId)->first(['latitude', 'longitude']);
+
+        if ($cenario === null || $foco === null || $foco->latitude === null) {
+            return 0;
+        }
+
+        $perto = $online->take($cenario['concorrentes']);
+
+        $agora = now();
+
+        foreach ($perto as $motoristaId) {
+            DB::table('status_buscas')->where('motorista_id', $motoristaId)->update([
+                'latitude' => $this->jitter((float) $foco->latitude, 0.012),
+                'longitude' => $this->jitter((float) $foco->longitude, 0.012),
+                'disponivel' => true,
+                'visto_em' => $agora,
+                'updated_at' => $agora,
+            ]);
+        }
+
+        return $perto->count();
     }
 
     /**
@@ -204,6 +285,9 @@ class SimulacaoChamadasService
         }
 
         $this->dinamica->recalcularCidade($config);
+
+        // a fila de prioridade anda: concorrentes respondem e a vez passa adiante
+        app(FilaDespachoService::class)->avancarAbertas();
 
         return ['criadas' => $criadas, 'falhas' => $falhas, 'rodada' => $numero, 'expirados' => $expirados, 'cancelados' => $cancelados];
     }

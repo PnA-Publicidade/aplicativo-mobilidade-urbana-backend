@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\SimulacaoChamadasService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use RuntimeException;
 
 /**
@@ -21,12 +22,22 @@ class SimulacaoChamadasController extends Controller
         $dados = $request->validate([
             'motoristas_online' => 'sometimes|integer|between:0,4000',
             'motorista_foco_id' => 'nullable|integer|exists:motoristas,id',
+            'cenario' => ['nullable', 'string', Rule::in(array_keys(SimulacaoChamadasService::CENARIOS))],
         ]);
 
         return $this->responder(fn () => $this->simulacao->preparar(
             (int) ($dados['motoristas_online'] ?? 300),
             $dados['motorista_foco_id'] ?? null,
+            $dados['cenario'] ?? null,
         ));
+    }
+
+    /** Os cenários de despacho para o painel mostrar e preencher a simulação. */
+    public function cenarios(): JsonResponse
+    {
+        return response()->json(collect(SimulacaoChamadasService::CENARIOS)
+            ->map(fn (array $cenario, string $chave) => ['chave' => $chave] + $cenario)
+            ->values());
     }
 
     public function rodada(Request $request): JsonResponse

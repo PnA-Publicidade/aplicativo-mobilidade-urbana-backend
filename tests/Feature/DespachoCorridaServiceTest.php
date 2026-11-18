@@ -336,9 +336,9 @@ it('agrega reputacao e mantem consultas constantes com muitas ofertas', function
         ->and($ofertas->first()['passageiro_nota'])->toBe(5.0)
         ->and($ofertas->first()['passageiro_corridas'])->toBe(1)
         // fixas, não crescem com as ofertas: inclui o veículo do motorista e
-        // as categorias aceitas em cada pedido
+        // as categorias aceitas em cada pedido e a leitura das regras da fila
         ->and($maisConsultas)->toBe($consultas)
-        ->and($consultas)->toBeLessThanOrEqual(12);
+        ->and($consultas)->toBeLessThanOrEqual(13);
 });
 
 it('impede aceite direto por motorista offline', function () {
