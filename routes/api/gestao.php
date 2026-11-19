@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\GestorAutenticacaoController;
 use App\Http\Controllers\Corrida\ChatCorridaController;
 use App\Http\Controllers\Gestao\ConfiguracoesController;
 use App\Http\Controllers\Gestao\CorridasController;
+use App\Http\Controllers\Gestao\CuponsController;
 use App\Http\Controllers\Gestao\DicasAvaliacaoController;
 use App\Http\Controllers\Gestao\DinamicaController;
 use App\Http\Controllers\Gestao\FotoPerfilController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Gestao\RegrasDespachoController;
 use App\Http\Controllers\Gestao\RestricoesMotoristasController;
 use App\Http\Controllers\Gestao\RestricoesNotaController;
 use App\Http\Controllers\Gestao\SaldoMotoristasController;
+use App\Http\Controllers\Gestao\AvataresController;
 use App\Http\Controllers\Gestao\SelosAvaliacaoController;
 use App\Http\Controllers\Gestao\SimulacaoChamadasController;
 use App\Http\Controllers\Gestao\TaxasMotoristasController;
@@ -84,6 +86,10 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::post('dinamica/simulacao/rodada', [SimulacaoChamadasController::class, 'rodada']);
             Route::post('dinamica/simulacao/parar', [SimulacaoChamadasController::class, 'parar']);
             Route::get('dinamica/simulacao/situacao', [SimulacaoChamadasController::class, 'situacao']);
+            // cupons de desconto do passageiro: cadastro e entrega na carteira
+            Route::get('cupons', [CuponsController::class, 'index']);
+            Route::post('cupons/{cupom}/conceder', [CuponsController::class, 'conceder'])->whereNumber('cupom')->middleware('throttle:20,1');
+            Route::apiResource('cupons', CuponsController::class)->only(['store', 'update', 'destroy'])->parameters(['cupons' => 'cupom']);
             Route::get('configuracoes', [ConfiguracoesController::class, 'index']);
             Route::put('configuracoes', [ConfiguracoesController::class, 'update'])->middleware('throttle:20,1');
             Route::get('restricoes-motoristas', [RestricoesMotoristasController::class, 'index']);
@@ -96,6 +102,11 @@ Route::prefix('gestao')->name('gestao.')->group(function () {
             Route::post('selos-avaliacao', [SelosAvaliacaoController::class, 'store'])->middleware('throttle:30,1');
             Route::put('selos-avaliacao/{selo}', [SelosAvaliacaoController::class, 'update'])->whereNumber('selo')->middleware('throttle:60,1');
             Route::delete('selos-avaliacao/{selo}', [SelosAvaliacaoController::class, 'destroy'])->whereNumber('selo')->middleware('throttle:30,1');
+            // avatares de perfil (passageiro e motorista escolhem no lugar da foto)
+            Route::get('avatares', [AvataresController::class, 'index']);
+            Route::post('avatares', [AvataresController::class, 'store'])->middleware('throttle:60,1');
+            Route::put('avatares/{avatar}', [AvataresController::class, 'update'])->whereNumber('avatar')->middleware('throttle:60,1');
+            Route::delete('avatares/{avatar}', [AvataresController::class, 'destroy'])->whereNumber('avatar')->middleware('throttle:30,1');
             Route::get('dicas-avaliacao', [DicasAvaliacaoController::class, 'index']);
             Route::post('dicas-avaliacao', [DicasAvaliacaoController::class, 'store'])->middleware('throttle:30,1');
             Route::put('dicas-avaliacao/{dica}', [DicasAvaliacaoController::class, 'update'])->whereNumber('dica')->middleware('throttle:60,1');

@@ -13,6 +13,9 @@ Route::get('usuario-logado', [PerfilController::class, 'usuarioLogado']);
 Route::get('passageiro/me/perfil', [PerfilPassageiroController::class, 'mostrar']);
 Route::put('usuario-alterar-foto-perfil/{id}', [PerfilController::class, 'alterarFotoPerfil']);
 Route::delete('usuario-remover-foto-perfil/{id}', [PerfilController::class, 'removerFotoPerfil']);
+// avatares para escolher no lugar da foto (como os perfis da Netflix)
+Route::get('avatares', [PerfilController::class, 'avatares']);
+Route::put('usuario-alterar-avatar', [PerfilController::class, 'alterarAvatar']);
 // telefone e e-mail: código primeiro, troca depois
 Route::post('usuario-alterar-contato/codigo', [PerfilController::class, 'enviarCodigoDeContato'])->middleware('throttle:5,1,codigo-contato');
 Route::put('usuario-alterar-contato', [PerfilController::class, 'alterarContato'])->middleware('throttle:10,1,alterar-contato');

@@ -8,10 +8,12 @@ use App\Models\Passageiro;
 use App\Services\ReputacaoService;
 use App\Services\RestricaoNotaService;
 use App\Support\FotoDePerfil;
+use App\Support\ImagemDoAvatar;
 use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -52,6 +54,68 @@ class PerfilController extends Controller
             'user' => ['foto' => $perfil->getAttribute('foto')],
             'success' => true,
             'message' => 'Foto alterada com sucesso!',
+        ]);
+    }
+
+    /** os avatares ativos, na ordem da gestão (só o passageiro escolhe avatar) */
+    public function avatares(Request $request): JsonResponse
+    {
+        $perfil = $this->logado($request);
+        abort_unless($perfil instanceof Passageiro, 403, 'Avatares são só para passageiros.');
+
+        $avatares = DB::table('avatares')
+            ->where('ativo', true)
+            ->orderBy('colecao')->orderBy('ordem')->orderBy('id')
+            ->get()
+            ->map(fn ($avatar) => [
+                'id' => (int) $avatar->id,
+                'imagem' => ImagemDoAvatar::url($avatar->imagem_path, $avatar->imagem_url),
+            ])->values();
+
+        return response()->json([
+            'data' => $avatares,
+            'avatar_id' => $perfil->avatar_id,
+            'usar_avatar' => (bool) $perfil->usar_avatar,
+        ]);
+    }
+
+    /**
+     * Avatar do passageiro. `avatar_id` escolhe um (e já passa a usá-lo no lugar da foto)
+     * ou, nulo, tira o avatar; `usar_avatar` alterna entre o avatar e a foto sem perder nenhum.
+     */
+    public function alterarAvatar(Request $request): JsonResponse
+    {
+        $perfil = $this->logado($request);
+        abort_unless($perfil instanceof Passageiro, 403, 'Avatares são só para passageiros.');
+
+        $dados = $request->validate([
+            'avatar_id' => 'sometimes|nullable|integer',
+            'usar_avatar' => 'sometimes|boolean',
+        ]);
+
+        if (array_key_exists('avatar_id', $dados)) {
+            if ($dados['avatar_id'] === null) {
+                $perfil->avatar_id = null;
+                $perfil->usar_avatar = false;
+            } else {
+                $existe = DB::table('avatares')->where('id', $dados['avatar_id'])->where('ativo', true)->exists();
+                abort_unless($existe, 422, 'Este avatar não está disponível.');
+
+                $perfil->avatar_id = $dados['avatar_id'];
+                $perfil->usar_avatar = true;
+            }
+        } elseif (array_key_exists('usar_avatar', $dados)) {
+            abort_if($dados['usar_avatar'] && ImagemDoAvatar::doPerfil($perfil->avatar_id) === null, 422, 'Escolha um avatar primeiro.');
+
+            $perfil->usar_avatar = $dados['usar_avatar'];
+        }
+
+        $perfil->saveOrFail();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Avatar alterado.',
+            'user' => $perfil->fresh()?->dadosDoApp(),
         ]);
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Passageiro;
 
 use App\Http\Controllers\Controller;
 use App\Services\ReputacaoService;
+use App\Support\ImagemDoAvatar;
 use App\Support\PerfilLogado;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +29,7 @@ class PerfilPassageiroController extends Controller
 
         return response()->json([
             'nome' => $passageiro->name,
-            'foto' => $passageiro->foto,
+            'foto' => ImagemDoAvatar::fotoExibida($passageiro->foto, $passageiro->avatar_id, (bool) $passageiro->usar_avatar),
             ...$resumo,
             'corridas_para_deixar_de_ser_novo' => ReputacaoService::corridasParaDeixarDeSerNovo(),
             // a nota é a média das últimas avaliações reais dos motoristas, até este número

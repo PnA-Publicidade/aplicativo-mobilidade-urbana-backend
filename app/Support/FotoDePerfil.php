@@ -31,6 +31,10 @@ class FotoDePerfil
 
             $image->move(public_path('images'), $imageName);
             $perfil->setAttribute('foto', $host.'/images/'.$imageName);
+            // foto nova: o passageiro quer vê-la (o avatar escolhido fica guardado)
+            if (array_key_exists('usar_avatar', $perfil->getAttributes())) {
+                $perfil->setAttribute('usar_avatar', false);
+            }
             $perfil->saveOrFail();
         }
     }

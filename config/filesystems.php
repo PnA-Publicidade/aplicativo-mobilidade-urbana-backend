@@ -69,6 +69,14 @@ return [
             'throw' => true,
         ],
 
+        // imagens dos avatares de perfil (enviadas na gestão)
+        'avatares' => [
+            'driver' => 'local',
+            'root' => public_path('images/avatares'),
+            'visibility' => 'public',
+            'throw' => true,
+        ],
+
         'gestores_fotos' => [
             'driver' => 'local',
             'root' => public_path('images/gestores'),
