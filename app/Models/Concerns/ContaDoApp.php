@@ -2,6 +2,8 @@
 
 namespace App\Models\Concerns;
 
+use App\Support\FotoDePerfil;
+use App\Support\ImagemDoAvatar;
 use Illuminate\Support\Str;
 
 /**
@@ -49,7 +51,16 @@ trait ContaDoApp
             'telefone' => $this->getAttribute('telefone'),
             'cpf' => $this->getAttribute('cpf'),
             'data_nascimento' => $this->getAttribute('data_nascimento')?->format('Y-m-d'),
-            'foto' => $this->getAttribute('foto'),
+            // no app do passageiro o avatar escolhido tem prioridade sobre a foto
+            'foto' => ImagemDoAvatar::fotoExibida(
+                FotoDePerfil::enderecoAtual($this->getAttributes()['foto'] ?? null),
+                $this->getAttribute('avatar_id'),
+                (bool) $this->getAttribute('usar_avatar'),
+            ),
+            // a foto enviada e o avatar escolhido, para a tela de foto de perfil
+            'foto_original' => FotoDePerfil::enderecoAtual($this->getAttributes()['foto'] ?? null),
+            'avatar' => ImagemDoAvatar::doPerfil($this->getAttribute('avatar_id')),
+            'usar_avatar' => (bool) $this->getAttribute('usar_avatar'),
             'cidade' => $this->cidadeDoApp(),
             'status' => $this->getAttribute('status'),
             'perfil' => $this->perfilDoApp(),

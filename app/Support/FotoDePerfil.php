@@ -31,8 +31,29 @@ class FotoDePerfil
 
             $image->move(public_path('images'), $imageName);
             $perfil->setAttribute('foto', $host.'/images/'.$imageName);
+            // foto nova: o passageiro quer vê-la (o avatar escolhido fica guardado)
+            if (array_key_exists('usar_avatar', $perfil->getAttributes())) {
+                $perfil->setAttribute('usar_avatar', false);
+            }
             $perfil->saveOrFail();
         }
+    }
+
+    /**
+     * O endereço da foto com o servidor de agora. A foto fica gravada com o host de
+     * quando foi enviada (em desenvolvimento muda com o IP da máquina), e uma
+     * foto com host antigo não abre em lugar nenhum. O arquivo está em
+     * public/images, então vale o host da requisição atual.
+     */
+    public static function enderecoAtual(?string $url): ?string
+    {
+        $caminho = $url === null ? null : parse_url($url, PHP_URL_PATH);
+
+        if (! is_string($caminho) || ! preg_match('~^/images/[^/\\\\]+$~', $caminho)) {
+            return $url;
+        }
+
+        return url($caminho);
     }
 
     /** apaga o arquivo de uma foto trocada ou removida, só dentro de public/images */

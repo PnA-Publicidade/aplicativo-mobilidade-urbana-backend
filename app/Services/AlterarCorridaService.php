@@ -461,6 +461,7 @@ class AlterarCorridaService
             ? $esperaMotoristaCentavos
             : (int) round($esperaMotoristaCentavos / (1 - $percentual / 100));
 
+        $regulacaoCentavos = (int) round((float) ($preco['valores']['taxa_regulacao'] ?? 0) * 100);
         $motoristaCentavos = (int) round($preco['valores']['valor_motorista'] * 100) + $esperaMotoristaCentavos;
         $passageiroCentavos = (int) round($preco['valores']['valor_passageiro'] * 100) + $esperaPassageiroCentavos;
 
@@ -469,7 +470,8 @@ class AlterarCorridaService
             'tempo_min' => round($tempoMin, 2),
             'valor_motorista' => $motoristaCentavos / 100,
             'valor_pago_passageiro' => $passageiroCentavos / 100,
-            'taxa_plataforma' => ($passageiroCentavos - $motoristaCentavos) / 100,
+            'taxa_regulacao' => $regulacaoCentavos / 100,
+            'taxa_plataforma' => ($passageiroCentavos - $motoristaCentavos - $regulacaoCentavos) / 100,
             'composicao' => $preco['composicao'] + ['espera_motorista' => $esperaMotoristaCentavos / 100],
         ];
     }
@@ -549,6 +551,7 @@ class AlterarCorridaService
             'valor_base_calculado' => $subtotal,
             'valor_pago_passageiro' => $orcamento['valor_pago_passageiro'],
             'taxa_plataforma_valor' => $orcamento['taxa_plataforma'],
+            'taxa_regulacao' => $orcamento['taxa_regulacao'] ?? 0,
             'valor_motorista' => $orcamento['valor_motorista'],
             'valor_liquido_motorista' => $orcamento['valor_motorista'],
             'valor_repassado_plataforma' => $orcamento['taxa_plataforma'],

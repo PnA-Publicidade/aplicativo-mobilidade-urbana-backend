@@ -24,7 +24,7 @@ class AvaliacoesCorridaController extends Controller
 {
     private const RELACOES = [
         'motorista:id,name,foto',
-        'passageiro:id,name,foto',
+        'passageiro:id,name,foto,avatar_id,usar_avatar',
         'veiculo',
         'corrida_destinos',
         'corrida_financeiro',

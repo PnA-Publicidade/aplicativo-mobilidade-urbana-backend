@@ -27,7 +27,7 @@ class BannerDoAppController extends Controller
         $uf = isset($dados['uf']) ? mb_strtoupper($dados['uf']) : null;
 
         $banners = BannerPublicidade::query()
-            ->whereHas('cidade', fn (Builder $cidade) => $cidade
+            ->whereHas('cidades', fn (Builder $cidade) => $cidade
                 ->where('nome', trim($dados['cidade']))
                 ->when($uf !== null, fn (Builder $consulta) => $consulta->where('uf', $uf)))
             ->latest('id')

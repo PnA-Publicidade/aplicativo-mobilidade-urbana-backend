@@ -15,6 +15,8 @@ class DatabaseSeeder extends Seeder
             $this->call(DemonstracaoCompletaSeeder::class);
             // precisa de Porto Velho, que a demonstração acima cadastra
             $this->call(BannersDemonstracaoSeeder::class);
+            // cupom de boas-vindas para os passageiros que a demonstração cadastrou
+            $this->call(CuponsPassageirosSeeder::class);
 
             return;
         }

@@ -114,7 +114,8 @@ class PlataformaLucrosService
                         }
                         $antes = $registro->hash_origem ? $registro->attributesToArray() : null;
                         $registro->versao = $antes ? $registro->versao + 1 : 1;
-                        $registro->forceFill(['valor_bruto_passageiro' => $financeiro?->valor_pago_passageiro,
+                        $registro->forceFill([// a regulação é repassada, não é receita da plataforma
+                            'valor_bruto_passageiro' => $financeiro === null ? null : round((float) $financeiro->valor_pago_passageiro - (float) $financeiro->taxa_regulacao, 2),
                             'repasse_motorista' => $financeiro?->valor_liquido_motorista, 'comissao_prevista' => $financeiro?->taxa_plataforma_valor,
                             'subsidio_aplicado' => $financeiro?->subsidiado_plataforma, 'custos_confirmados' => [],
                             'custos_incluidos_repasse' => [], 'composicao_conferida' => false,

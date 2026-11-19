@@ -22,7 +22,6 @@ class StoreBannerPublicidadeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'cidade_id' => 'required|integer|exists:cidades,id',
             'titulo' => 'required|string|max:120',
             'arquivo' => 'required|file|mimes:jpg,jpeg,png,webp|max:'.config('publicidade.tamanho_maximo_kb'),
         ];

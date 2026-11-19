@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Events\DinamicaAtualizada;
 use App\Models\Corrida;
 use App\Models\DinamicaCidade;
 use App\Models\DinamicaRegiao;
 use App\Models\StatusBusca;
+use App\Support\Avisar;
 use App\Support\GradeHexagonal;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +23,9 @@ use Illuminate\Support\Facades\DB;
  */
 class DinamicaService
 {
+    // sem teto na cidade, o multiplicador ainda tem um limite de sanidade (coluna e gestão)
+    private const MULTIPLICADOR_LIMITE_DE_SEGURANCA = 10.0;
+
     // motorista que não manda a posição há mais que isto não conta como livre
     private const MOTORISTA_VISTO_MINUTOS = 2;
 
@@ -61,6 +66,7 @@ class DinamicaService
 
         if (! $cidade->ativo || ! $cidade->temCentro()) {
             DinamicaRegiao::query()->where('cidade_id', $cidade->cidade_id)->where('manual', false)->delete();
+            Avisar::semQuebrar(new DinamicaAtualizada);
 
             return;
         }
@@ -121,6 +127,9 @@ class DinamicaService
             ->where('manual', false)
             ->whereNotIn('celula', $mantidas)
             ->delete();
+
+        // o app do motorista não espera a consulta periódica para ver a mudança
+        Avisar::semQuebrar(new DinamicaAtualizada);
     }
 
     /**
@@ -138,7 +147,7 @@ class DinamicaService
         [$q, $r] = GradeHexagonal::celulaDe($latitude, $longitude, $tamanho);
         [$centroLatitude, $centroLongitude] = GradeHexagonal::centroDe($q, $r, $tamanho);
 
-        return DinamicaRegiao::query()->updateOrCreate(
+        $regiao = DinamicaRegiao::query()->updateOrCreate(
             ['celula' => GradeHexagonal::chave($q, $r)],
             [
                 'cidade_id' => $cidade->cidade_id,
@@ -147,12 +156,18 @@ class DinamicaService
                 'pedidos' => 0,
                 'motoristas' => 0,
                 'razao' => 0,
-                'multiplicador' => min(max($multiplicador, 1), $cidade->multiplicador_maximo),
+                'multiplicador' => $cidade->temTeto()
+                    ? min(max($multiplicador, 1), $cidade->multiplicador_maximo)
+                    : max($multiplicador, 1),
                 'valor_adicional' => min(max($valorAdicional, 0), $cidade->valor_maximo),
                 'manual' => true,
                 'expira_em' => $minutos === null ? null : now()->addMinutes($minutos),
             ],
         );
+
+        Avisar::semQuebrar(new DinamicaAtualizada);
+
+        return $regiao;
     }
 
     /**
@@ -227,6 +242,73 @@ class DinamicaService
     }
 
     /**
+     * Motoristas livres por hexágono, dentro do raio da cidade.
+     *
+     * @return array<string, int>
+     */
+    public function motoristasLivresPorCelula(DinamicaCidade $cidade): array
+    {
+        return $this->contarPorCelula($this->posicoesDeMotoristasLivres(), $cidade, $this->tamanhoCelula());
+    }
+
+    /**
+     * Pedidos abertos (na janela da cidade) por hexágono.
+     *
+     * @return array<string, int>
+     */
+    public function pedidosAbertosPorCelula(DinamicaCidade $cidade): array
+    {
+        return $this->contarPorCelula($this->origensDePedidosAbertos($cidade), $cidade, $this->tamanhoCelula());
+    }
+
+    /**
+     * A oferta que o dinâmico enxerga num hexágono: os motoristas livres dele e
+     * os das seis células vizinhas.
+     *
+     * @param  array<string, int>  $motoristasPorCelula
+     */
+    public function ofertaDaCelula(array $motoristasPorCelula, string $celula): int
+    {
+        [$q, $r] = GradeHexagonal::daChave($celula);
+
+        return ($motoristasPorCelula[$celula] ?? 0)
+            + array_sum(array_map(fn (string $v) => $motoristasPorCelula[$v] ?? 0, GradeHexagonal::vizinhas($q, $r)));
+    }
+
+    /**
+     * Demanda por hexágono para o mapa do motorista: toda célula com pedido
+     * aberto, mesmo sem tarifa. Mede os pedidos contra os motoristas livres da
+     * célula e das vizinhas, na mesma régua do dinâmico (0 a 1).
+     *
+     * @return list<array{celula: string, latitude: float, longitude: float, pedidos: int, demanda: float}>
+     */
+    public function demandaParaMapa(DinamicaCidade $cidade): array
+    {
+        $tamanho = $this->tamanhoCelula();
+        $pedidos = $this->contarPorCelula($this->origensDePedidosAbertos($cidade), $cidade, $tamanho);
+        $motoristas = $this->contarPorCelula($this->posicoesDeMotoristasLivres(), $cidade, $tamanho);
+        $teto = max((float) $cidade->razao_maxima, 0.01);
+        $demandas = [];
+
+        foreach ($pedidos as $celula => $total) {
+            [$q, $r] = GradeHexagonal::daChave($celula);
+            [$latitude, $longitude] = GradeHexagonal::centroDe($q, $r, $tamanho);
+            $oferta = ($motoristas[$celula] ?? 0)
+                + array_sum(array_map(fn (string $v) => $motoristas[$v] ?? 0, GradeHexagonal::vizinhas($q, $r)));
+
+            $demandas[] = [
+                'celula' => $celula,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'pedidos' => $total,
+                'demanda' => round(min(($total / max($oferta, 1)) / $teto, 1.0), 2),
+            ];
+        }
+
+        return $demandas;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function descreverRegiao(DinamicaRegiao $regiao, DinamicaCidade $cidade): array
@@ -234,8 +316,8 @@ class DinamicaService
         $porMultiplicador = $cidade->modo === DinamicaCidade::MODO_MULTIPLICADOR;
 
         $intensidade = $porMultiplicador
-            ? ($cidade->multiplicador_maximo > 1
-                ? ($regiao->multiplicador - 1) / ($cidade->multiplicador_maximo - 1)
+            ? ($cidade->escala() > 1
+                ? min(($regiao->multiplicador - 1) / ($cidade->escala() - 1), 1)
                 : 0)
             : ($cidade->valor_maximo > 0 ? $regiao->valor_adicional / $cidade->valor_maximo : 0);
 
@@ -281,15 +363,18 @@ class DinamicaService
     {
         $faixa = max($cidade->razao_maxima - $cidade->razao_minima, 0.01);
 
-        return min(max(($razao - $cidade->razao_minima) / $faixa, 0), 1);
+        $intensidade = max(($razao - $cidade->razao_minima) / $faixa, 0);
+
+        // com teto a intensidade para em 1; sem teto segue subindo com a demanda
+        return $cidade->temTeto() ? min($intensidade, 1) : $intensidade;
     }
 
     private function multiplicadorDaIntensidade(float $intensidade, DinamicaCidade $cidade): float
     {
-        $bruto = 1 + $intensidade * ($cidade->multiplicador_maximo - 1);
+        $bruto = max(round(1 + $intensidade * ($cidade->escala() - 1), 1), 1.1);
 
         // de 0,1 em 0,1, e nunca abaixo de 1,1: região esquentada tem que valer algo
-        return min(max(round($bruto, 1), 1.1), max($cidade->multiplicador_maximo, 1.1));
+        return $cidade->temTeto() ? min($bruto, max($cidade->multiplicador_maximo, 1.1)) : min($bruto, self::MULTIPLICADOR_LIMITE_DE_SEGURANCA);
     }
 
     private function valorDaIntensidade(float $intensidade, DinamicaCidade $cidade): float

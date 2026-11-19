@@ -54,7 +54,8 @@ class AumentarOfertaNegociaService
 
             $valores = NegociacaoCorridaService::valoresPeloPassageiro(
                 $valorOferecido,
-                (float) $financeiro->taxa_plataforma_percentual
+                (float) $financeiro->taxa_plataforma_percentual,
+                (float) $financeiro->taxa_regulacao
             );
             $acrescimo = $valores['valor_motorista'] - (float) $financeiro->valor_motorista;
 
@@ -99,7 +100,8 @@ class AumentarOfertaNegociaService
         $motoristaSugerido = (float) $financeiro->valor_motorista - (float) $financeiro->valor_ajuste_negociado;
         $sugerido = NegociacaoCorridaService::valoresPeloMotorista(
             $motoristaSugerido,
-            (float) $financeiro->taxa_plataforma_percentual
+            (float) $financeiro->taxa_plataforma_percentual,
+            (float) $financeiro->taxa_regulacao
         )['valor_passageiro'];
 
         return round($sugerido * (float) config('precificacao.negocia_oferta_maxima_fracao', 2.0), 2);

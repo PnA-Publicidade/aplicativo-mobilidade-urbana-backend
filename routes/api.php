@@ -25,4 +25,5 @@ Route::middleware('auth:motoristas,passageiros')->group(function () {
     require __DIR__.'/api/ajuda.php';
     require __DIR__.'/api/notificacoes.php';
     require __DIR__.'/api/pagamentos.php';
+    require __DIR__.'/api/cupons.php';
 });

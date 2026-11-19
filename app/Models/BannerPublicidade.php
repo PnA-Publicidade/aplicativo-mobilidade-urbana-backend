@@ -6,13 +6,12 @@ use Database\Factories\BannerPublicidadeFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
- * @property int $cidade_id
  * @property string $titulo
  * @property string $name nome original do arquivo enviado
  * @property string $type extensão
@@ -29,7 +28,6 @@ class BannerPublicidade extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'cidade_id',
         'titulo',
         'name',
         'type',
@@ -52,17 +50,18 @@ class BannerPublicidade extends Model
     protected function casts(): array
     {
         return [
-            'cidade_id' => 'integer',
             'size' => 'integer',
         ];
     }
 
     /**
-     * @return BelongsTo<Cidade, $this>
+     * As cidades onde o app mostra o banner. Sem nenhuma, ele não aparece.
+     *
+     * @return BelongsToMany<Cidade, $this>
      */
-    public function cidade(): BelongsTo
+    public function cidades(): BelongsToMany
     {
-        return $this->belongsTo(Cidade::class);
+        return $this->belongsToMany(Cidade::class, 'banner_publicidade_cidade')->withTimestamps();
     }
 
     /**

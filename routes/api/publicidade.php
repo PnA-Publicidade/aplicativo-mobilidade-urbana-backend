@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('publicidades-arquivados', [BannerPublicidadeController::class, 'arquivados']);
 Route::post('publicidades/{banner}/restaurar', [BannerPublicidadeController::class, 'restaurar'])
     ->withTrashed();
+Route::put('publicidades/{banner}/cidades', [BannerPublicidadeController::class, 'definirCidades']);
 Route::apiResource('publicidades', BannerPublicidadeController::class)
     ->parameters(['publicidades' => 'banner']);
 Route::apiResource('cidades', CidadeController::class);

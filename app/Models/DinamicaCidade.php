@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property float|null $centro_latitude
  * @property float|null $centro_longitude
  * @property float $raio_km
- * @property float $multiplicador_maximo
+ * @property float|null $multiplicador_maximo teto do multiplicador; null = sem teto
  * @property float $valor_maximo
  * @property float $razao_minima
  * @property float $razao_maxima
@@ -29,6 +29,9 @@ class DinamicaCidade extends Model
     public const MODO_MULTIPLICADOR = 'multiplicador';
 
     public const MODO_VALOR_FIXO = 'valor_fixo';
+
+    /** Escala do multiplicador quando a cidade não tem teto: define só a cor e a curva. */
+    public const ESCALA_SEM_TETO = 3.0;
 
     protected $table = 'dinamica_cidades';
 
@@ -87,5 +90,16 @@ class DinamicaCidade extends Model
     public function temCentro(): bool
     {
         return $this->centro_latitude !== null && $this->centro_longitude !== null;
+    }
+
+    /** Sem teto configurado, o multiplicador flutua livremente com a demanda. */
+    public function temTeto(): bool
+    {
+        return $this->multiplicador_maximo !== null;
+    }
+
+    public function escala(): float
+    {
+        return (float) ($this->multiplicador_maximo ?? self::ESCALA_SEM_TETO);
     }
 }

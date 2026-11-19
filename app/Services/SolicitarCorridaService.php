@@ -44,7 +44,8 @@ class SolicitarCorridaService
         ?string $metodoPagamento = null,
         ?array $convidado = null,
         ?float $valorOferecido = null,
-        bool $aceiteAutomatico = false
+        bool $aceiteAutomatico = false,
+        ?int $cupomPassageiroId = null
     ): Corrida {
         $categorias = $this->categoriasEscolhidas($cotacao, $produtosCodigos);
 
@@ -52,6 +53,10 @@ class SolicitarCorridaService
         // a corrida passa a custar a dele e a sobra volta em crédito na liquidação
         $categoria = $categorias[0];
         $negociada = ($categoria['produto']['estrategia_precificacao'] ?? null) === 'negociada';
+
+        if ($negociada && $cupomPassageiroId !== null) {
+            throw new RuntimeException('Cupom não vale no Negocia, onde o preço é o que você oferece.');
+        }
 
         if ($negociada) {
             $categoria = NegociacaoCorridaService::categoriaComOferta(
@@ -73,7 +78,7 @@ class SolicitarCorridaService
         // passageiro): os motoristas só veem a corrida depois do pagamento
         $prePago = $pagamento->ehPrePago($metodoPagamento);
 
-        $corrida = DB::transaction(function () use ($cotacao, $categoria, $categorias, $passageiro, $metodoPagamento, $prePago, $pagamento, $convidado, $negociada, $aceiteAutomatico) {
+        $corrida = DB::transaction(function () use ($cotacao, $categoria, $categorias, $passageiro, $metodoPagamento, $prePago, $pagamento, $convidado, $negociada, $aceiteAutomatico, $cupomPassageiroId) {
             // trava o passageiro: dois pedidos simultâneos não criam duas
             // corridas ativas nem gastam o mesmo crédito
             Passageiro::whereKey($passageiro->id)->lockForUpdate()->first();
@@ -120,8 +125,13 @@ class SolicitarCorridaService
             $this->gravarFinanceiro($corrida, $categoria, $metodoPagamento);
             $this->gravarOpcoes($corrida, $categorias);
 
+            $desconto = $cupomPassageiroId === null
+                ? 0.0
+                : app(CupomService::class)->aplicar($corrida, $cupomPassageiroId);
+
             if ($prePago) {
-                $valor = (float) $categoria['valores']['valor_passageiro'];
+                // o cupom já abateu o que o passageiro paga
+                $valor = (float) $categoria['valores']['valor_passageiro'] - $desconto;
                 $usado = $pagamento->aplicarCredito($corrida, $valor);
 
                 // crédito cobriu tudo: já pode procurar motorista
@@ -319,6 +329,7 @@ class SolicitarCorridaService
             'valor_pago_passageiro' => $valores['valor_passageiro'],
             'taxa_plataforma_valor' => $valores['taxa_plataforma'],
             'taxa_plataforma_percentual' => $valores['taxa_plataforma_percentual'],
+            'taxa_regulacao' => $valores['taxa_regulacao'] ?? 0,
             'valor_motorista' => $valores['valor_motorista'],
             'valor_liquido_motorista' => $valores['valor_motorista'],
             'valor_repassado_plataforma' => $valores['taxa_plataforma'],

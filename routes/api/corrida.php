@@ -12,6 +12,7 @@ use App\Http\Controllers\Corrida\CorridaController;
 use App\Http\Controllers\Corrida\CorridaMotoristaController;
 use App\Http\Controllers\Corrida\GorjetaController;
 use App\Http\Controllers\Corrida\NegociacaoCorridaController;
+use App\Http\Controllers\Passageiro\PerfilPassageiroController;
 use Illuminate\Support\Facades\Route;
 
 // já dentro do grupo auth:jwt (ver routes/api.php)
@@ -52,6 +53,8 @@ Route::post('motorista/corridas/{corrida}/destino/{alteracao}/{resposta}', [Corr
     ->whereIn('resposta', ['aceitar', 'recusar']);
 
 Route::get('minha-corrida-atual', [CorridaController::class, 'minhaCorridaAtual']);
+// perfil público do passageiro, para o motorista da corrida
+Route::get('corridas/{corrida}/passageiro/perfil', [PerfilPassageiroController::class, 'paraMotorista'])->whereNumber('corrida');
 Route::get('corridas/{corrida}/cancelamento', [CorridaController::class, 'previsaoCancelamento'])
     ->middleware('throttle:10,1,previa-cancelamento');
 Route::post('corridas/{corrida}/cancelar', [CorridaController::class, 'cancelar']);

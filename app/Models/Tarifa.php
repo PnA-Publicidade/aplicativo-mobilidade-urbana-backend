@@ -15,6 +15,7 @@ class Tarifa extends Model
     protected $fillable = [
         'id',
         'cidade_id',
+        'estado_id',
         'produto_id',
         'horario_inicio',
         'horario_fim',
@@ -26,6 +27,8 @@ class Tarifa extends Model
         'valor_por_minuto',
         'valor_por_minuto_espera',
         'taxa_plataforma_percentual',
+        'regulacao_tipo',
+        'regulacao_valor',
         'raio_busca_motorista_km',
         'ativo',
     ];

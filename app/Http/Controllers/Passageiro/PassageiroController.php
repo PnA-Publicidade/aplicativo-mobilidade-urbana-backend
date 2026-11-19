@@ -79,6 +79,6 @@ class PassageiroController extends Controller
             });
         }
 
-        return $query->orderByDesc('id')->paginate(($dados['rowsPerPage'] ?? 5) ?: 50);
+        return $query->orderByDesc('id')->paginate(($dados['rowsPerPage'] ?? 15) ?: 15);
     }
 }

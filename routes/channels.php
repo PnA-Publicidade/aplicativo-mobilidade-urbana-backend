@@ -30,6 +30,11 @@ Broadcast::channel('corridas-disponiveis', function (Motorista|Passageiro $perfi
     return $perfil instanceof Motorista && $perfil->status === 'ativo';
 }, $apps);
 
+// o mapa de demanda e tarifas vale para qualquer motorista, online ou não
+Broadcast::channel('dinamica-mapa', function (Motorista|Passageiro $perfil) {
+    return $perfil instanceof Motorista;
+}, $apps);
+
 Broadcast::channel('ajuda.ticket.{ticketId}.cliente', function (Motorista|Passageiro $perfil, int $ticketId) {
     $ticket = ChamadoAjuda::find($ticketId);
 

@@ -317,7 +317,7 @@ class ReputacaoService
         return [
             ['chave' => 'telefone', 'titulo' => 'Telefone cadastrado', 'icone' => 'call-outline', 'descricao' => 'O motorista pode falar com você durante a corrida', 'ok' => filled($passageiro->telefone)],
             ['chave' => 'email', 'titulo' => 'E-mail cadastrado', 'icone' => 'mail-outline', 'descricao' => 'Recibos e avisos chegam no seu e-mail', 'ok' => filled($passageiro->email)],
-            ['chave' => 'foto', 'titulo' => 'Foto de perfil', 'icone' => 'image-outline', 'descricao' => 'O motorista reconhece você no embarque', 'ok' => filled($passageiro->foto)],
+            ['chave' => 'foto', 'titulo' => 'Foto de perfil', 'icone' => 'image-outline', 'descricao' => 'O motorista reconhece você no embarque', 'ok' => filled($passageiro->fotoEnviada())],
             ['chave' => 'cpf', 'titulo' => 'CPF informado', 'icone' => 'id-card-outline', 'descricao' => 'Identificação da conta', 'ok' => filled($passageiro->cpf)],
         ];
     }

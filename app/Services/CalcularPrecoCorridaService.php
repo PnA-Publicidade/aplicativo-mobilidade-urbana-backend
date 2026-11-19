@@ -59,8 +59,13 @@ class CalcularPrecoCorridaService
 
         $taxa = $this->taxaEmFracao($tarifa);
 
-        $valorPassageiroCentavos = (int) round($valorMotoristaCentavos / (1 - $taxa));
-        $taxaPlataformaCentavos = $valorPassageiroCentavos - $valorMotoristaCentavos;
+        $valorSemRegulacaoCentavos = (int) round($valorMotoristaCentavos / (1 - $taxa));
+        $taxaPlataformaCentavos = $valorSemRegulacaoCentavos - $valorMotoristaCentavos;
+
+        // taxa de regulação / custo fixo: somada ao que o passageiro paga, sem mexer
+        // no ganho do motorista nem na margem da plataforma
+        $regulacaoCentavos = $this->regulacaoEmCentavos($tarifa, $valorSemRegulacaoCentavos);
+        $valorPassageiroCentavos = $valorSemRegulacaoCentavos + $regulacaoCentavos;
 
         return [
             'tarifa_id' => $tarifa->id,
@@ -97,8 +102,25 @@ class CalcularPrecoCorridaService
                 'valor_passageiro' => $this->reais($valorPassageiroCentavos),
                 'taxa_plataforma' => $this->reais($taxaPlataformaCentavos),
                 'taxa_plataforma_percentual' => round($taxa * 100, 2),
+                'taxa_regulacao' => $this->reais($regulacaoCentavos),
+                'taxa_regulacao_tipo' => $regulacaoCentavos > 0 ? $tarifa->regulacao_tipo : null,
             ],
         ];
+    }
+
+    /**
+     * Percentual: sobre o valor da corrida já com a taxa da plataforma e antes
+     * da própria regulação. Valor fixo: o mesmo valor em toda corrida.
+     */
+    private function regulacaoEmCentavos(Tarifa $tarifa, int $valorSemRegulacaoCentavos): int
+    {
+        $valor = max((float) $tarifa->regulacao_valor, 0.0);
+
+        return match ($tarifa->regulacao_tipo) {
+            'percentual' => (int) round($valorSemRegulacaoCentavos * min($valor, 100.0) / 100),
+            'valor_fixo' => $this->centavos($valor),
+            default => 0,
+        };
     }
 
     private function taxaEmFracao(Tarifa $tarifa): float

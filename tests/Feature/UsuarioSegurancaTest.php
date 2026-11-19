@@ -17,7 +17,7 @@ it('mantém a foto anterior quando o novo upload é inválido', function () {
         ])
         ->assertUnprocessable();
 
-    expect($passageiro->fresh()->foto)->toBe('https://example.test/images/foto-anterior.jpg');
+    expect($passageiro->fresh()->getRawOriginal('foto'))->toBe('https://example.test/images/foto-anterior.jpg');
 });
 
 it('recusa imagem SVG e arquivos acima de cinco megabytes', function () {
@@ -62,8 +62,8 @@ it('só altera a foto do próprio perfil', function () {
         ->deleteJson('/api/usuario-remover-foto-perfil/'.$motorista->id)
         ->assertOk();
 
-    expect($outro->fresh()->foto)->toBe('https://example.test/images/outro.jpg')
-        ->and($motorista->fresh()->foto)->toBeNull();
+    expect($outro->fresh()->getRawOriginal('foto'))->toBe('https://example.test/images/outro.jpg')
+        ->and($motorista->fresh()->getRawOriginal('foto'))->toBeNull();
 });
 
 it('atualiza pelo painel somente os dados pessoais do passageiro', function () {

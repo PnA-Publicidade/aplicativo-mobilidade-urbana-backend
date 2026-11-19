@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Gestao;
 
+use App\Events\DinamicaAtualizada;
 use App\Http\Controllers\Controller;
 use App\Models\Cidade;
 use App\Models\DinamicaCidade;
 use App\Models\DinamicaRegiao;
 use App\Services\ConfiguracaoPlataformaService;
 use App\Services\DinamicaService;
+use App\Support\Avisar;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -64,7 +66,8 @@ class DinamicaController extends Controller
             'centro_latitude' => 'sometimes|nullable|numeric|between:-90,90',
             'centro_longitude' => 'sometimes|nullable|numeric|between:-180,180',
             'raio_km' => 'sometimes|numeric|between:1,200',
-            'multiplicador_maximo' => 'sometimes|numeric|between:1.1,10',
+            // vazio = sem teto: o multiplicador flutua livremente com a demanda
+            'multiplicador_maximo' => 'sometimes|nullable|numeric|between:1.1,10',
             'valor_maximo' => 'sometimes|numeric|between:0.5,500',
             'razao_minima' => 'sometimes|numeric|between:0.5,20',
             'razao_maxima' => 'sometimes|numeric|between:0.6,50',
@@ -136,6 +139,7 @@ class DinamicaController extends Controller
     public function removerRegiao(int $cidade, int $regiao): JsonResponse
     {
         DinamicaRegiao::query()->where('cidade_id', $cidade)->whereKey($regiao)->delete();
+        Avisar::semQuebrar(new DinamicaAtualizada);
 
         return response()->json(null, 204);
     }

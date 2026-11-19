@@ -28,6 +28,7 @@ use App\Services\ReputacaoService;
 use App\Services\ResolverTarifaService;
 use App\Services\SimularCorridaNegociadaService;
 use App\Services\SolicitarCorridaService;
+use App\Support\ImagemDoAvatar;
 use App\Support\PerfilLogado;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -143,19 +144,31 @@ class CorridaController extends Controller
             'per_page' => 'sometimes|integer|min:1|max:50',
         ]);
 
+        $ehMotorista = PerfilLogado::motorista($request) !== null;
+        $colunasFinanceiro = 'id,corrida_id,valor_pago_passageiro,tarifa_base,taxa_cancelamento,taxa_plataforma_valor,taxa_plataforma_percentual,valor_motorista,valor_liquido_motorista,metodo_pagamento'
+            // o detalhamento do ganho só vai para o motorista
+            .($ehMotorista ? ',valor_bruto,valor_por_km,valor_por_minuto,valor_dinamico_aplicado,taxa_espera,valor_ajuste_negociado,subsidiado_plataforma' : '');
+
         $pagina = $this->doUsuario($request)
             ->with([
                 'produto:id,nome',
                 'motorista:id,name,foto',
-                'passageiro:id,name,foto',
+                'passageiro:id,name,foto,avatar_id,usar_avatar',
                 'veiculo:id,modelo,cor,placa',
                 'corrida_destinos:id,corrida_id,tipo,ordem,endereco',
-                'corrida_financeiro:id,corrida_id,valor_pago_passageiro,tarifa_base,taxa_cancelamento,taxa_plataforma_valor,taxa_plataforma_percentual,valor_motorista,valor_liquido_motorista,metodo_pagamento',
+                'corrida_financeiro:'.$colunasFinanceiro,
             ])
             ->orderByDesc('id')
             ->paginate($dados['per_page'] ?? 20);
 
-        $pagina->getCollection()->each(fn (Corrida $corrida) => $this->reduzirNomes($corrida));
+        $pagina->getCollection()->each(function (Corrida $corrida) use ($ehMotorista) {
+            $this->reduzirNomes($corrida);
+
+            // o passageiro não recebe o detalhamento do ganho do motorista
+            if ($ehMotorista && $corrida->corrida_financeiro !== null) {
+                $corrida->setAttribute('detalhamento_motorista', $corrida->corrida_financeiro->detalhamentoParaMotorista());
+            }
+        });
 
         return $pagina;
     }
@@ -284,7 +297,7 @@ class CorridaController extends Controller
 
         $relacoes = [
             'motorista:id,name,telefone,foto',
-            'passageiro:id,name,foto',
+            'passageiro:id,name,foto,avatar_id,usar_avatar',
             'veiculo',
             'corrida_destinos',
             'corrida_financeiro',
@@ -316,12 +329,6 @@ class CorridaController extends Controller
         }
 
         $this->reduzirNomes($corrida);
-        $ocultarFotoPassageiro = $motoristaId !== null
-            && $corrida->motorista_id === (int) $motoristaId
-            && ! in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
-        if ($ocultarFotoPassageiro) {
-            $corrida->passageiro?->setAttribute('foto', null);
-        }
 
         // na compartilhada não há carência: depois do aceite, sair tem taxa
         if ($corrida->status_corrida === 'aceita' && $corrida->tempo_aceite !== null && $corrida->sala_compartilhada_id === null) {
@@ -492,14 +499,20 @@ class CorridaController extends Controller
         $reputacao = app(ReputacaoService::class)->doPassageiro($passageiro->id);
         $telefone = Passageiro::whereKey($passageiro->id)->value('telefone');
         $convidado = $corrida->convidado_nome !== null;
-        $fotoLiberada = ! $convidado
-            && in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
+        // o motorista vê a imagem do passageiro desde o aceite: o avatar, se ele escolheu
+        // usá-lo, senão a foto. Em corrida para outra pessoa não há imagem do solicitante.
+        $mostrarImagem = ! $convidado;
+        // o app do motorista censura a foto (não o avatar) antes da chegada
+        $imagemEhAvatar = $mostrarImagem
+            && (bool) $passageiro->usar_avatar
+            && ImagemDoAvatar::doPerfil($passageiro->avatar_id) !== null;
 
         return [
             'nome' => $this->primeiroNome((string) ($convidado ? $corrida->convidado_nome : $passageiro->name)),
             'solicitante' => $convidado ? $this->primeiroNome((string) $passageiro->name) : null,
-            'foto' => $fotoLiberada ? $passageiro->foto : null,
-            'foto_oculta' => ! $fotoLiberada,
+            'foto' => $mostrarImagem ? $passageiro->foto : null,
+            'foto_oculta' => ! $mostrarImagem,
+            'foto_e_avatar' => $imagemEhAvatar,
             'telefone' => $convidado
                 ? $corrida->convidado_telefone
                 : (is_string($telefone) ? $telefone : null),
@@ -567,6 +580,8 @@ class CorridaController extends Controller
             // Negocia: escolhe sozinho o primeiro motorista que aceitar a oferta
             'aceite_automatico' => 'nullable|boolean',
             'metodo_pagamento' => 'nullable|in:dinheiro,cartao,pix',
+            // cupom da carteira do passageiro (id de GET /cupons)
+            'cupom_id' => 'nullable|integer|min:1',
             'convidado' => 'nullable|array',
             'convidado.nome' => 'required_with:convidado|string|min:2|max:60',
             'convidado.telefone' => ['required_with:convidado', 'string', 'regex:/^\d{10,11}$/'],
@@ -596,7 +611,8 @@ class CorridaController extends Controller
                 metodoPagamento: $dados['metodo_pagamento'] ?? null,
                 convidado: $dados['convidado'] ?? null,
                 valorOferecido: isset($dados['valor_oferecido']) ? (float) $dados['valor_oferecido'] : null,
-                aceiteAutomatico: $request->boolean('aceite_automatico')
+                aceiteAutomatico: $request->boolean('aceite_automatico'),
+                cupomPassageiroId: isset($dados['cupom_id']) ? (int) $dados['cupom_id'] : null
             );
         } catch (RuntimeException $excecao) {
             $status = $excecao->getCode() === 409 ? 409 : 422;
@@ -616,7 +632,7 @@ class CorridaController extends Controller
             ->whereKey($corrida)
             ->with([
                 'motorista:id,name,foto',
-                'passageiro:id,name,foto',
+                'passageiro:id,name,foto,avatar_id,usar_avatar',
                 'veiculo',
                 'corrida_destinos',
                 'corrida_financeiro',
