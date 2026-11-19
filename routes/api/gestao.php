@@ -3,6 +3,7 @@
 use App\Http\Controllers\Ajuda\TicketsController;
 use App\Http\Controllers\Auth\GestorAutenticacaoController;
 use App\Http\Controllers\Corrida\ChatCorridaController;
+use App\Http\Controllers\Gestao\AvataresController;
 use App\Http\Controllers\Gestao\ConfiguracoesController;
 use App\Http\Controllers\Gestao\CorridasController;
 use App\Http\Controllers\Gestao\CuponsController;
@@ -17,7 +18,6 @@ use App\Http\Controllers\Gestao\RegrasDespachoController;
 use App\Http\Controllers\Gestao\RestricoesMotoristasController;
 use App\Http\Controllers\Gestao\RestricoesNotaController;
 use App\Http\Controllers\Gestao\SaldoMotoristasController;
-use App\Http\Controllers\Gestao\AvataresController;
 use App\Http\Controllers\Gestao\SelosAvaliacaoController;
 use App\Http\Controllers\Gestao\SimulacaoChamadasController;
 use App\Http\Controllers\Gestao\TaxasMotoristasController;

@@ -28,6 +28,7 @@ use App\Services\ReputacaoService;
 use App\Services\ResolverTarifaService;
 use App\Services\SimularCorridaNegociadaService;
 use App\Services\SolicitarCorridaService;
+use App\Support\ImagemDoAvatar;
 use App\Support\PerfilLogado;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -152,7 +153,7 @@ class CorridaController extends Controller
             ->with([
                 'produto:id,nome',
                 'motorista:id,name,foto',
-                'passageiro:id,name,foto',
+                'passageiro:id,name,foto,avatar_id,usar_avatar',
                 'veiculo:id,modelo,cor,placa',
                 'corrida_destinos:id,corrida_id,tipo,ordem,endereco',
                 'corrida_financeiro:'.$colunasFinanceiro,
@@ -296,7 +297,7 @@ class CorridaController extends Controller
 
         $relacoes = [
             'motorista:id,name,telefone,foto',
-            'passageiro:id,name,foto',
+            'passageiro:id,name,foto,avatar_id,usar_avatar',
             'veiculo',
             'corrida_destinos',
             'corrida_financeiro',
@@ -328,12 +329,6 @@ class CorridaController extends Controller
         }
 
         $this->reduzirNomes($corrida);
-        $ocultarFotoPassageiro = $motoristaId !== null
-            && $corrida->motorista_id === (int) $motoristaId
-            && ! in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
-        if ($ocultarFotoPassageiro) {
-            $corrida->passageiro?->setAttribute('foto', null);
-        }
 
         // na compartilhada não há carência: depois do aceite, sair tem taxa
         if ($corrida->status_corrida === 'aceita' && $corrida->tempo_aceite !== null && $corrida->sala_compartilhada_id === null) {
@@ -504,14 +499,20 @@ class CorridaController extends Controller
         $reputacao = app(ReputacaoService::class)->doPassageiro($passageiro->id);
         $telefone = Passageiro::whereKey($passageiro->id)->value('telefone');
         $convidado = $corrida->convidado_nome !== null;
-        $fotoLiberada = ! $convidado
-            && in_array($corrida->status_corrida, ['motorista_chegou', 'em_andamento'], true);
+        // o motorista vê a imagem do passageiro desde o aceite: o avatar, se ele escolheu
+        // usá-lo, senão a foto. Em corrida para outra pessoa não há imagem do solicitante.
+        $mostrarImagem = ! $convidado;
+        // o app do motorista censura a foto (não o avatar) antes da chegada
+        $imagemEhAvatar = $mostrarImagem
+            && (bool) $passageiro->usar_avatar
+            && ImagemDoAvatar::doPerfil($passageiro->avatar_id) !== null;
 
         return [
             'nome' => $this->primeiroNome((string) ($convidado ? $corrida->convidado_nome : $passageiro->name)),
             'solicitante' => $convidado ? $this->primeiroNome((string) $passageiro->name) : null,
-            'foto' => $fotoLiberada ? $passageiro->foto : null,
-            'foto_oculta' => ! $fotoLiberada,
+            'foto' => $mostrarImagem ? $passageiro->foto : null,
+            'foto_oculta' => ! $mostrarImagem,
+            'foto_e_avatar' => $imagemEhAvatar,
             'telefone' => $convidado
                 ? $corrida->convidado_telefone
                 : (is_string($telefone) ? $telefone : null),
@@ -631,7 +632,7 @@ class CorridaController extends Controller
             ->whereKey($corrida)
             ->with([
                 'motorista:id,name,foto',
-                'passageiro:id,name,foto',
+                'passageiro:id,name,foto,avatar_id,usar_avatar',
                 'veiculo',
                 'corrida_destinos',
                 'corrida_financeiro',

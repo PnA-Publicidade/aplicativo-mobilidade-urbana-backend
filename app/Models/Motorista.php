@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\ContaDoApp;
+use App\Support\FotoDePerfil;
 use Database\Factories\MotoristaFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -70,6 +71,16 @@ class Motorista extends Authenticatable implements JWTSubject
      *
      * @return Attribute<?string, ?string>
      */
+    /**
+     * A foto com o servidor de agora (ver FotoDePerfil::enderecoAtual).
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function foto(): Attribute
+    {
+        return Attribute::get(fn (?string $valor) => FotoDePerfil::enderecoAtual($valor));
+    }
+
     protected function nome(): Attribute
     {
         return Attribute::make(

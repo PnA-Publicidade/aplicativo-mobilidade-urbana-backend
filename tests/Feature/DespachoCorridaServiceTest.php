@@ -653,10 +653,10 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
     $resposta->assertOk()
         ->assertJsonPath('corrida.id', $corrida->id)
         ->assertJsonPath('passageiro.nome', 'Maria')
-        ->assertJsonPath('passageiro.foto', null)
-        ->assertJsonPath('passageiro.foto_oculta', true)
+        ->assertJsonPath('passageiro.foto', 'https://example.test/maria.jpg')
+        ->assertJsonPath('passageiro.foto_oculta', false)
         ->assertJsonPath('corrida.passageiro.name', 'Maria')
-        ->assertJsonPath('corrida.passageiro.foto', null)
+        ->assertJsonPath('corrida.passageiro.foto', 'https://example.test/maria.jpg')
         ->assertJsonPath('passageiro.telefone', $passageiro->telefone)
         ->assertJsonCount(2, 'corrida.corrida_destinos');
 
@@ -675,7 +675,8 @@ it('entrega ao motorista os dados do passageiro correto e os pontos da rota', fu
     $this->actingAs($motorista, 'motoristas')->getJson('/api/minha-corrida-atual')
         ->assertOk()
         ->assertJsonPath('passageiro.foto', 'https://example.test/maria.jpg')
-        ->assertJsonPath('passageiro.foto_oculta', false);
+        ->assertJsonPath('passageiro.foto_oculta', false)
+        ->assertJsonPath('passageiro.foto_e_avatar', false);
 });
 
 it('mostra a nota media e o total de corridas do motorista para o passageiro', function () {
@@ -930,4 +931,59 @@ it('o motorista bloqueado pelo passageiro deixa de receber as chamadas dele', fu
     app(BloqueioUsuarioService::class)->bloquear('passageiro', $passageiro->id, $feita->id);
 
     expect(app(DespachoCorridaService::class)->ofertasPara($motorista)->pluck('corrida_id')->contains($corrida->id))->toBeFalse();
+});
+
+it('o motorista vê o avatar do passageiro quando ele escolheu usá-lo, e a foto quando não', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    $passageiro = criarPassageiroDespacho();
+    $avatar = DB::table('avatares')->insertGetId([
+        'titulo' => 'Tucano', 'imagem_url' => 'https://example.test/tucano.png',
+        'ordem' => 1, 'ativo' => true, 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $passageiro->forceFill(['foto' => 'https://example.test/maria.jpg', 'avatar_id' => $avatar, 'usar_avatar' => true])->save();
+    $corrida = criarCorridaDespacho($passageiro);
+    app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
+    $this->mock(EstimarChegadaService::class)->shouldReceive('paraCorrida')->andReturn(null);
+
+    // desde o aceite o motorista vê o avatar que o passageiro escolheu usar
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/minha-corrida-atual')
+        ->assertOk()
+        ->assertJsonPath('passageiro.foto', 'https://example.test/tucano.png')
+        ->assertJsonPath('passageiro.foto_oculta', false)
+        ->assertJsonPath('passageiro.foto_e_avatar', true)
+        ->assertJsonPath('corrida.passageiro.foto', 'https://example.test/tucano.png');
+
+    app(DespachoCorridaService::class)->transicionar($motorista, $corrida->id, 'cheguei');
+
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/minha-corrida-atual')
+        ->assertOk()
+        ->assertJsonPath('passageiro.foto', 'https://example.test/tucano.png')
+        ->assertJsonPath('corrida.passageiro.foto', 'https://example.test/tucano.png');
+
+    // voltou para a foto: ela aparece, também antes da chegada
+    $passageiro->forceFill(['usar_avatar' => false])->save();
+
+    $this->actingAs($motorista, 'motoristas')->getJson('/api/minha-corrida-atual')
+        ->assertOk()
+        ->assertJsonPath('passageiro.foto', 'https://example.test/maria.jpg')
+        ->assertJsonPath('passageiro.foto_oculta', false);
+});
+
+it('o motorista da corrida vê o perfil público do passageiro, e mais ninguém', function () {
+    [$motorista] = criarMotoristaDespacho(true);
+    [$outroMotorista] = criarMotoristaDespacho(true);
+    $passageiro = criarPassageiroDespacho();
+    $passageiro->update(['name' => 'Maria da Silva']);
+    $corrida = criarCorridaDespacho($passageiro);
+    app(DespachoCorridaService::class)->aceitar($motorista, $corrida->id);
+
+    $this->actingAs($motorista, 'motoristas')->getJson("/api/corridas/{$corrida->id}/passageiro/perfil")
+        ->assertOk()
+        ->assertJsonPath('nome', 'Maria')
+        ->assertJsonStructure(['nome', 'foto', 'foto_e_avatar', 'nota', 'corridas', 'meses_na_plataforma', 'elogios', 'selos', 'verificacoes'])
+        ->assertJsonMissingPath('telefone')
+        ->assertJsonMissingPath('email');
+
+    $this->actingAs($outroMotorista, 'motoristas')->getJson("/api/corridas/{$corrida->id}/passageiro/perfil")->assertNotFound();
+    $this->actingAs($passageiro, 'passageiros')->getJson("/api/corridas/{$corrida->id}/passageiro/perfil")->assertForbidden();
 });

@@ -46,7 +46,7 @@ class PerfilController extends Controller
     {
         $request->validate(['image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120']);
         $perfil = $this->proprio($request, $id);
-        $fotoAnterior = $perfil->getAttribute('foto');
+        $fotoAnterior = $perfil->getAttributes()['foto'] ?? null;
         FotoDePerfil::salvar($request, $perfil);
         FotoDePerfil::excluir($fotoAnterior);
 
@@ -122,7 +122,7 @@ class PerfilController extends Controller
     public function removerFotoPerfil(Request $request, string $id): JsonResponse
     {
         $perfil = $this->proprio($request, $id);
-        $foto = $perfil->getAttribute('foto');
+        $foto = $perfil->getAttributes()['foto'] ?? null;
         $perfil->setAttribute('foto', null);
         $perfil->saveOrFail();
         FotoDePerfil::excluir($foto);
